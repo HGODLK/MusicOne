@@ -1,0 +1,16 @@
+.gradle/
+.kotlin/
+**/build/
+**/.cxx/
+local.properties
+*.iml
+.idea/
+/QQ音乐官方安卓apk/
+/keystore/
+/keystore.properties
+*.jks
+*.keystore
+*.apk
+*.aab
+/artifacts/
+/_workcopy_netease_ios_20260915/
