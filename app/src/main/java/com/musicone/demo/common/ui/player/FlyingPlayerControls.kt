@@ -77,6 +77,8 @@ internal fun FlyingPlayerControls(motion: PageMotion, track: MusicTrack, playing
         FlyingControl(motion, "title", target) {
             if (target && motion.targetContentHandoff) {
                 PlayerTextHandoffSnapshot("title")
+            } else if (!target) {
+                MiniPlayerText(playerPrimaryTitle(track.title), textColor, fontSize = titleSize.sp)
             } else {
                 TrackTitle(
                     track = track,
@@ -96,6 +98,10 @@ internal fun FlyingPlayerControls(motion: PageMotion, track: MusicTrack, playing
         FlyingControl(motion, "subtitle", target) {
             if (target && motion.targetContentHandoff) {
                 PlayerTextHandoffSnapshot("subtitle")
+            } else if (!target) {
+                MiniPlayerText(playerPrimaryArtists(track.artists), playerInk,
+                    Modifier.playerTint(secondary, playerSecondary, motion), artist = true,
+                    fontSize = subtitleSize.sp)
             } else {
                 Text(musicOneUiAnnotatedString(playerPrimaryArtists(track.artists)),
                     style = (if (target) MusicOneTextStyles.playerArtist else MusicOneTextStyles.miniPlayerArtist)

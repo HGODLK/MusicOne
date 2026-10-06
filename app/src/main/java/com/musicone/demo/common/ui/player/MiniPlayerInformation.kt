@@ -13,7 +13,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -56,16 +55,12 @@ internal fun RowScope.MiniPlayerInformation(track: MusicTrack, favorite: Boolean
     Column(Modifier.weight(1f).clickable(enabled = !swipe.active, onClick = onOpen).padding(horizontal = 11.dp)) {
         Box(Modifier.fillMaxWidth().motionAnchor(motion, "title", false, textSizeSp = 14f)) {
             MiniTextTransition(track, swipe, duration) { value ->
-                Text(musicOneUiAnnotatedString(value.title), Modifier.miniPlayerInkRegion("title"),
-                    style = MusicOneTextStyles.miniPlayerTitle, color = miniPlayerInkColor("title"),
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                MiniPlayerText(value.title, miniPlayerInkColor("title"), Modifier.miniPlayerInkRegion("title"))
             }
         }
         Box(Modifier.fillMaxWidth().padding(top = 3.dp).motionAnchor(motion, "subtitle", false, textSizeSp = 12f)) {
             MiniTextTransition(track, swipe, duration) { value ->
-                Text(musicOneUiAnnotatedString(value.artists), Modifier.miniPlayerInkRegion("artist"),
-                    style = MusicOneTextStyles.miniPlayerArtist, color = miniPlayerInkColor("artist"),
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                MiniPlayerText(value.artists, miniPlayerInkColor("artist"), Modifier.miniPlayerInkRegion("artist"), artist = true)
             }
         }
     }
