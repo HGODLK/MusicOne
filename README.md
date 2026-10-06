@@ -1,10 +1,17 @@
 # MusicOne
 
-MusicOne 是一款 Android 音乐播放器，为手机和平板提供适合各自屏幕的界面布局。
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Android-green.svg)](https://developer.android.com)
 
-支持在线音乐播放、动态背景与歌词显示，也支持本地缓存和外接 USB DAC 音频输出。
+MusicOne 是一款专为 Android 设计的音乐播放器，针对手机与平板各自的屏幕特性提供量身定制的界面布局。
 
-## 界面
+支持在线音乐播放、动态流动背景、逐行歌词与手势交互，并提供本地缓存及外接 USB DAC 独占音频输出（Bit-Perfect）。
+
+[📥 前往 Releases 下载安装包](https://github.com/HGODLK/MusicOne/releases)
+
+## 界面展示
+
+### 平板布局
 
 <table width="100%">
   <tr>
@@ -25,15 +32,19 @@ MusicOne 是一款 Android 音乐播放器，为手机和平板提供适合各�
   </tr>
 </table>
 
+### 手机布局
+
 <table width="100%">
   <tr>
-    <td align="center" width="25%">推荐流</td>
-    <td align="center" width="25%">歌单列表</td>
-    <td align="center" width="25%">歌词展示</td>
-    <td align="center" width="25%">播放面板</td>
+    <td align="center" width="20%">首页推荐</td>
+    <td align="center" width="20%">推荐信息流</td>
+    <td align="center" width="20%">歌单列表</td>
+    <td align="center" width="20%">歌词展示</td>
+    <td align="center" width="20%">播放面板</td>
   </tr>
   <tr>
-    <td><img src="screenshots/phone-home.png" width="100%" alt="推荐流"></td>
+    <td><img src="screenshots/phone-home.png" width="100%" alt="首页推荐"></td>
+    <td><img src="screenshots/phone-feed.png" width="100%" alt="推荐信息流"></td>
     <td><img src="screenshots/phone-my.png" width="100%" alt="歌单列表"></td>
     <td><img src="screenshots/phone-player-1.png" width="100%" alt="歌词展示"></td>
     <td><img src="screenshots/phone-player-2.png" width="100%" alt="播放面板"></td>
