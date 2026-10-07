@@ -5,9 +5,16 @@ import org.json.JSONObject
 
 /** 只缓存可展示的元数据，不落盘播放票据或登录凭证。 */
 internal class QqFeedSnapshotStore(private val cache: MusicDiskCache, private val namespace: String) {
+    private val dailyStore = HomeDailySnapshotStore(cache, namespace, "music-feed")
+    var refreshedDay: String? = null
+        private set
+
     fun read(): List<QqMusicFeedCard> = runCatching {
-        val bytes = cache.read("feed:v3:$namespace") ?: return emptyList()
-        JSONArray(String(bytes, Charsets.UTF_8)).searchObjects().mapNotNull { value ->
+        val snapshot = dailyStore.read()
+        refreshedDay = snapshot?.refreshedDay
+        val raw = snapshot?.payload ?: cache.read("feed:v3:$namespace")?.let { String(it, Charsets.UTF_8) }
+            ?: return emptyList()
+        JSONArray(raw).searchObjects().mapNotNull { value ->
             when (value.optString("kind")) {
                 "song" -> value.optJSONObject("track")?.toQqStoredTrack()?.let {
                     QqMusicFeedCard.Song(
@@ -41,7 +48,7 @@ internal class QqFeedSnapshotStore(private val cache: MusicDiskCache, private va
         }.let(::normalizeQqMusicFlowCards)
     }.getOrDefault(emptyList())
 
-    fun write(cards: List<QqMusicFeedCard>) {
+    fun write(cards: List<QqMusicFeedCard>, day: String? = refreshedDay) {
         val array = JSONArray()
         normalizeQqMusicFlowCards(cards)
             .filterNot { card ->
@@ -67,7 +74,8 @@ internal class QqFeedSnapshotStore(private val cache: MusicDiskCache, private va
                     .put("pages", card.pages.toFeedPages()).put("section", card.section.name))
             }
         }
-        cache.write("feed:v3:$namespace", array.toString().toByteArray(Charsets.UTF_8))
+        dailyStore.write(HomeDailySnapshot(day.orEmpty(), array.toString()))
+        refreshedDay = day
     }
 }
 

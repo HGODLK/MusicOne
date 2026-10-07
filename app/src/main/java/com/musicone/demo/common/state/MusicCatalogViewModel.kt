@@ -1,7 +1,6 @@
 package com.musicone.demo
 
 import android.app.Application
-import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,6 +10,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 internal data class MusicCatalogUiState(
     val source: MusicSource? = null,
@@ -43,7 +44,9 @@ internal class MusicCatalogViewModel(application: Application) : AndroidViewMode
     private var recommendationsJob: Job? = null
     private var recommendedTracksJob: Job? = null
     private var libraryJob: Job? = null
-    private var recommendedTracksLoadedAt = 0L
+    private var recommendedTracksLoadedDay: String? = null
+    private var recommendedTracksSnapshot: RecommendedTracksSnapshotStore? = null
+    private var preparingRecommendedTracks = false
     private var recommendedTracksPage = 0
     private var recommendationsPage = 0
 
@@ -63,7 +66,9 @@ internal class MusicCatalogViewModel(application: Application) : AndroidViewMode
         recommendedTracksJob?.cancel()
         libraryJob?.cancel()
         playlistDetails.clear()
-        recommendedTracksLoadedAt = 0L
+        recommendedTracksLoadedDay = null
+        recommendedTracksSnapshot = null
+        preparingRecommendedTracks = false
         recommendedTracksPage = 0
         recommendationsPage = 0
         _state.value = MusicCatalogUiState(source = source, sessionRevision = sessionRevision)
@@ -81,7 +86,7 @@ internal class MusicCatalogViewModel(application: Application) : AndroidViewMode
         // QQ 的旧歌单推荐暂停请求，由独立音乐流负责分页。
         if (source == MusicSource.QQ) _state.update { it.copy(recommendationsSettled = true) }
         else loadRecommendations()
-        refreshRecommendedTracks(force = true)
+        restoreRecommendedTracks()
         if (source == MusicSource.NETEASE) refreshLibrary()
         else _state.update { it.copy(librarySettled = true) }
     }
@@ -180,20 +185,45 @@ internal class MusicCatalogViewModel(application: Application) : AndroidViewMode
         }
     }
 
+    private fun restoreRecommendedTracks() {
+        val requestedConfiguration = configurationKey
+        val requestedSource = selectedSource
+        preparingRecommendedTracks = true
+        recommendedTracksJob = viewModelScope.launch {
+            _state.update { it.copy(loadingRecommendedTracks = true) }
+            val (store, cached) = withContext(Dispatchers.IO) {
+                val session = PlatformPreferences(getApplication()).readSession(requestedSource)
+                val store = RecommendedTracksSnapshotStore(MusicDiskCache.get(getApplication()), session.cacheNamespace())
+                store to store.read()
+            }
+            if (requestedConfiguration != configurationKey) return@launch
+            recommendedTracksSnapshot = store
+            recommendedTracksLoadedDay = cached?.refreshedDay
+            recommendedTracksPage = cached?.nextPage ?: 0
+            _state.update { it.copy(recommendedTracks = cached?.tracks.orEmpty(),
+                loadingRecommendedTracks = false, recommendedTracksSettled = cached != null) }
+            preparingRecommendedTracks = false
+            recommendedTracksJob = null
+            refreshRecommendedTracks()
+        }
+    }
+
     fun refreshRecommendedTracks(force: Boolean = false) {
-        val now = SystemClock.elapsedRealtime()
-        if (recommendedTracksJob?.isActive == true || !recommendedTracksRefreshDue(
-                force, _state.value.recommendedTracks.isNotEmpty(), recommendedTracksLoadedAt, now,
+        val day = homeRefreshDay()
+        if (preparingRecommendedTracks || recommendedTracksJob?.isActive == true || !recommendedTracksRefreshDue(
+                force, _state.value.recommendedTracks.isNotEmpty(), recommendedTracksLoadedDay, day,
             )) return
         val requestedConfiguration = configurationKey
         val requestedSource = selectedSource
         val requestedPage = recommendedTracksPage
+        val store = recommendedTracksSnapshot
         recommendedTracksJob = viewModelScope.launch {
             _state.update { it.copy(loadingRecommendedTracks = true, recommendedTracksMessage = null) }
             try {
                 val tracks = catalog.recommendedTracks(requestedSource, requestedPage)
                 if (requestedConfiguration != configurationKey) return@launch
-                recommendedTracksLoadedAt = SystemClock.elapsedRealtime()
+                if (tracks.isEmpty()) throw PlatformApiException("暂时没有推荐歌曲，请稍后重试")
+                recommendedTracksLoadedDay = day
                 recommendedTracksPage = requestedPage + 1
                 _state.update {
                     it.copy(
@@ -201,6 +231,9 @@ internal class MusicCatalogViewModel(application: Application) : AndroidViewMode
                         loadingRecommendedTracks = false,
                         recommendedTracksSettled = true,
                     )
+                }
+                withContext(Dispatchers.IO) {
+                    store?.write(RecommendedTracksSnapshot(tracks, requestedPage + 1, day))
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -226,7 +259,5 @@ internal class MusicCatalogViewModel(application: Application) : AndroidViewMode
 internal fun shouldCachePlaylistDetail(playlist: MusicPlaylist): Boolean =
     playlist.id != QQ_RECENT_SONGS_PLAYLIST_ID
 
-private const val RECOMMENDED_TRACKS_REFRESH_INTERVAL_MS = 5 * 60 * 1_000L
-
-internal fun recommendedTracksRefreshDue(force: Boolean, hasTracks: Boolean, loadedAt: Long, now: Long): Boolean =
-    force || !hasTracks || loadedAt <= 0L || now - loadedAt >= RECOMMENDED_TRACKS_REFRESH_INTERVAL_MS
+internal fun recommendedTracksRefreshDue(force: Boolean, hasTracks: Boolean, loadedDay: String?, today: String): Boolean =
+    homeDailyRefreshDue(force, hasTracks, loadedDay, today)

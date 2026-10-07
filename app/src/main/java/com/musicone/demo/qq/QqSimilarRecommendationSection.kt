@@ -102,7 +102,7 @@ private fun QqSimilarRecommendationContent(
                 pagerPosition = pagerPosition,
                 fallbackTitle = baseTrack?.let { "听「${it.title}」也会喜欢" } ?: "听最近播放的歌也会喜欢",
                 loading = state.loading,
-                refreshEnabled = interactive && recommendations.isNotEmpty() && !pagerState.isScrollInProgress,
+                refreshEnabled = interactive && !pagerState.isScrollInProgress,
                 onRefresh = onRefresh,
                 modifier = Modifier.padding(horizontal = edgeInset),
             )

@@ -43,6 +43,7 @@ internal fun QqPlaylistSongMenuHost(
     addOnly: Boolean = false,
     relatedOnly: Boolean = false,
     avoidQueueRow: Boolean = false,
+    liveBackdrop: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -65,13 +66,14 @@ internal fun QqPlaylistSongMenuHost(
         }
     }
     var bounds by remember { mutableStateOf(Rect.Zero) }
-    SideEffect { menu.backdropLayer = backdrop; menu.backdropBounds = bounds }
+    SideEffect { menu.backdropLayer = backdrop; menu.backdropBounds = bounds; menu.liveBackdrop = liveBackdrop }
     var menuSize by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
     CompositionLocalProvider(LocalQqPlaylistSongMenu provides menu.takeIf { playlist.source == MusicSource.QQ },
         LocalMenuArtistArtwork provides artistArtwork) {
         BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { bounds = it.boundsInRoot() }) {
-            Box(Modifier.fillMaxSize().playerQualityBackdropSnapshot(backdrop, menu.expanded)) { content() }
+            Box(Modifier.fillMaxSize().playerQualityBackdropSnapshot(backdrop, menu.expanded,
+                captureContinuously = liveBackdrop)) { content() }
             val baseWidth = minOf(360.dp, maxWidth - 24.dp)
             val expandedWidth = minOf(360.dp, maxWidth - 24.dp)
             val availableHeight = (maxHeight - bottomInset - 84.dp).coerceAtLeast(100.dp)

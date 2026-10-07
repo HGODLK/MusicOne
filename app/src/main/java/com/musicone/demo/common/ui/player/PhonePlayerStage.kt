@@ -96,6 +96,7 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
                 exitAlignment = lyricExitAlignment,
                 openingAlignment = lyricsMotion.openingAlignment,
                 prepareWhileHidden = prewarming || (playerVisible && !lyrics && lyricsMotion.lyricsProgress == 0f && !lyricsMotion.dragging),
+                revealTopLineBeforeEntrance = true,
                 exitProgress = { 1f - lyricsMotion.lyricsProgress },
                 trackTransitionDirection = state.trackTransitionDirection,
             )

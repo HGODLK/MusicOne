@@ -24,6 +24,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -35,9 +37,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @Composable
 internal fun QqHomeScreen(
@@ -54,10 +53,14 @@ internal fun QqHomeScreen(
     val recentPlay by recentPlayViewModel.state.collectAsStateWithLifecycle()
     val feedViewModel: QqMusicFeedViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val feed by feedViewModel.content.collectAsStateWithLifecycle()
+    val feedRefreshLoading by feedViewModel.refreshLoading.collectAsStateWithLifecycle()
+    val homeRefresh = remember(similarViewModel, feedViewModel, actions.onRefreshRecommendedTracks) {
+        QqHomeRefresh(actions.onRefreshRecommendedTracks, similarViewModel::refresh, feedViewModel::refresh)
+    }
     val feedExitProgress = rememberQqFeedExitProgress(feed, feedViewModel::finishRefreshExit)
     val listState = rememberLazyStaggeredGridState()
     ReportPrimaryHeaderScroll(MusicOnePage.HOME, listState)
-    val today = remember { SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).format(Date()) }
+    var today by remember { mutableStateOf(homeRefreshDay()) }
     val dailyPlaylist = remember(today, catalog.recommendedTracks) {
         val colors = qqArtworkColors("每日推荐")
         MusicPlaylist(
@@ -76,11 +79,15 @@ internal fun QqHomeScreen(
     }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        actions.onRefreshRecommendedTracks(false)
+        today = homeRefreshDay()
+        homeRefresh.refresh(false)
         recentPlayViewModel.ensureLoaded()
     }
     LaunchedEffect(state.page) {
-        if (state.page == MusicOnePage.HOME) actions.onRefreshRecommendedTracks(false)
+        if (state.page == MusicOnePage.HOME) {
+            today = homeRefreshDay()
+            homeRefresh.refresh(false)
+        }
     }
     LaunchedEffect(sessionRevision) { recentPlayViewModel.ensureLoaded() }
     LaunchedEffect(sessionRevision, recentPlay.snapshot.songs) {
@@ -124,12 +131,16 @@ internal fun QqHomeScreen(
             }
             item(key = "similar-recent-play", span = StaggeredGridItemSpan.FullLine) {
                 QqSimilarRecommendationSection(
-                    state = if (similar.baseTrack == null) similar.copy(loading = recentPlay.loading) else similar,
+                    state = similar.copy(loading = similar.loading || feedRefreshLoading || catalog.loadingRecommendedTracks ||
+                        (similar.baseTrack == null && recentPlay.loading)),
                     edgeInset = if (maxWidth < 600.dp) gutter else 0.dp,
                     currentTrackId = state.currentTrack?.id,
                     playing = state.isPlaying,
                     onTrackClick = viewModel::playTrack,
-                    onRefresh = similarViewModel::refresh,
+                    onRefresh = {
+                        today = homeRefreshDay()
+                        homeRefresh.refresh(true)
+                    },
                     modifier = Modifier,
                 )
             }

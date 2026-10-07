@@ -66,6 +66,7 @@ internal fun ImmersiveLyrics(
     exitAlignment: CompletableDeferred<Unit>? = null,
     openingAlignment: CompletableDeferred<Unit>? = null,
     prepareWhileHidden: Boolean = false,
+    revealTopLineBeforeEntrance: Boolean = false,
     exitProgress: () -> Float = { 1f },
     currentAnchorFraction: Float? = null,
     seeking: () -> Boolean = { false },
@@ -151,6 +152,8 @@ internal fun ImmersiveLyrics(
                 playbackStep.reset(current)
                 follow = true
                 list.scrollToItem(current)
+                // 中间态保留完整顶行；恢复跟随后沿用滚动弹簧，逐渐滑进遮挡区。
+                if (revealTopLineBeforeEntrance) list.revealTopLineForEntrance()
                 openingAlignment?.complete(Unit)
             }
         }

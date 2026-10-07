@@ -23,6 +23,8 @@ internal class QqMusicFeedViewModel(application: Application) : AndroidViewModel
     val state = mutableState.asStateFlow()
     val content = state.map(QqMusicFeedState::toContent).distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, QqMusicFeedContent())
+    val refreshLoading = state.map { it.refreshLoading }.distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
     private var revision: Long? = null
     private var job: Job? = null
     private var artworkJob: Job? = null
@@ -32,6 +34,7 @@ internal class QqMusicFeedViewModel(application: Application) : AndroidViewModel
     private var textPreparer: QqFeedTextPreparer? = null
     private var refreshExit: CompletableDeferred<Unit>? = null
     private var snapshot: QqFeedSnapshotStore? = null
+    private var refreshedDay: String? = null
 
     private fun newPager() = QqMusicFeedPager(::loadWithRetry)
 
@@ -47,9 +50,11 @@ internal class QqMusicFeedViewModel(application: Application) : AndroidViewModel
     fun configure(sessionRevision: Long) {
         if (revision == sessionRevision) return
         revision = sessionRevision
+        snapshot = null
+        refreshedDay = null
         job?.cancel()
         artworkJob?.cancel()
-        mutableState.value = QqMusicFeedState(loading = true)
+        mutableState.value = QqMusicFeedState(loading = true, refreshLoading = true)
         refreshExit?.cancel()
         pager = newPager()
         job = viewModelScope.launch {
@@ -60,17 +65,22 @@ internal class QqMusicFeedViewModel(application: Application) : AndroidViewModel
             }
             if (revision != sessionRevision) return@launch
             snapshot = cached.first
+            refreshedDay = cached.first.refreshedDay
             // 先整理缓存中的未展示顺序，避免网络刷新完成前仍显示同类卡片连续堆叠。
             val cachedCards = withContext(Dispatchers.Default) {
                 qqMusicFeedDisplayCards(interleaveQqMusicFeedCards(cached.second))
             }
             textPreparer?.prepare(cachedCards)
             mutableState.value = QqMusicFeedState(cards = cachedCards, settled = cachedCards.isNotEmpty())
-            load(replace = cached.second.isNotEmpty())
+            if (homeDailyRefreshDue(false, cachedCards.isNotEmpty(), refreshedDay, homeRefreshDay())) {
+                load(replace = cachedCards.isNotEmpty())
+            }
         }
     }
 
-    fun refresh() {
+    fun refresh(force: Boolean = true) {
+        if (snapshot == null || (!force && (mutableState.value.loading ||
+                !homeDailyRefreshDue(false, mutableState.value.cards.isNotEmpty(), refreshedDay, homeRefreshDay())))) return
         // 官方下拉刷新会打断正在进行的旧请求；否则刷新按钮在首屏加载期间会变成无效点击。
         job?.cancel()
         artworkJob?.cancel()
@@ -78,7 +88,7 @@ internal class QqMusicFeedViewModel(application: Application) : AndroidViewModel
         pager = newPager()
         refreshExit?.cancel()
         if (mutableState.value.loading) {
-            mutableState.value = mutableState.value.copy(loading = false, refreshing = false)
+            mutableState.value = mutableState.value.copy(loading = false, refreshing = false, refreshLoading = false)
         }
         load(replace = true)
     }
@@ -89,9 +99,12 @@ internal class QqMusicFeedViewModel(application: Application) : AndroidViewModel
         if (mutableState.value.loading) return
         val previous = mutableState.value
         val requestedRevision = revision
+        val requestedDay = homeRefreshDay()
+        val startsDailyFeed = replace || previous.cards.isEmpty()
+        val store = snapshot
         val sessionPager = pager
         val exitReady = if (replace) CompletableDeferred<Unit>().also { refreshExit = it } else null
-        mutableState.value = previous.copy(loading = true, message = null, refreshing = false)
+        mutableState.value = previous.copy(loading = true, message = null, refreshing = false, refreshLoading = startsDailyFeed)
         job = viewModelScope.launch {
             try {
                 // 刷新先交付一屏左右的官方卡位，继续下滑时再按视口补齐，避免首批探测过多页面。
@@ -126,14 +139,15 @@ internal class QqMusicFeedViewModel(application: Application) : AndroidViewModel
                     generation = previous.generation + if (replace) 1 else 0,
                     settled = true,
                 )
-                val store = snapshot
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { store?.write(merged) }
+                // 分页只追加内容，不把昨日列表续期为今日；只有成功首批或整页刷新更新日期。
+                if (startsDailyFeed) refreshedDay = requestedDay
+                withContext(Dispatchers.IO) { store?.write(merged, refreshedDay) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
                 if (revision != requestedRevision) return@launch
                 mutableState.value = previous.copy(loading = false, refreshing = false, settled = true, automaticLoading = false,
-                    message = error.message ?: "音乐流加载失败，轻触重试", refreshRequired = replace)
+                    message = error.message ?: "音乐流加载失败，轻触重试", refreshRequired = replace, refreshLoading = false)
             }
         }
     }

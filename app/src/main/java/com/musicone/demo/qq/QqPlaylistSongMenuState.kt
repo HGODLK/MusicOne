@@ -31,6 +31,7 @@ internal class QqPlaylistSongMenuState(
     var surfaceLayer: androidx.compose.ui.graphics.layer.GraphicsLayer? = null
     var backdropLayer: androidx.compose.ui.graphics.layer.GraphicsLayer? = null
     var backdropBounds = Rect.Zero
+    var liveBackdrop = false
     var artistArtworkState: MenuArtistArtworkState? = null
     var choosingArtist by mutableStateOf(false)
 

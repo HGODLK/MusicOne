@@ -42,6 +42,7 @@ internal fun PlayerSyncedLyrics(
     exitAlignment: CompletableDeferred<Unit>? = null,
     openingAlignment: CompletableDeferred<Unit>? = null,
     prepareWhileHidden: Boolean = false,
+    revealTopLineBeforeEntrance: Boolean = false,
     exitProgress: () -> Float = { 1f },
     currentAnchorFraction: Float? = null,
     trackTransitionDirection: TrackTransitionDirection = TrackTransitionDirection.NEXT,
@@ -195,6 +196,8 @@ internal fun PlayerSyncedLyrics(
                     exitAlignment = if (old) null else exitAlignment,
                     openingAlignment = if (old) null else openingAlignment,
                     prepareWhileHidden = !old && (preparing || (prepareWhileHidden && matchesPlayback)),
+                    // 切歌窗口仍按原锚点就绪；完整顶行仅用于单栏歌词开关入场。
+                    revealTopLineBeforeEntrance = revealTopLineBeforeEntrance && !old && !preparing,
                     exitProgress = exitProgress,
                     currentAnchorFraction = currentAnchorFraction,
                     seeking = windowSeeking,

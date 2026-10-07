@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 internal data class QqSimilarRecommendationUiState(
     val baseTrack: MusicTrack? = null,
@@ -26,6 +28,8 @@ internal class QqSimilarRecommendationViewModel(application: Application) : Andr
     private var configurationKey = ""
     private var loadJob: Job? = null
     private var recentCandidates: List<MusicTrack> = emptyList()
+    private var snapshotStore: QqSimilarRecommendationSnapshotStore? = null
+    private var refreshedDay: String? = null
 
     init {
         viewModelScope.launch {
@@ -35,32 +39,41 @@ internal class QqSimilarRecommendationViewModel(application: Application) : Andr
 
     fun configure(sessionRevision: Long, recentTracks: List<MusicTrack>) {
         val sessionChanged = configuredSessionRevision != sessionRevision
-        if (!shouldConfigureQqSimilarRecommendation(sessionChanged, _state.value)) return
+        recentCandidates = qqSimilarRecentCandidates(recentTracks)
         if (sessionChanged) {
             configuredSessionRevision = sessionRevision
             configurationKey = ""
             loadJob?.cancel()
-            _state.value = QqSimilarRecommendationUiState()
+            snapshotStore = null
+            refreshedDay = null
+            _state.value = QqSimilarRecommendationUiState(loading = true)
+            loadJob = viewModelScope.launch {
+                val (store, cached) = withContext(Dispatchers.IO) {
+                    val session = PlatformPreferences(getApplication()).readSession(MusicSource.QQ)
+                    val store = QqSimilarRecommendationSnapshotStore(MusicDiskCache.get(getApplication()), session.cacheNamespace())
+                    store to store.read()
+                }
+                if (configuredSessionRevision != sessionRevision) return@launch
+                snapshotStore = store
+                refreshedDay = cached?.refreshedDay
+                _state.value = QqSimilarRecommendationUiState(baseTrack = cached?.pages?.firstOrNull()?.baseTrack,
+                    recommendations = cached?.pages.orEmpty())
+                refresh(force = false)
+            }
+            return
         }
-        recentCandidates = qqSimilarRecentCandidates(recentTracks)
-        val seeds = recentCandidates.shuffled().take(QQ_SIMILAR_RECOMMENDATION_PAGE_COUNT)
-        val baseTrack = seeds.firstOrNull() ?: return
-        val key = "$sessionRevision\n${seeds.joinToString { it.id }}"
-        if (configurationKey == key) return
-        configurationKey = key
-        loadJob?.cancel()
-        _state.value = QqSimilarRecommendationUiState(baseTrack = baseTrack)
-        load(seeds, key)
+        refresh(force = false)
     }
 
-    fun refresh() {
+    fun refresh(force: Boolean = true) {
         val snapshot = _state.value
-        if (snapshot.loading) return
+        if (snapshotStore == null || snapshot.loading || !homeDailyRefreshDue(force,
+                snapshot.recommendations.isNotEmpty(), refreshedDay, homeRefreshDay())) return
         val seeds = recentCandidates.shuffled().take(QQ_SIMILAR_RECOMMENDATION_PAGE_COUNT)
         val baseTrack = seeds.firstOrNull() ?: return
         configurationKey = "${configuredSessionRevision.orEmptyText()}\n${seeds.joinToString { it.id }}"
         _state.update { it.copy(baseTrack = baseTrack) }
-        load(seeds, configurationKey, replaceWhenComplete = true)
+        load(seeds, configurationKey, replaceWhenComplete = snapshot.recommendations.isNotEmpty())
     }
 
     private fun load(
@@ -68,6 +81,8 @@ internal class QqSimilarRecommendationViewModel(application: Application) : Andr
         requestedConfiguration: String,
         replaceWhenComplete: Boolean = false,
     ) {
+        val day = homeRefreshDay()
+        val store = snapshotStore
         loadJob = viewModelScope.launch {
             _state.update { it.copy(loading = true) }
             val pages = mutableListOf<QqSimilarRecommendation>()
@@ -81,7 +96,7 @@ internal class QqSimilarRecommendationViewModel(application: Application) : Andr
             }
             shownTrackIds += baseTracks.map(MusicTrack::id)
             try {
-                for ((pageIndex, pageBase) in baseTracks.withIndex()) {
+                for (pageBase in baseTracks) {
                     val recommendation = repository.load(
                         baseTrack = pageBase,
                         amount = QQ_SIMILAR_RECOMMENDATION_REQUEST_SIZE,
@@ -99,7 +114,7 @@ internal class QqSimilarRecommendationViewModel(application: Application) : Andr
                         _state.update {
                             it.copy(
                                 recommendations = pages.toList(),
-                                loading = pageIndex < QQ_SIMILAR_RECOMMENDATION_PAGE_COUNT - 1,
+                                loading = true,
                             )
                         }
                     }
@@ -115,6 +130,10 @@ internal class QqSimilarRecommendationViewModel(application: Application) : Andr
                                 ?: previousRecommendations,
                             loading = false,
                         )
+                    }
+                    if (pages.isNotEmpty()) {
+                        refreshedDay = day
+                        withContext(Dispatchers.IO) { store?.write(QqSimilarRecommendationSnapshot(pages.toList(), day)) }
                     }
                 }
             } catch (cancelled: CancellationException) {
@@ -158,11 +177,6 @@ private fun Long?.orEmptyText(): String = this?.toString().orEmpty()
 
 internal fun canRequestQqSimilarRecommendation(track: MusicTrack): Boolean =
     track.source == MusicSource.QQ && (track.catalogId.toLongOrNull() ?: 0L) > 0L
-
-internal fun shouldConfigureQqSimilarRecommendation(
-    sessionChanged: Boolean,
-    state: QqSimilarRecommendationUiState,
-): Boolean = sessionChanged || (!state.loading && state.recommendations.isEmpty())
 
 internal fun qqSimilarRecommendationRefreshSeed(state: QqSimilarRecommendationUiState): MusicTrack? =
     state.recommendations.asReversed().firstNotNullOfOrNull { recommendation ->

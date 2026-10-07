@@ -10,11 +10,12 @@ private class PlayerQualityBackdropCapture {
     var ready = false
 }
 
-/** 仅在菜单打开首帧记录一次完整播放页，菜单本身不进入模糊采样源。 */
-internal fun Modifier.playerQualityBackdropSnapshot(layer: GraphicsLayer, enabled: Boolean): Modifier = composed {
+/** 默认只记录菜单打开首帧；关联详情存在时可持续采样当前播放页，菜单自身仍排除在外。 */
+internal fun Modifier.playerQualityBackdropSnapshot(layer: GraphicsLayer, enabled: Boolean,
+    captureContinuously: Boolean = false): Modifier = composed {
     val capture = remember(layer) { PlayerQualityBackdropCapture() }
     drawWithContent {
-        if (enabled && !capture.ready) {
+        if (enabled && (!capture.ready || captureContinuously)) {
             layer.record { this@drawWithContent.drawContent() }
             capture.ready = true
         } else if (!enabled) {

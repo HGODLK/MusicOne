@@ -36,7 +36,10 @@ internal fun EntityPageHost(navigation: EntityNavigation, state: MusicOneUiState
                     drawLayer(pageLayer)
                 } else drawContent()
             }) {
-                ExpandingPageSurface(frame.origin, { frame.motion.value }, frame.menuImage, translateContent = false,
+                val returningMenu = frame.sourceMenu?.takeIf { it.liveBackdrop && !frame.motion.wantsOpen }?.surfaceLayer
+                ExpandingPageSurface(frame.origin, { frame.motion.value },
+                    if (returningMenu == null) frame.menuImage else null, translateContent = false,
+                    sourceContent = returningMenu?.let { layer -> { EntityReturnMenuSurface(layer) } },
                     backgroundContent = { EntityPageGlass(frame) }) {
                     when (val target = frame.target) {
                         is EntityTarget.Artist -> ArtistScreen(target.singer, state, bottomInset, createdPlaylists,

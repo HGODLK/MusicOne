@@ -46,7 +46,8 @@ internal fun PlayerRelatedMenuHost(state: MusicOneUiState, model: MusicOneViewMo
                     backdrop.record { this@drawWithContent.drawContent() }; drawLayer(backdrop)
                 } else drawContent()
             }) {
-                QqPlaylistSongMenuHost(context, emptyList(), 0.dp, {}, {}, {}, relatedOnly = true) {
+                QqPlaylistSongMenuHost(context, emptyList(), 0.dp, {}, {}, {}, relatedOnly = true,
+                    liveBackdrop = navigation.pages.isNotEmpty()) {
                     val menu = LocalQqPlaylistSongMenu.current
                     content(menu?.expanded == true || navigation.pages.isNotEmpty())
                 }
