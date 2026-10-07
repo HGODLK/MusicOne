@@ -37,12 +37,7 @@ internal fun UnifiedPlaylistFloatingTools(
     val current = selected.takeIf { it.search != null } ?: retained ?: return
     val search = current.search ?: return
     if (!visible && progress.value == 0f) return
-    // 实体页位于首页背景录制层之外，浮动玻璃必须改采当前实体页，且工具本身不能录入该图层。
-    val entityBackdrop = top?.pageLayer?.takeIf {
-        top.motion.phase == MotionPhase.SHOWN && it.size.width > 0 && it.size.height > 0
-    }
-    val resolvedBackdrop = entityBackdrop ?: backdropLayer
-    val resolvedBounds = if (entityBackdrop != null) top.motion.hostBounds else backdropBounds
-    PlaylistFloatingTools(search, current.canLocate, current::locate, resolvedBackdrop, resolvedBounds,
+    val pageBackdrop = entities.currentPageBackdrop(backdropLayer, backdropBounds)
+    PlaylistFloatingTools(search, current.canLocate, current::locate, pageBackdrop.layer, pageBackdrop.bounds,
         bottomInset, { progress.value }, modifier)
 }

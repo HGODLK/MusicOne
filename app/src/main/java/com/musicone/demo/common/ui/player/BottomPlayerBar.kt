@@ -33,6 +33,9 @@ internal fun BottomPlayerBar(
     backdropBounds: Rect,
     controlHandoff: PlayerControlHandoff,
     rootNavigation: RootPageNavigation,
+    entities: EntityNavigation,
+    entitySceneLayer: GraphicsLayer,
+    entitySceneBounds: Rect,
     navigationVisible: Boolean,
     animateQqPlayer: Boolean,
     immersiveVisual: NeteaseProfileVisual? = null,
@@ -46,6 +49,8 @@ internal fun BottomPlayerBar(
         favorites.toggle(latest?.let { playerVisualActionTrack(it, displayed) } ?: displayed)
     }
     val density = LocalDensity.current
+    val miniBackdropLayer = if (entities.pages.isNotEmpty()) entitySceneLayer else backdropLayer
+    val miniBackdropBounds = if (entities.pages.isNotEmpty()) entitySceneBounds else backdropBounds
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     SideEffect { measurements.systemHeight = systemBottom }
     val openPlayer = {
@@ -64,7 +69,8 @@ internal fun BottomPlayerBar(
                     exit = slideOutVertically(animationSpec = musicMotion(320), targetOffsetY = { it }),
                 ) {
                     track?.let {
-                        MiniPlayer(it, controlHandoff.displayedPlaying(state.isPlaying), it.id in favorites.state.ids, backdropLayer, backdropBounds,
+                        MiniPlayer(it, controlHandoff.displayedPlaying(state.isPlaying), it.id in favorites.state.ids,
+                            miniBackdropLayer, miniBackdropBounds,
                             immersiveVisual,
                             onOpen = openPlayer, onToggle = viewModel::togglePlay,
                             onNext = viewModel::requestNext, onFavorite = { toggleFavorite(it) },
@@ -73,7 +79,8 @@ internal fun BottomPlayerBar(
                 }
             } else {
                 track?.let {
-                    MiniPlayer(it, controlHandoff.displayedPlaying(state.isPlaying), it.id in favorites.state.ids, backdropLayer, backdropBounds,
+                    MiniPlayer(it, controlHandoff.displayedPlaying(state.isPlaying), it.id in favorites.state.ids,
+                        miniBackdropLayer, miniBackdropBounds,
                         immersiveVisual,
                         onOpen = openPlayer, onToggle = viewModel::togglePlay,
                         onNext = viewModel::requestNext, onFavorite = { toggleFavorite(it) },

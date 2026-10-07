@@ -122,6 +122,11 @@ internal fun ImmersiveLyrics(
         }
     }
     val latestExitProgress by rememberUpdatedState(exitProgress)
+    val topLineAlignment = rememberLyricTopLineAlignment(
+        list, revealTopLineBeforeEntrance, active, prepareWhileHidden,
+        openingAlignment, exitAlignment, current, { 1f - latestExitProgress() },
+    )
+    val playbackFollowing = followPlayback && (!revealTopLineBeforeEntrance || !topLineAlignment.pending)
     LyricAnimationEffect(exitAlignment) {
         exitAlignment?.let { request ->
             // 只采集当前裁切量，滚动与残余窗口位移随后由父级收起曲线共同驱动。
@@ -140,7 +145,7 @@ internal fun ImmersiveLyrics(
         val anchorPx = with(androidx.compose.ui.platform.LocalDensity.current) { anchor.roundToPx() }
         LyricAnimationEffect(openingAlignment, prepareWhileHidden, if (prepareWhileHidden) current else null) {
             if (openingAlignment != null || prepareWhileHidden) {
-                // 列表仍在屏幕外，先清除收起偏移并定位，随后只播放原有展开动画。
+                // 列表仍在屏幕外，先清除收起偏移并定位，再随展开进度抵达最终锚点。
                 clickSeekJob?.cancel()
                 clickNavigation = LyricClickNavigation.NONE
                 clickTarget = null
@@ -152,8 +157,11 @@ internal fun ImmersiveLyrics(
                 playbackStep.reset(current)
                 follow = true
                 list.scrollToItem(current)
-                // 中间态保留完整顶行；恢复跟随后沿用滚动弹簧，逐渐滑进遮挡区。
-                if (revealTopLineBeforeEntrance) list.revealTopLineForEntrance()
+                if (revealTopLineBeforeEntrance) {
+                    topLineAlignment.prepare()
+                    list.revealTopLineForEntrance()
+                    topLineAlignment.capture(list, current)
+                }
                 openingAlignment?.complete(Unit)
             }
         }
@@ -167,11 +175,11 @@ internal fun ImmersiveLyrics(
         val scrollTarget = clickTarget ?: pendingProgressTarget ?: current
         // 点击定位期间忽略短暂的预览状态切换，避免同一段位移动画被取消后重新播放。
         val seekingForAnimation = isSeeking && clickNavigation == LyricClickNavigation.NONE
-        LyricAnimationEffect(track.id, scrollTarget, follow, followPlayback, anchorPx,
+        LyricAnimationEffect(track.id, scrollTarget, follow, playbackFollowing, anchorPx,
             seekingForAnimation, clickRevision, active, progressLyricSeek?.revision) {
             pendingProgressSeek?.let { request ->
                 handledProgressLyricSeek = request.revision
-                if (!active || !followPlayback) {
+                if (!active || !playbackFollowing) {
                     request.animationPrepared.complete(Unit)
                     return@LyricAnimationEffect
                 }
@@ -203,11 +211,11 @@ internal fun ImmersiveLyrics(
             }
             val clickMode = clickNavigation
             val stepChange = playbackStep.consume(scrollTarget,
-                enabled = active && followPlayback && follow && !seekingForAnimation && !dragging &&
+                enabled = active && playbackFollowing && follow && !seekingForAnimation && !dragging &&
                     clickMode == LyricClickNavigation.NONE)
             if (stepChange != LyricPlaybackStepChange.ANIMATE) playbackStep.reset()
             // 顶部留白由 contentPadding 提供，滚动偏移不能再叠加一次。
-            if ((follow || seekingForAnimation) && followPlayback) {
+            if ((follow || seekingForAnimation) && playbackFollowing) {
                 if (clickMode == LyricClickNavigation.SCROLL) {
                     val targetItem = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == scrollTarget }
                     val travel = targetItem?.let { lyricVisibleSeekTravel(it.offset) } ?: 0f
@@ -332,7 +340,7 @@ internal fun ImmersiveLyrics(
                         if (lyricWindowAligned(list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == current }?.offset,
                                 list.isScrollInProgress, seekOffset.value)) onReady?.invoke()
                         drawLayer(currentLayer)
-                    }, userScrollEnabled = active && followPlayback,
+                    }, userScrollEnabled = active && playbackFollowing,
                     contentPadding = PaddingValues(top = anchor, bottom = bottomPadding),
                     verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     itemsIndexed(lines, key = { index, line -> "$index-${line.timeMs}" },
@@ -348,7 +356,7 @@ internal fun ImmersiveLyrics(
                                 clickNavigation == LyricClickNavigation.SCROLL,
                             settleProgress = { lyricSettle.value },
                             playbackMotion = playbackStep,
-                            playbackStepActive = active && follow && followPlayback && !isSeeking &&
+                            playbackStepActive = active && follow && playbackFollowing && !isSeeking &&
                                 clickNavigation == LyricClickNavigation.NONE,
                         ) {
                             clickSeekJob?.cancel()

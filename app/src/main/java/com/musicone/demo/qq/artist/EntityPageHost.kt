@@ -7,6 +7,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.Dp
@@ -76,4 +78,15 @@ private fun playEntityTracks(player: MusicOneViewModel, tracks: List<MusicTrack>
     val first = tracks.first()
     player.playPlaylist(MusicPlaylist("entity-playback", MusicSource.QQ, first.artists, "", "", tracks.size,
         first.artworkStart, first.artworkEnd, first.artworkMark, tracks))
+}
+
+internal data class EntityBackdropSource(val layer: GraphicsLayer, val bounds: Rect)
+
+/** 悬浮控件优先采样已展开的最上层实体页；转场时沿用仍可见的来源页。 */
+internal fun EntityNavigation.currentPageBackdrop(rootLayer: GraphicsLayer, rootBounds: Rect): EntityBackdropSource {
+    val frame = pages.lastOrNull { it.motion.phase == MotionPhase.SHOWN && it.pageLayer != null &&
+        it.motion.hostBounds.width > 0f && it.motion.hostBounds.height > 0f }
+    val layer = frame?.pageLayer
+    return if (frame != null && layer != null) EntityBackdropSource(layer, frame.motion.hostBounds)
+        else EntityBackdropSource(rootLayer, rootBounds)
 }

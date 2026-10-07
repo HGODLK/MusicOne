@@ -38,6 +38,7 @@ fun MusicOneApp(viewModel: MusicOneViewModel = viewModel()) {
     val qqSearchViewModel: QqSearchViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val qqSearchState by qqSearchViewModel.state.collectAsStateWithLifecycle()
     val backdropLayer = rememberGraphicsLayer()
+    val entitySceneLayer = rememberGraphicsLayer()
     val qqSearchMotion = rememberQqSearchMotion(qqSearchState, backdropLayer)
     val favoriteViewModel: MusicFavoriteViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val qqLibraryViewModel: QqLibraryViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
@@ -84,6 +85,7 @@ fun MusicOneApp(viewModel: MusicOneViewModel = viewModel()) {
     val playerSurfaceTexture = rememberGraphicsLayer()
     val playerAtmosphereMotion = rememberPlayerAtmosphereMotionState()
     var backdropBounds by remember { mutableStateOf(Rect.Zero) }
+    var entitySceneBounds by remember { mutableStateOf(Rect.Zero) }
 
     LaunchedEffect(platformState.selectedSource) {
         viewModel.configureSource(platformState.selectedSource)
@@ -164,6 +166,8 @@ fun MusicOneApp(viewModel: MusicOneViewModel = viewModel()) {
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+            MiniPlayerBackdropScene(entitySceneLayer, entityNavigation.pages.isNotEmpty(),
+                { entitySceneBounds = it }) {
             Box(
                 Modifier
                     .fillMaxSize()
@@ -318,11 +322,12 @@ fun MusicOneApp(viewModel: MusicOneViewModel = viewModel()) {
             }
 
             if (settingsNavigation.destination == SettingsDestination.CLOSED) {
-                // 详情页玻璃会采样根背景；详情层必须位于录制树外，避免搜索入口形成 RenderNode 循环。
+                // 详情页玻璃仍采样根背景；详情层只进入迷你播放器的独立合成录制层。
                 Box(Modifier.fillMaxSize().statusBarsPadding()) {
                     EntityPageHost(entityNavigation, state, viewModel, barMeasurements.detailInset,
                         qqLibraryState.createdPlaylists, { qqLibraryViewModel.refresh() })
                 }
+            }
             }
 
             run {
@@ -362,7 +367,8 @@ fun MusicOneApp(viewModel: MusicOneViewModel = viewModel()) {
                 )
                 BottomPlayerBar(
                     viewModel, recommendationNavigation.motion, playerMotion, barMeasurements,
-                    backdropLayer, backdropBounds, playerControlHandoff, rootNavigation,
+                    backdropLayer, backdropBounds, playerControlHandoff, rootNavigation, entityNavigation,
+                    entitySceneLayer, entitySceneBounds,
                     (platformState.selectedSource == MusicSource.KUGOU || !searchNavigation.opened) && entityNavigation.pages.isEmpty(),
                     animateQqPlayer = platformState.selectedSource == MusicSource.QQ,
                     immersiveVisual = neteaseProfileVisual.takeIf { immersiveNeteaseSurface },
