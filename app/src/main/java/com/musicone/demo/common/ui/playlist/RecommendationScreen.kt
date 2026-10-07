@@ -93,6 +93,7 @@ internal fun RecommendationScreen(
             val searchMotionActive = rememberPlaylistSearchMotionActive(search.expanded)
             val visibleTracks = remember(playlist.tracks, search.query) { playlist.tracks.matchingPlaylistQuery(search.query) }
             val visiblePlaylist = remember(playlist, visibleTracks) { playlist.copy(tracks = visibleTracks) }
+            val searchResults = rememberPlaylistSearchResults(visibleTracks, searchMotionActive)
             val imeBottomInset = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
             val contentBottomPadding = animateDpAsState(
                 playlistSearchResultsBottomPadding(bottomInset, imeBottomInset, search.expanded),
@@ -236,7 +237,7 @@ internal fun RecommendationScreen(
                                 playlistTrackItems(visiblePlaylist, state, favoriteIds, onTrackClick, onFavorite,
                                     loading = loading, dataEntrance = dataEntrance,
                                     loadMessage = if (search.query.isNotBlank() && visibleTracks.isEmpty()) "没有找到相关歌曲" else loadMessage,
-                                    searchMotionActive = searchMotionActive)
+                                    searchResults = searchResults)
                             }
                         }
                     }
@@ -258,7 +259,7 @@ internal fun RecommendationScreen(
                     if (contentMounted) playlistTrackItems(visiblePlaylist, state, favoriteIds, onTrackClick, onFavorite,
                         horizontalPadding = 20.dp, loading = loading, dataEntrance = dataEntrance,
                         loadMessage = if (search.query.isNotBlank() && visibleTracks.isEmpty()) "没有找到相关歌曲" else loadMessage,
-                        searchMotionActive = searchMotionActive)
+                        searchResults = searchResults)
                 }
             } else {
                 Box(pageMotionModifier) {
@@ -273,7 +274,7 @@ internal fun RecommendationScreen(
                             playlistTrackItems(visiblePlaylist, state, favoriteIds, onTrackClick, onFavorite,
                                 horizontalPadding = 20.dp, loading = loading, dataEntrance = dataEntrance,
                                 loadMessage = if (search.query.isNotBlank() && visibleTracks.isEmpty()) "没有找到相关歌曲" else loadMessage,
-                                searchMotionActive = searchMotionActive)
+                                searchResults = searchResults)
                         }
                     }
                 }

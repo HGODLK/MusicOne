@@ -36,39 +36,39 @@ internal fun LazyListScope.playlistTrackItems(
     loading: Boolean = false,
     loadMessage: String? = null,
     dataEntrance: () -> Float = { 1f },
-    searchMotionActive: Boolean = false,
+    searchResults: PlaylistSearchResults? = null,
 ) {
-    item {
+    val rows = searchResults?.rows ?: playlist.tracks.map(::PlaylistSearchRow)
+    item("playlist-tracks-divider") {
         HorizontalDivider(Modifier.padding(horizontal = horizontalPadding).playlistDetailReveal(), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .1f))
     }
-    if (loading) {
-        items(6) { PlaylistTrackPlaceholder(Modifier.padding(horizontal = horizontalPadding)) }
-    } else if (playlist.tracks.isEmpty()) {
-        item { EmptyState(loadMessage ?: "暂时无法加载歌曲", Modifier.playlistDetailReveal()) }
+    if (loading && rows.isEmpty()) {
+        items(6, key = { "playlist-track-placeholder-$it" }) { PlaylistTrackPlaceholder(Modifier.padding(horizontal = horizontalPadding)) }
+    } else if (rows.isEmpty()) {
+        item("playlist-tracks-empty") { EmptyState(loadMessage ?: "暂时无法加载歌曲", Modifier.playlistDetailReveal()) }
     }
-    items(playlist.tracks, key = { it.id }) { track ->
-        PlaylistTrackRow(
-            track = track,
-            current = state.currentTrack?.id == track.id,
-            playing = state.currentTrack?.id == track.id && state.isPlaying,
-            favorite = track.id in favoriteIds,
-            pendingRemoval = track.id in LocalMusicFavorites.current.state.deferredRemovalIds,
-            onClick = { onTrackClick(track) },
-            onFavorite = { onFavorite(track) },
-            modifier = Modifier
-                .padding(horizontal = horizontalPadding)
-                .then(if (searchMotionActive) Modifier.animateItem(
-                    fadeInSpec = musicMotion(240),
-                    placementSpec = musicMotion(320),
-                    fadeOutSpec = musicMotion(180),
-                ) else Modifier)
-                .graphicsLayer {
-                    alpha = dataEntrance()
-                    translationY = 24.dp.toPx() * (1f - alpha)
-                },
-        )
+    items(rows, key = { it.track.id }) { row ->
+        val track = row.track
+        val content: @Composable () -> Unit = {
+            PlaylistTrackRow(
+                track = track,
+                current = state.currentTrack?.id == track.id,
+                playing = state.currentTrack?.id == track.id && state.isPlaying,
+                favorite = track.id in favoriteIds,
+                pendingRemoval = track.id in LocalMusicFavorites.current.state.deferredRemovalIds,
+                onClick = { if (searchResults == null || track.id in searchResults.targetIds) onTrackClick(track) },
+                onFavorite = { if (searchResults == null || track.id in searchResults.targetIds) onFavorite(track) },
+                modifier = Modifier
+                    .padding(horizontal = horizontalPadding)
+                    .graphicsLayer {
+                        alpha = dataEntrance()
+                        translationY = 24.dp.toPx() * (1f - alpha)
+                    },
+            )
+        }
+        if (searchResults == null) content() else PlaylistSearchRowVisibility(row, searchResults, content)
     }
-    if (playlist.tracks.isNotEmpty()) item {
+    if (playlist.tracks.isNotEmpty()) item("playlist-tracks-summary") {
         Text(
             "${playlist.tracks.size} 首歌曲 · 约 ${playlist.tracks.sumOf { it.durationMs } / 60_000} 分钟",
             modifier = Modifier.padding(horizontal = horizontalPadding, vertical = 20.dp).playlistDetailReveal(),

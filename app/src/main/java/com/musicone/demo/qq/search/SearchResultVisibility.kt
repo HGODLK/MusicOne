@@ -20,9 +20,7 @@ internal fun <T> LazyListScope.searchResultItems(group: String, rows: List<T>, l
             LaunchedEffect(transition.currentState, transition.isIdle) {
                 if (transition.isIdle) settledVisible = transition.currentState
             }
-            AnimatedVisibility(transition,
-                enter = expandVertically(musicMotion(320)) + fadeIn(musicMotion(240)),
-                exit = shrinkVertically(musicMotion(320)) + fadeOut(musicMotion(240))) {
+            SearchResultRowVisibility(transition) {
                 itemScope.content(row)
             }
         }

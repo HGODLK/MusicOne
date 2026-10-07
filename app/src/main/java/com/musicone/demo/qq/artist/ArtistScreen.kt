@@ -45,9 +45,8 @@ internal fun ArtistScreen(singer: QqSearchSinger, player: MusicOneUiState, botto
     val motion = LocalPlaylistMotion.current
     val activation = motion?.let { rememberPlaylistContentActivation(singer.id, it) }
     val songsEntrance = rememberEntityDataEntrance(data.songs.isNotEmpty())
-    val tracks = remember(data.songs, data.searchSongs, search.query) {
-        if (search.query.isBlank()) data.songs else
-            (data.songs.matchingPlaylistQuery(search.query) + data.searchSongs).distinctBy { it.id }
+    val tracks = remember(data.songs, data.searchSongs, data.searchResultsQuery, search.query) {
+        artistSearchTracks(data.songs, data.searchSongs, data.searchResultsQuery, search.query)
     }
     LaunchedEffect(search.query, data.songSort, data.profile.singerId) {
         data.updateSearch(search.query)
@@ -71,6 +70,7 @@ internal fun ArtistScreen(singer: QqSearchSinger, player: MusicOneUiState, botto
             val collapseLimit = heroPx - with(density) { 64.dp.toPx() }
             var collapsed by rememberSaveable(singer.id) { mutableFloatStateOf(0f) }
             val searchMotionActive = rememberPlaylistSearchMotionActive(search.expanded)
+            val searchResults = rememberPlaylistSearchResults(tracks, searchMotionActive)
             val imeBottomInset = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
             val contentBottomPadding = animateDpAsState(
                 playlistSearchResultsBottomPadding(bottomInset, imeBottomInset, search.expanded),
@@ -163,7 +163,7 @@ internal fun ArtistScreen(singer: QqSearchSinger, player: MusicOneUiState, botto
                                     data.searchError?.takeIf { tracks.isEmpty() }
                                         ?: if (!data.searchLoading && tracks.isEmpty()) "没有找到相关歌曲" else null
                                 } else data.songError ?: "暂无歌曲",
-                                dataEntrance = { songsEntrance.value }, searchMotionActive = searchMotionActive)
+                                dataEntrance = { songsEntrance.value }, searchResults = searchResults)
                             if (contentMounted) item {
                                 if (hasSearchQuery) ArtistLoadMore(data.searchLoading, data.searchError,
                                     data.searchNext != null, data::loadSearchSongs)

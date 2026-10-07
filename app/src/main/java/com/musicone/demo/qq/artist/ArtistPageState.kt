@@ -24,6 +24,7 @@ internal class ArtistPageState(private val singer: QqSearchSinger, private val r
     var albumError by mutableStateOf<String?>(null); private set
 
     var searchSongs by mutableStateOf(emptyList<MusicTrack>()); private set
+    var searchResultsQuery by mutableStateOf(""); private set
     var searchNext by mutableStateOf<Int?>(null); private set
     var searchLoading by mutableStateOf(false); private set
     var searchError by mutableStateOf<String?>(null); private set
@@ -120,6 +121,7 @@ internal class ArtistPageState(private val singer: QqSearchSinger, private val r
         searchGeneration++
         searchJob?.cancel()
         searchQuery = normalized
+        searchResultsQuery = normalized
         searchSongs = emptyList()
         searchNext = null
         searchCustomInfo = null

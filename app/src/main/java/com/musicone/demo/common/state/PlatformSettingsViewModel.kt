@@ -35,14 +35,18 @@ internal class PlatformSettingsViewModel(application: Application) : AndroidView
         viewModelScope.launch {
             while (true) {
                 delay(5 * 60 * 1_000L)
-                if (_state.value.selectedSource != MusicSource.QQ) continue
-                val qqSession = preferences.readSession(MusicSource.QQ)
-                if (qqSession.credential.isBlank()) continue
-                val due = QqPersistentSession.shouldRefresh(qqSession.credential)
-                if (due || System.currentTimeMillis() - lastQqValidationMs >= 6 * 60 * 60 * 1_000L) {
-                    validateSavedSession(MusicSource.QQ)
-                }
+                refreshQqSessionIfDue()
             }
+        }
+    }
+
+    fun refreshQqSessionIfDue() {
+        if (_state.value.selectedSource != MusicSource.QQ) return
+        val session = preferences.readSession(MusicSource.QQ)
+        if (session.credential.isBlank()) return
+        if (QqPersistentSession.shouldRefresh(session.credential) ||
+            System.currentTimeMillis() - lastQqValidationMs >= 6 * 60 * 60 * 1_000L) {
+            validateSavedSession(MusicSource.QQ)
         }
     }
 

@@ -5,7 +5,13 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 
-internal data class QqMembership(val vip: Boolean, val superVip: Boolean = false, val validUntilMs: Long)
+internal data class QqMembership(val vip: Boolean, val superVip: Boolean = false, val validUntilMs: Long,
+    val vipUntilMs: Long = validUntilMs, val superVipUntilMs: Long = validUntilMs) {
+    fun effectiveAt(nowMs: Long): QqMembership = copy(
+        vip = vip && nowMs < vipUntilMs,
+        superVip = superVip && nowMs < superVipUntilMs,
+    )
+}
 
 /** 读取账号实际会员权益，不通过任何歌曲播放地址推断身份。 */
 internal class QqMembershipClient {
@@ -42,23 +48,27 @@ internal fun parseQqMembership(response: JSONObject, nowMs: Long = System.curren
     if (!listOf("vip", "HugeVip", "eight", "twelve", "CPLoverFlag")
             .any { identity.qqAccessInt(it) in 0..1 } && data.qqAccessInt("svip") !in 0..1) return null
     val expiries = mutableListOf<Long>()
-    fun active(flag: Int?, end: String): Boolean {
-        if (flag != 1) return false
-        if (end.isBlank()) return true
-        val expiry = qqMembershipExpiry(end) ?: return false
-        if (expiry <= nowMs) return false
+    fun activeUntil(flag: Int?, end: String): Long {
+        if (flag != 1) return 0L
+        // 接口未给真实到期日时仅允许有界保留，仍按五分钟刷新。
+        if (end.isBlank()) return nowMs + QQ_MEMBERSHIP_UNKNOWN_EXPIRY_GRACE_MS
+        val expiry = qqMembershipExpiry(end) ?: return 0L
+        if (expiry <= nowMs) return 0L
         expiries += expiry
-        return true
+        return expiry
     }
-    val superVip = active(identity.qqAccessInt("HugeVip"), identity.optString("HugeVipEnd"))
-    val green = active(identity.qqAccessInt("vip"), identity.optString("overdate"))
-    val svip = active(data.qqAccessInt("svip"), data.optString("send"))
-    val eight = active(identity.qqAccessInt("eight"), identity.optString("eightEnd"))
-    val twelve = active(identity.qqAccessInt("twelve"), identity.optString("twelveEnd"))
-    val couple = active(identity.qqAccessInt("CPLoverFlag"), identity.optString("CPLoverEnd"))
-    return QqMembership(green || svip || superVip || eight || twelve || couple, superVip,
-        minOf(nowMs + QQ_ENTITLEMENT_TTL_MS, expiries.minOrNull() ?: Long.MAX_VALUE))
+    val superVipEnd = activeUntil(identity.qqAccessInt("HugeVip"), identity.optString("HugeVipEnd"))
+    val vipEnd = maxOf(superVipEnd,
+        activeUntil(identity.qqAccessInt("vip"), identity.optString("overdate")),
+        activeUntil(data.qqAccessInt("svip"), data.optString("send")),
+        activeUntil(identity.qqAccessInt("eight"), identity.optString("eightEnd")),
+        activeUntil(identity.qqAccessInt("twelve"), identity.optString("twelveEnd")),
+        activeUntil(identity.qqAccessInt("CPLoverFlag"), identity.optString("CPLoverEnd")))
+    return QqMembership(vipEnd > nowMs, superVipEnd > nowMs,
+        minOf(nowMs + QQ_ENTITLEMENT_TTL_MS, expiries.minOrNull() ?: Long.MAX_VALUE), vipEnd, superVipEnd)
 }
+
+internal const val QQ_MEMBERSHIP_UNKNOWN_EXPIRY_GRACE_MS = 6 * 60 * 60 * 1_000L
 
 private fun qqMembershipExpiry(raw: String): Long? {
     val value = raw.trim()

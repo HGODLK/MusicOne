@@ -44,6 +44,7 @@ fun MusicOneApp(viewModel: MusicOneViewModel = viewModel()) {
     val qqLibraryViewModel: QqLibraryViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val kugouLibraryViewModel: KugouLibraryViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val platformState by platformViewModel.state.collectAsStateWithLifecycle()
+    QqEntitlementLifecycle(platformState.selectedSource, platformViewModel::refreshQqSessionIfDue)
     val catalogState by catalogViewModel.state.collectAsStateWithLifecycle()
     val searchState by searchViewModel.state.collectAsStateWithLifecycle()
     val favoriteState by favoriteViewModel.state.collectAsStateWithLifecycle()

@@ -27,8 +27,7 @@ internal class QqApiClient {
             JSONObject(PlatformHttp.get("$PROFILE_API?$query", cookie, qqHeaders("https://y.qq.com/")).text.qqJsonText())
         }.getOrNull()
         if (profile?.optInt("code", 0) == 1000) throw PlatformApiException("QQ 音乐登录状态已失效", 301)
-        val membership = QqMembershipClient().query(cookie)
-        QqEntitlements.rememberMembership(cookie, membership)
+        val membership = QqEntitlements.rememberMembership(cookie, QqMembershipClient().query(cookie))
         return qqAccountFromProfile(userId, cookie, profile, membership?.vip == true)
     }
 

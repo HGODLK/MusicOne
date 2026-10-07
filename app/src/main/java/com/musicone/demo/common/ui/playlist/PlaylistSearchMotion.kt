@@ -18,7 +18,7 @@ internal fun rememberPlaylistSearchMotionActive(expanded: Boolean): Boolean {
         if (expanded) {
             active = true
         } else {
-            delay(if (ExperiencePreferences.options.reduceMotion) 0L else 240L)
+            delay(if (ExperiencePreferences.options.reduceMotion) 0L else 320L)
             active = false
         }
     }

@@ -1,7 +1,7 @@
 package com.musicone.demo
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 
@@ -9,7 +9,7 @@ import androidx.compose.runtime.LaunchedEffect
 @Composable
 internal fun qqDisplayedAccessBadge(track: MusicTrack): MusicAccessBadge? {
     if (track.source != MusicSource.QQ) return track.accessBadge
-    val state by QqEntitlements.state.collectAsState()
+    val state by QqEntitlements.state.collectAsStateWithLifecycle()
     LaunchedEffect(track.id, track.qqAccess, state.sessionRevision) {
         QqEntitlements.observeTrack(track, state.sessionRevision)
     }
