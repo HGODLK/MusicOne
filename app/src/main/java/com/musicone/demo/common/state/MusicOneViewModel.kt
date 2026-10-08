@@ -396,8 +396,12 @@ class MusicOneViewModel(application: Application) : AndroidViewModel(application
         val progress = (current.durationMs * fraction.coerceIn(0f, 1f)).toLong()
         updateProgress(progress, current.id)
         seekPreview.clear()
-        playbackSession.whenReady { if (playerMatchesCurrentTrack()) it.seekTo(progress) }
+        playbackSession.seek(PlaybackRequestKey(current.id, playbackRequestGeneration), progress, ::isCurrentRequest)
         playbackSession.save(_state.value, progress)
+    }
+
+    internal fun seekToForTrack(trackId: String, fraction: Float) {
+        if (_state.value.currentTrack?.id == trackId) seekTo(fraction)
     }
 
     fun setPlayerExpanded(expanded: Boolean) {
@@ -469,6 +473,7 @@ class MusicOneViewModel(application: Application) : AndroidViewModel(application
         // 首击可能仍在解析，进入浏览后取消它，避免旧结果在连续歌词动画中途起播。
         ++playbackRequestGeneration
         cancelPendingTrackWork()
+        playbackSession.clearPendingSeek()
         seekPreview.clear()
         _playbackActivity.value = PlaybackActivity(_state.value.currentTrack?.id, false)
         playbackSession.whenReady(Player::pause)
@@ -500,6 +505,7 @@ class MusicOneViewModel(application: Application) : AndroidViewModel(application
         nextAudioPreloader.stop()
         if (!preserveQqRadio) stopQqRadio()
         val requestGeneration = ++playbackRequestGeneration
+        playbackSession.clearPendingSeek()
         playWhenReadyRequested = playWhenReady
         cancelPendingTrackWork()
         seekPreview.clear()
@@ -614,9 +620,9 @@ class MusicOneViewModel(application: Application) : AndroidViewModel(application
     private fun startPlayback(track: MusicTrack, positionMs: Long = 0L, playWhenReady: Boolean = true,
                               requestGeneration: Long = playbackRequestGeneration) {
         playbackSession.start(track, PlaybackRequestKey(track.id, requestGeneration), positionMs, playWhenReady,
-            ::isCurrentRequest, started = { player ->
+            ::isCurrentRequest, started = { player, startingPosition ->
                 playbackSession.remember(_state.value, track.id)
-                updateProgress(positionMs.coerceAtLeast(0L), track.id)
+                updateProgress(startingPosition, track.id)
                 _playbackActivity.value = PlaybackActivity(track.id, player.isPlaying)
             }, failed = {
                 playWhenReadyRequested = false

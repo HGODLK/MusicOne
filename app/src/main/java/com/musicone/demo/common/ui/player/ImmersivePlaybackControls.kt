@@ -24,8 +24,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -36,7 +34,7 @@ internal fun ImmersivePlaybackControls(state: MusicOneUiState, track: MusicTrack
     lyricsProgress: () -> Float = { if (lyrics) 1f else 0f }) {
     val qqFeedback = track.source == MusicSource.QQ
     Column(modifier.fillMaxWidth()) {
-        PlayerProgressTimeline(track, viewModel, Modifier.playerDetailReveal(motion))
+        PlayerProgressTimeline(viewModel, Modifier.playerDetailReveal(motion))
         Row(Modifier.fillMaxWidth().height(if (tablet) 80.dp else 100.dp),
             horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
             AudioQualityButton(
@@ -103,22 +101,18 @@ internal fun ImmersivePlaybackControls(state: MusicOneUiState, track: MusicTrack
 }
 
 @Composable
-private fun PlayerProgressTimeline(track: MusicTrack, viewModel: MusicOneViewModel, modifier: Modifier) {
+private fun PlayerProgressTimeline(viewModel: MusicOneViewModel, modifier: Modifier) {
     val ink = LocalContentColor.current
     val visible = LocalPlayerVisible.current
-    val playbackProgress by viewModel.playbackProgress.collectAsStateWithLifecycle()
-    val playbackActivity by viewModel.playbackActivity.collectAsStateWithLifecycle()
-    val rapidSwitch = viewModel.rapidTrackSwitch
-    val switching by remember(rapidSwitch) {
-        rapidSwitch.presentation.map { it != null }.distinctUntilChanged()
-    }.collectAsStateWithLifecycleFrom(rapidSwitch.presentation) { it != null }
+    val timeline by rememberPlayerTimelineSnapshot(viewModel)
+    val switching = timeline.switching
     val lyricSeek by viewModel.seekPreview.lyricSeek.collectAsStateWithLifecycle()
-    val position = playbackProgress.positionMs.takeIf { playbackProgress.trackId == track.id } ?: 0L
+    val position = timeline.positionMs
     val progressMotion = rememberPlayerProgressMotion(
-        trackId = track.id,
+        trackId = timeline.trackId,
         positionMs = position,
-        durationMs = track.durationMs,
-        advancing = visible && playbackActivity.trackId == track.id && playbackActivity.advancing,
+        durationMs = timeline.durationMs,
+        advancing = visible && timeline.advancing,
         switching = visible && switching,
         lyricSeek = lyricSeek,
         active = visible,
@@ -126,11 +120,11 @@ private fun PlayerProgressTimeline(track: MusicTrack, viewModel: MusicOneViewMod
     val scope = rememberCoroutineScope()
     val sliderInteraction = remember { MutableInteractionSource() }
     val dragging by sliderInteraction.collectIsDraggedAsState()
-    var seeking by remember(track.id) { mutableStateOf<Float?>(null) }
-    var userDragged by remember(track.id) { mutableStateOf(false) }
-    var tapSeekJob by remember(track.id) { mutableStateOf<Job?>(null) }
-    DisposableEffect(track.id) { onDispose { viewModel.seekPreview.clear() } }
-    val progress = seeking ?: if (switching) 0f else playerProgressFraction(position, track.durationMs)
+    var seeking by remember(timeline.trackId) { mutableStateOf<Float?>(null) }
+    var userDragged by remember(timeline.trackId) { mutableStateOf(false) }
+    var tapSeekJob by remember(timeline.trackId) { mutableStateOf<Job?>(null) }
+    DisposableEffect(timeline.trackId) { onDispose { tapSeekJob?.cancel(); viewModel.seekPreview.clear() } }
+    val progress = seeking ?: if (switching) 0f else playerProgressFraction(position, timeline.durationMs)
     Column(modifier) {
         PlayerThinSlider(progress, {
             if (seeking == null) userDragged = dragging
@@ -141,7 +135,7 @@ private fun PlayerProgressTimeline(track: MusicTrack, viewModel: MusicOneViewMod
             seeking = it
             // 单击先保留歌词当前画面；只有确认拖动后才让歌词实时跟手。
             if (shouldPreviewLyricsDuringProgressChange(dragging, userDragged)) {
-                viewModel.seekPreview.update(it, track.durationMs)
+                viewModel.seekPreview.update(it, timeline.durationMs)
             }
         }, "播放进度", onFinished = {
             val target = seeking ?: return@PlayerThinSlider
@@ -149,7 +143,7 @@ private fun PlayerProgressTimeline(track: MusicTrack, viewModel: MusicOneViewMod
                 scope.launch {
                     // 拖动过程已经跟手，松手只需把权威进度接到同一像素，不能先跳回旧位置。
                     progressMotion.snapTo(target)
-                    viewModel.seekTo(target)
+                    viewModel.seekToForTrack(timeline.trackId, target)
                     seeking = null
                     userDragged = false
                 }
@@ -157,7 +151,7 @@ private fun PlayerProgressTimeline(track: MusicTrack, viewModel: MusicOneViewMod
                 val revision = progressMotion.beginSeek(target)
                 // 先记录歌词的真实起点，再提交音频；歌词和时间轴分别从各自当前帧续接。
                 val lyricRequest = viewModel.seekPreview.requestProgressLyricSeek(
-                    track.id,
+                    timeline.trackId,
                     position,
                     target,
                 )
@@ -165,7 +159,7 @@ private fun PlayerProgressTimeline(track: MusicTrack, viewModel: MusicOneViewMod
                 tapSeekJob = scope.launch {
                     // 歌词页未挂载时不阻塞操作；已挂载时先锁住旧图层再更新权威进度。
                     withTimeoutOrNull(48L) { lyricRequest.animationPrepared.await() }
-                    viewModel.seekTo(target)
+                    viewModel.seekToForTrack(timeline.trackId, target)
                     seeking = null
                     userDragged = false
                     progressMotion.animateSeek(revision)
@@ -174,8 +168,8 @@ private fun PlayerProgressTimeline(track: MusicTrack, viewModel: MusicOneViewMod
         }, enabled = !switching, interactionSource = sliderInteraction,
             visualValue = { playerProgressVisualValue(seeking, userDragged, progressMotion.value) })
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatDuration((progress * track.durationMs).toLong()), color = ink.copy(alpha = .48f), fontSize = 11.sp)
-            Text("−" + formatDuration(((1f - progress) * track.durationMs).toLong()), color = ink.copy(alpha = .48f), fontSize = 11.sp)
+            Text(formatDuration((progress * timeline.durationMs).toLong()), color = ink.copy(alpha = .48f), fontSize = 11.sp)
+            Text("−" + formatDuration(((1f - progress) * timeline.durationMs).toLong()), color = ink.copy(alpha = .48f), fontSize = 11.sp)
         }
     }
 }

@@ -4,7 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
-/** 由音频预取完成后串行调用，复用原歌词缓存，不向当前播放状态发布下一首歌词。 */
+/** 歌词窗口逐首调用，复用原歌词缓存，不向当前播放状态发布预取歌词。 */
 internal class QqNextLyricsPreloader(
     private val session: () -> PlatformSession,
     private val readCached: suspend (MusicTrack, String) -> List<TimedLyric>,

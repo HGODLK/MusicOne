@@ -8,23 +8,32 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 @Stable
 internal class PlayerProgressMotionState(initialValue: Float) {
     private val progress = Animatable(initialValue.coerceIn(0f, 1f))
-    private var seekRevision = 0L
+    var seekRevision by mutableLongStateOf(0L)
+        private set
     private var pendingSeek: Pair<Long, Float>? = null
+    private var resetJob: Job? = null
     val value: Float get() = progress.value
 
     internal suspend fun snapTo(value: Float) {
+        cancelReset()
         pendingSeek = null
         progress.snapTo(value.coerceIn(0f, 1f))
     }
 
     internal fun beginSeek(value: Float): Long {
+        cancelReset()
         val revision = ++seekRevision
         pendingSeek = revision to value.coerceIn(0f, 1f)
         return revision
@@ -41,10 +50,14 @@ internal class PlayerProgressMotionState(initialValue: Float) {
         }
     }
 
-    internal suspend fun animateReset() {
-        pendingSeek = null
-        progress.animateTo(0f, musicMotion(220))
+    internal fun requestReset(scope: CoroutineScope) {
+        cancelReset()
+        resetJob = scope.launch { progress.animateTo(0f, musicMotion(220)) }
     }
+
+    internal suspend fun awaitReset() { resetJob?.join() }
+
+    private fun cancelReset() { resetJob?.cancel(); resetJob = null }
 
     internal suspend fun alignTo(value: Float, durationMs: Int) {
         progress.animateTo(value.coerceIn(0f, 1f), musicMotion(durationMs))
@@ -70,12 +83,9 @@ internal fun rememberPlayerProgressMotion(
 ): PlayerProgressMotionState {
     val authoritative = playerProgressFraction(positionMs, durationMs)
     val motion = remember { PlayerProgressMotionState(authoritative) }
-    var trackedTrackId by remember { mutableStateOf(trackId) }
-    var switchOriginTrackId by remember { mutableStateOf<String?>(null) }
-    var wasSwitching by remember { mutableStateOf(false) }
-    var pendingResetTrackId by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val handoff = remember { PlayerProgressHandoff(trackId, active) }
     var handledLyricSeek by remember { mutableStateOf(lyricSeek?.revision) }
-    var wasActive by remember { mutableStateOf(active) }
     val newLyricSeek = lyricSeek != null && lyricSeek.revision != handledLyricSeek && lyricSeek.trackId == trackId
 
     LaunchedEffect(trackId, lyricSeek, switching, active) {
@@ -92,43 +102,20 @@ internal fun rememberPlayerProgressMotion(
         motion.animateSeek(revision)
     }
 
-    LaunchedEffect(trackId, positionMs, durationMs, advancing, switching, active) {
-        val resuming = active && !wasActive
-        wasActive = active
-        if (!active || resuming) {
+    LaunchedEffect(trackId, positionMs, durationMs, advancing, switching, active, motion.seekRevision) {
+        val action = handoff.update(trackId, switching, active)
+        if (action == PlayerProgressHandoffAction.SYNC) {
             // 常驻页恢复时直接对齐当前进度，不能把隐藏期间的换曲补播成归零动画。
-            trackedTrackId = trackId
-            pendingResetTrackId = null
-            switchOriginTrackId = null
-            wasSwitching = false
             motion.snapTo(authoritative)
             if (!active) return@LaunchedEffect
         }
-        val trackChanged = trackId != trackedTrackId
-        if (switching) {
-            if (!wasSwitching) switchOriginTrackId = trackedTrackId
-            wasSwitching = true
-            trackedTrackId = trackId
-            pendingResetTrackId = null
-            // 首次点击后归零；连续切歌只会继续收束到同一个零点。
-            motion.animateReset()
-            return@LaunchedEffect
-        }
-        if ((motion.hasPendingSeek() || newLyricSeek) && !trackChanged) return@LaunchedEffect
-
-        if (trackChanged) {
-            trackedTrackId = trackId
-            pendingResetTrackId = trackId
-        }
-        val returnedToOrigin = wasSwitching && trackId == switchOriginTrackId
-        wasSwitching = false
-        switchOriginTrackId = null
-
-        if (pendingResetTrackId == trackId) {
-            motion.animateReset()
-            pendingResetTrackId = null
-            if (!advancing) return@LaunchedEffect
-        } else if (returnedToOrigin) {
+        if (motion.hasPendingSeek() || newLyricSeek) return@LaunchedEffect
+        if (action == PlayerProgressHandoffAction.RESET) motion.requestReset(scope)
+        if (switching) return@LaunchedEffect
+        // 归零独立于采样任务存活；用户跳转会撤销它，后续更新不再补播归零。
+        motion.awaitReset()
+        if (motion.hasPendingSeek()) return@LaunchedEffect
+        if (action == PlayerProgressHandoffAction.RETURN_TO_ORIGIN) {
             // 连点后回到原曲时，解除冻结并柔和追上仍在播放的真实位置。
             motion.alignTo(authoritative, 240)
         }

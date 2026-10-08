@@ -9,7 +9,7 @@ import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheWriter
 import kotlinx.coroutines.*
 
-/** 下一首先缓存音频开头，再缓存歌词；观察播放器留在主线程，取票与写入在后台执行。 */
+/** 音频只准备下一首开头，歌词另用五首窗口；观察播放器在主线程，网络与写入在后台。 */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class QqNextAudioPreloader(
     private val context: Context,
@@ -19,6 +19,7 @@ internal class QqNextAudioPreloader(
     private data class Ready(val request: Request, val playback: ResolvedPlayback, val createdMs: Long)
     private val resolver = PlatformPlaybackResolver(context, qqRequestOrigin = QqRequestOrigin.PRELOAD)
     private val lyricsPreloader = QqNextLyricsPreloader(context)
+    private val lyricsWindow = QqLyricsPreloadWindow(scope, lyricsPreloader::preload)
     private val preferences = PlatformPreferences(context)
     private val qualities = PlaybackQualityPreferences(context)
     private var request: Request? = null
@@ -44,6 +45,7 @@ internal class QqNextAudioPreloader(
                     val next = Request(requireNotNull(current).id, requireNotNull(target).id,
                         preferences.readSession(MusicSource.QQ).cacheNamespace(), quality)
                     if (request != next) start(next, target)
+                    lyricsWindow.update(nextQqLyricsPreloadTracks(snapshot), next.namespace)
                 }
                 delay(1_000)
             }
@@ -89,8 +91,6 @@ internal class QqNextAudioPreloader(
                 ensureActive()
                 if (preferences.readSession(MusicSource.QQ).cacheNamespace() == next.namespace) {
                     ready = Ready(next, resolved, started)
-                    // 先交付已完成的音源，再复用同一可取消任务准备歌词；歌词失败不撤回音源。
-                    lyricsPreloader.preload(resolved.track, next.namespace)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -102,6 +102,7 @@ internal class QqNextAudioPreloader(
 
     /** 切歌开始立即撤销后台写入，已完成的数据仍由正常音频缓存管理。 */
     fun stop() {
+        lyricsWindow.stop()
         writer?.cancel()
         job?.cancel()
         request = null

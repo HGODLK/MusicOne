@@ -17,10 +17,22 @@ internal data class LivePlaybackRestore(
 internal class PlaybackSessionCoordinator(private val context: Context) {
     private val connection = SystemPlaybackConnection(context)
     private val positionOwner = PlaybackPositionOwner()
+    private val pendingSeek = PlaybackPendingSeek()
     private val persistence = QqPlaybackPersistence(context)
     val player get() = connection.player
 
     fun whenReady(action: (Player) -> Unit) = connection.whenReady(action)
+    fun clearPendingSeek() = pendingSeek.clear()
+
+    fun seek(key: PlaybackRequestKey, positionMs: Long, isCurrent: (PlaybackRequestKey) -> Boolean) {
+        if (!isCurrent(key)) return
+        pendingSeek.request(key, positionMs)
+        whenReady { player ->
+            if (isCurrent(key) && matches(key.generation, key.trackId)) {
+                pendingSeek.take(key)?.let(player::seekTo)
+            }
+        }
+    }
     fun restoreStored(source: MusicSource, state: MusicOneUiState) = persistence.restore(source, state)
     fun restoreLive(source: MusicSource, state: MusicOneUiState, generation: Long, player: Player): LivePlaybackRestore? {
         val restored = retainedPlaybackSession.restore(source, player.currentMediaItem?.mediaId, state, player.isPlaying)
@@ -41,10 +53,11 @@ internal class PlaybackSessionCoordinator(private val context: Context) {
 
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     fun start(track: MusicTrack, key: PlaybackRequestKey, positionMs: Long, playWhenReady: Boolean,
-              isCurrent: (PlaybackRequestKey) -> Boolean, started: (Player) -> Unit, failed: () -> Unit) {
+              isCurrent: (PlaybackRequestKey) -> Boolean, started: (Player, Long) -> Unit, failed: () -> Unit) {
         whenReady { player ->
             if (!isCurrent(key)) return@whenReady
             runCatching {
+                val startingPosition = pendingSeek.take(key) ?: positionMs.coerceAtLeast(0L)
                 val metadata = MediaMetadata.Builder()
                     .setExtras(android.os.Bundle().apply { putLong("musicone_duration", track.durationMs) })
                     .setTitle(track.title).setArtist(track.artists).setAlbumTitle(track.album)
@@ -53,11 +66,11 @@ internal class PlaybackSessionCoordinator(private val context: Context) {
                 playbackTrace("MusicOne:audio-set-item") {
                     player.setMediaItem(MediaItem.Builder().setMediaId(track.id)
                         .setCustomCacheKey(playbackCacheKey(context, track).also { MusicDiskCache.available()?.activeKey = it })
-                        .setUri(track.previewUrl).setMediaMetadata(metadata).build(), positionMs.coerceAtLeast(0L))
+                        .setUri(track.previewUrl).setMediaMetadata(metadata).build(), startingPosition)
                 }
                 playbackTrace("MusicOne:audio-prepare") { player.prepare() }
                 positionOwner.attach(key.generation, track.id)
-                started(player)
+                started(player, startingPosition)
                 if (playWhenReady) playbackTrace("MusicOne:audio-play") { player.play() }
             }.onFailure { if (isCurrent(key)) failed() }
         }
