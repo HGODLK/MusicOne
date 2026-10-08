@@ -29,7 +29,10 @@ internal class PlaybackSessionCoordinator(private val context: Context) {
         pendingSeek.request(key, positionMs)
         whenReady { player ->
             if (isCurrent(key) && matches(key.generation, key.trackId)) {
-                pendingSeek.take(key)?.let(player::seekTo)
+                pendingSeek.take(key)?.let { target ->
+                    positionOwner.awaitPosition(key.generation, key.trackId, target)
+                    player.seekTo(target)
+                }
             }
         }
     }
@@ -43,8 +46,12 @@ internal class PlaybackSessionCoordinator(private val context: Context) {
 
     fun matches(generation: Long, trackId: String?) =
         positionOwner.matches(generation, trackId, player?.currentMediaItem?.mediaId)
-    fun position(generation: Long, trackId: String?, saved: Long) =
-        positionOwner.position(generation, trackId, player?.currentMediaItem?.mediaId, player?.currentPosition, saved)
+    fun position(generation: Long, trackId: String?, saved: Long): Long {
+        val transport = player ?: return saved
+        return positionOwner.position(generation, trackId, transport.currentMediaItem?.mediaId,
+            transport.currentPosition, saved, transport.playbackState == Player.STATE_READY,
+            transport.duration, transport.playbackParameters.speed)
+    }
     fun remember(state: MusicOneUiState, playerId: String? = player?.currentMediaItem?.mediaId) =
         retainedPlaybackSession.remember(state, playerId)
     fun save(state: MusicOneUiState, position: Long) = persistence.save(state, position)
@@ -69,7 +76,7 @@ internal class PlaybackSessionCoordinator(private val context: Context) {
                         .setUri(track.previewUrl).setMediaMetadata(metadata).build(), startingPosition)
                 }
                 playbackTrace("MusicOne:audio-prepare") { player.prepare() }
-                positionOwner.attach(key.generation, track.id)
+                positionOwner.attach(key.generation, track.id, startingPosition)
                 started(player, startingPosition)
                 if (playWhenReady) playbackTrace("MusicOne:audio-play") { player.play() }
             }.onFailure { if (isCurrent(key)) failed() }

@@ -88,22 +88,6 @@ class MusicOneViewModel(application: Application) : AndroidViewModel(application
             _state.update { it.copy(playbackMessage = "播放失败，请稍后重试") }
         }
 
-        override fun onPlaybackStateChanged(playbackState: Int) {
-            if (playbackState == Player.STATE_ENDED && playerMatchesCurrentTrack() && !PlaybackSleepTimer.consumeTrackEnd()) advance(automatic = true)
-        }
-
-        override fun onIsPlayingChanged(isPlaying: Boolean) {
-            if (!playerMatchesCurrentTrack()) return
-            val track = _state.value.currentTrack ?: return
-            _playbackActivity.value = PlaybackActivity(track.id, isPlaying)
-            if (isPlaying) reportRecentPlay(track, playbackRequestGeneration)
-            if (!isPlaying) {
-                val position = currentPlaybackPosition()
-                updateProgress(position, track.id)
-                playbackSession.save(_state.value, position)
-            }
-        }
-
         override fun onEvents(player: Player, events: Player.Events) {
             val affectsPresentation = events.contains(Player.EVENT_IS_PLAYING_CHANGED) ||
                 events.contains(Player.EVENT_PLAY_WHEN_READY_CHANGED) ||
@@ -112,12 +96,24 @@ class MusicOneViewModel(application: Application) : AndroidViewModel(application
                 events.contains(Player.EVENT_PLAYER_ERROR)
             if (!affectsPresentation || !playerMatchesCurrentTrack()) return
             val track = _state.value.currentTrack ?: return
+            // 同批旧停止回调可能晚于新媒体装载，统一读取批次结束时的真实状态。
+            _playbackActivity.value = PlaybackActivity(track.id, player.isPlaying)
+            val position = currentPlaybackPosition()
+            updateProgress(position, track.id)
+            if (events.contains(Player.EVENT_IS_PLAYING_CHANGED)) {
+                if (player.isPlaying) reportRecentPlay(track, playbackRequestGeneration)
+                else playbackSession.save(_state.value, position)
+            }
             val key = playbackPresentationKey(track)
             playWhenReadyRequested = player.playWhenReady
             when {
                 player.isPlaying -> playbackPresentation.present(key, true)
                 !player.playWhenReady -> playbackPresentation.present(key, false)
                 else -> playbackPresentation.transportStopped(key)
+            }
+            if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) &&
+                player.playbackState == Player.STATE_ENDED && !PlaybackSleepTimer.consumeTrackEnd()) {
+                advance(automatic = true)
             }
         }
     }

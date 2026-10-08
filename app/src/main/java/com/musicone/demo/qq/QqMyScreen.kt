@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -53,7 +54,7 @@ internal fun QqMyScreen(
     val gridTopPadding = 88.dp
     val headerInset = with(LocalDensity.current) { gridTopPadding.toPx() }
     val (segmentMotion, switchSegment) = rememberLibrarySegmentSwitch(
-        created, library.createdPlaylists.size, library.collectedPlaylists.size, scroll, headerInset,
+        created, scroll, headerInset,
     ) { created = it }
     val playlists = if (created) library.createdPlaylists else library.collectedPlaylists
     val loading = if (created) library.loadingCreated else library.loadingCollected
@@ -74,7 +75,7 @@ internal fun QqMyScreen(
         val favoriteWidth = if (maxWidth >= 600.dp)
             (maxWidth - gutter * 2 - 16.dp * (columns - 1)) / columns else maxWidth - gutter * 2
         LazyVerticalGrid(GridCells.Fixed(columns), state = scroll, modifier = Modifier.fillMaxSize()
-            .onGloballyPositioned { segmentMotion.viewportTop = it.boundsInRoot().top }
+            .onGloballyPositioned { segmentMotion.viewportTop = it.positionInRoot().y }
             .librarySegmentMotion(segmentMotion, created)
             .playerQualityBackdropSnapshot(editorBackdrop, editor.open),
             userScrollEnabled = !segmentMotion.moving,
@@ -106,8 +107,10 @@ internal fun QqMyScreen(
             }
             item("library-heading", span = { GridItemSpan(maxLineSpan) }) {
                 Column(Modifier.padding(top = 12.dp).onGloballyPositioned {
-                    segmentMotion.headerTop = it.boundsInRoot().top
-                    segmentMotion.contentTop = it.boundsInRoot().bottom
+                    // 保留屏幕外的真实位置，不能把父级裁剪后的可见边界用于滚动补位。
+                    val top = it.positionInRoot().y
+                    segmentMotion.headerTop = top
+                    segmentMotion.contentTop = top + it.size.height
                 }, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("我的歌单", fontSize = 23.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))

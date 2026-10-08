@@ -23,20 +23,28 @@ internal class QqLibrarySegmentMotion {
     var headerTop = 0f
     var sourceHeaderTop = 0f
     var contentTop = 0f
-    var sourceContentTop = 0f
     var viewportTop = 0f
     var direction = 1f
     var ready: CompletableDeferred<Unit>? = null
     var snapshot: ImageBitmap? = null
     var capture: (suspend () -> ImageBitmap)? = null
+    var sourceDrawReady by mutableStateOf<CompletableDeferred<Unit>?>(null)
     val progress = Animatable(1f)
+
+    suspend fun awaitSourceDraw() {
+        val completion = CompletableDeferred<Unit>()
+        sourceDrawReady = completion
+        try {
+            completion.await()
+        } finally {
+            sourceDrawReady = null
+        }
+    }
 }
 
 @Composable
 internal fun rememberLibrarySegmentSwitch(
     selected: Boolean,
-    createdCount: Int,
-    collectedCount: Int,
     scroll: LazyGridState,
     headerInset: Float,
     onSelected: (Boolean) -> Unit,
@@ -44,7 +52,6 @@ internal fun rememberLibrarySegmentSwitch(
     val motion = remember { QqLibrarySegmentMotion() }
     val scope = rememberCoroutineScope()
     val current by rememberUpdatedState(selected)
-    val counts by rememberUpdatedState(createdCount to collectedCount)
     val revealInset by rememberUpdatedState(headerInset)
     val select by rememberUpdatedState(onSelected)
     val switch: (Boolean) -> Unit = { target ->
@@ -53,19 +60,14 @@ internal fun rememberLibrarySegmentSwitch(
             motion.moving = true
             scope.launch {
                 try {
-                    val (created, collected) = counts
-                    val sourceCount = if (current) created else collected
-                    val targetCount = if (target) created else collected
-                    if (targetCount < sourceCount) {
-                        // 短列表切换前先把被顶栏遮住的分区按钮平滑带回可见区域。
-                        val distance = (motion.headerTop - motion.viewportTop - revealInset).coerceAtMost(0f)
-                        if (distance < -1f) {
-                            scroll.animateScrollBy(distance, musicMotion(360))
-                            withFrameNanos { }
-                        }
+                    // 两个方向都按真实位置补位，绘制完成后再截取完整的旧画面。
+                    motion.awaitSourceDraw()
+                    val distance = (motion.headerTop - motion.viewportTop - revealInset).coerceAtMost(0f)
+                    if (distance < -1f) {
+                        scroll.animateScrollBy(distance, musicMotion(360))
+                        motion.awaitSourceDraw()
                     }
                     motion.sourceHeaderTop = motion.headerTop
-                    motion.sourceContentTop = motion.contentTop - motion.viewportTop
                     motion.progress.snapTo(0f)
                     motion.snapshot = motion.capture?.invoke()
                     motion.ready = CompletableDeferred()
@@ -75,6 +77,7 @@ internal fun rememberLibrarySegmentSwitch(
                     motion.ready?.await()
                     motion.progress.animateTo(1f, musicMotion(360))
                 } finally {
+                    motion.sourceDrawReady = null
                     motion.ready = null
                     motion.snapshot = null
                     motion.moving = false
@@ -98,18 +101,21 @@ internal fun Modifier.librarySegmentMotion(motion: QqLibrarySegmentMotion, selec
             previous.record { this@drawWithContent.drawContent() }
             recordedSelection[0] = selected
             drawLayer(previous)
+            motion.sourceDrawReady?.complete(Unit)
         } else {
             incoming.record { this@drawWithContent.drawContent() }
             val p = motion.progress.value
             val delta = motion.sourceHeaderTop - motion.headerTop
-            val boundary = (motion.sourceContentTop - delta * p).coerceIn(0f, size.height)
+            val verticalShift = delta * (1f - p)
+            // 裁剪线直接跟随新画面的按钮底部，避免固定区域与歌单区域之间出现缺口。
+            val boundary = (motion.contentTop - motion.viewportTop + verticalShift).coerceIn(0f, size.height)
             // 与编辑菜单复用八分之一宽度的横移动效；上下滚动补偿独立保留。
             val travel = size.width / 8f * motion.direction
             drawRect(background)
             // 固定区域仅跟随纵向位置，不让资料、我喜欢和分区按钮横向退场。
             incoming.alpha = 1f
             clipRect(bottom = boundary) {
-                translate(top = delta * (1f - p)) { drawLayer(incoming) }
+                translate(top = verticalShift) { drawLayer(incoming) }
             }
             clipRect(top = boundary) {
                 translate(left = -travel * p, top = -delta * p) {
@@ -118,7 +124,7 @@ internal fun Modifier.librarySegmentMotion(motion: QqLibrarySegmentMotion, selec
                 // 分区内包括空态和加载提示，统一交接，不单独突然切换。
                 fadePaint.alpha = p
                 drawContext.canvas.saveLayer(Rect(0f, 0f, size.width, size.height), fadePaint)
-                translate(left = travel * (1f - p), top = delta * (1f - p)) {
+                translate(left = travel * (1f - p), top = verticalShift) {
                     clipRect(top = motion.contentTop - motion.viewportTop) { drawLayer(incoming) }
                 }
                 drawContext.canvas.restore()
