@@ -2,7 +2,6 @@ package com.musicone.demo
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.MutatePriority
-import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -259,8 +258,11 @@ internal fun ImmersiveLyrics(
     }
 
     // 正常播放期间的单句步进与跨多句跟随
-    LyricAnimationEffect(current, follow, playbackFollowing, active, isSeeking, controller.state, controller.previewActive, shortSeek.active, autoRefocus.active) {
-        if (active && playbackFollowing && follow && !isSeeking && !shortSeek.active && !autoRefocus.active && !controller.previewActive && controller.state == LyricLayerTransitionState.NORMAL) {
+    val naturalStepFollowing by rememberUpdatedState(active && playbackFollowing && follow && !dragging &&
+        !freezeWindow && !isSeeking && !shortSeek.active && !autoRefocus.active && !controller.previewActive &&
+        controller.state == LyricLayerTransitionState.NORMAL)
+    LyricAnimationEffect(current, follow, playbackFollowing, active, isSeeking, controller.state, controller.previewActive, shortSeek.active, autoRefocus.active, freezeWindow) {
+        if (active && playbackFollowing && follow && !freezeWindow && !isSeeking && !shortSeek.active && !autoRefocus.active && !controller.previewActive && controller.state == LyricLayerTransitionState.NORMAL) {
             val listState = activePane.listState
             val stepChange = activePane.playbackStep.consume(
                 current,
@@ -290,10 +292,11 @@ internal fun ImmersiveLyrics(
                     val targetItem = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == current }
                     if (targetItem != null && isLyricTargetTrulyVisible(listState, current)) {
                         val travel = lyricVisibleSeekTravel(targetItem.offset)
-                        listState.animateScrollBy(
-                            travel,
-                            lyricPlaybackMotionSpec(travel, LyricPlaybackMotionPurpose.ALIGNMENT),
-                        )
+                        runLyricNaturalPlaybackStep(activePane.playbackStep, current,
+                            listState.layoutInfo.visibleItemsInfo.map { it.index }, travel,
+                            { naturalStepFollowing && controller.currentPane === activePane }) { move ->
+                            listState.scroll { move { scrollBy(it) } }
+                        }
                     } else {
                         listState.animateScrollToItem(current)
                     }

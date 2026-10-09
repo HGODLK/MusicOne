@@ -221,6 +221,6 @@ private fun rowPositionSpec(relative: Int): FiniteAnimationSpec<Float> =
 internal fun lyricPlaybackRowStiffness(relative: Int): Float = when {
     relative <= 0 -> 200f
     relative == 1 -> 175f
-    relative == 2 -> 155f
-    else -> 140f
+    relative == 2 -> 150f
+    else -> 135f
 }

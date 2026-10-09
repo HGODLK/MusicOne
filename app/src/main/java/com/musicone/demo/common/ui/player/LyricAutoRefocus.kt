@@ -27,6 +27,7 @@ internal class LyricAutoRefocus {
     }
 
     suspend fun align(pane: LyricWindowPane, current: () -> Int, allowed: () -> Boolean): Int? = run {
+        pane.playbackStep.reset()
         var completed: Int? = null
         pane.listState.scroll {
             completed = settle({

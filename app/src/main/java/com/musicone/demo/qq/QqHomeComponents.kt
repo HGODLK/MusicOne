@@ -27,7 +27,7 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 
 @Composable
@@ -223,16 +224,10 @@ private fun QqRadioCard(
                     }
                 }
             }
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text("猜你喜欢", color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, fontWeight = FontWeight.Bold,
-                        letterSpacing = (-.35).sp)
-                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFF28B887),
-                        modifier = Modifier.size(15.dp))
-                }
-                Text(if (active && playing) "正在播放 · 持续推荐" else if (active) "已暂停 · 持续推荐" else "为你连续推荐",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
-            }
+            Text("猜你喜欢", modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurface,
+                autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 28.sp, stepSize = 1.sp),
+                fontWeight = FontWeight.Bold, lineHeight = 1.15.em, letterSpacing = (-.5).sp,
+                maxLines = 1, softWrap = false)
         }
     }
 }
