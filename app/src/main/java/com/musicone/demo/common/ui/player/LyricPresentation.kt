@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 
@@ -43,6 +44,24 @@ private fun RapidTrackSwitchPresentation.lyricRequest() = lyricPresentationReque
     direction,
 )
 
+internal fun currentLyricPresentationRequest(
+    playback: MusicOneUiState,
+    preview: RapidTrackSwitchPresentation?,
+): LyricPresentationRequest? = preview?.lyricRequest() ?: playback.currentTrack?.let {
+    lyricPresentationRequest(it, playback.lyricLoadState, playback.trackTransitionDirection)
+}
+
+internal fun lyricPresentationRequests(
+    playback: StateFlow<MusicOneUiState>,
+    preview: StateFlow<RapidTrackSwitchPresentation?>,
+): Flow<LyricPresentationRequest> = combine(
+    lyricPlaybackRequests(playback),
+    preview.map { it?.lyricRequest() }.distinctUntilChanged(),
+) { _, _ ->
+    // 沿用封面与时间轴的实时读取方式，预览撤下时不接回迟到的旧歌词请求。
+    currentLyricPresentationRequest(playback.value, preview.value)
+}.filterNotNull().distinctUntilChanged()
+
 internal fun lyricPresentationRequests(
     playback: Flow<LyricPresentationRequest>,
     preview: Flow<RapidTrackSwitchPresentation?>,
@@ -68,7 +87,7 @@ internal fun rememberLyricPresentationRequest(
 ): State<LyricPresentationRequest> {
     val requests = remember(rapidSwitch, playbackState) {
         // 直接读取播放状态，避免预览撤销时组合参数仍停留在上一首。
-        lyricPresentationRequests(lyricPlaybackRequests(playbackState), rapidSwitch.presentation)
+        lyricPresentationRequests(playbackState, rapidSwitch.presentation)
     }
     return requests.collectAsStateWithLifecycle(
         initialValue = rapidSwitch.presentation.value?.lyricRequest()

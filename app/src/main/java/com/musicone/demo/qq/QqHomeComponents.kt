@@ -1,5 +1,6 @@
 package com.musicone.demo
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -29,9 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -54,9 +53,11 @@ import androidx.compose.ui.unit.sp
 @Composable
 internal fun QqPersonalizedCards(
     dailyPlaylist: MusicPlaylist,
+    dailyDate: String? = null,
     dailyLoading: Boolean,
     dailyMessage: String?,
     radioActive: Boolean,
+    radioPlaying: Boolean,
     radioLoading: Boolean,
     onDailyClick: () -> Unit,
     onRadioClick: () -> Unit,
@@ -67,6 +68,7 @@ internal fun QqPersonalizedCards(
     Row(Modifier.fillMaxWidth().height(cardHeight), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         QqDailyCard(
             playlist = dailyPlaylist,
+            date = dailyDate,
             loading = dailyLoading,
             message = dailyMessage,
             onClick = onDailyClick,
@@ -74,6 +76,7 @@ internal fun QqPersonalizedCards(
         )
         QqRadioCard(
             active = radioActive,
+            playing = radioPlaying,
             loading = radioLoading,
             onClick = onRadioClick,
             modifier = Modifier.weight(1f),
@@ -85,6 +88,7 @@ internal fun QqPersonalizedCards(
 @Composable
 private fun QqDailyCard(
     playlist: MusicPlaylist,
+    date: String? = null,
     loading: Boolean,
     message: String?,
     onClick: () -> Unit,
@@ -95,14 +99,16 @@ private fun QqDailyCard(
     val transition = LocalPlaylistCardTransition.current
     val requester = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
     val artwork by rememberArtworkBitmap(playlist.artworkUrl)
-    LaunchedEffect(playlist.id, artwork) { transition?.updateArtwork(playlist.id, artwork) }
+    var visualArtwork by remember { mutableStateOf<Bitmap?>(null) }
+    val effectiveArtwork = visualArtwork ?: artwork
+    LaunchedEffect(playlist.id, effectiveArtwork) { transition?.updateArtwork(playlist.id, effectiveArtwork) }
     Surface(
         modifier = modifier.fillMaxHeight().bringIntoViewRequester(requester).clip(shape).clickable(
             enabled = transition?.busy != true && motion?.mounted != true,
             onClickLabel = "打开每日推荐",
         ) {
             if (transition == null || playlist.tracks.isEmpty()) onClick()
-            else transition.open(playlist.id, artwork, {
+            else transition.open(playlist.id, effectiveArtwork, {
                 // 与下方歌单一致：先把来源卡完整露出，再开始共享元素动画。
                 requester.bringIntoView()
                 repeat(2) { androidx.compose.runtime.withFrameNanos { } }
@@ -112,8 +118,9 @@ private fun QqDailyCard(
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
         Box(Modifier.fillMaxSize()) {
-            ArtworkBitmapOrPlaceholder(
+            CrossfadingArtworkBitmapOrPlaceholder(
                 artwork,
+                playlist.artworkUrl?.isNotBlank() == true && artwork == null,
                 playlist.artworkStart,
                 playlist.artworkEnd,
                 playlist.artworkMark,
@@ -129,6 +136,7 @@ private fun QqDailyCard(
                 62.sp,
                 shape,
                 Alignment.Center,
+                onDisplayedArtworkChange = { visualArtwork = it },
             )
             Box(
                 Modifier.fillMaxSize().graphicsLayer {
@@ -152,7 +160,7 @@ private fun QqDailyCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(shape = CircleShape, color = Color.White.copy(alpha = .9f), modifier = Modifier.size(38.dp)) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text(dayOfMonth(), color = Color(0xFF176C5B), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text(dayOfMonth(date), color = Color(0xFF176C5B), fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                     Box(Modifier.weight(1f))
@@ -179,6 +187,7 @@ private fun QqDailyCard(
 @Composable
 private fun QqRadioCard(
     active: Boolean,
+    playing: Boolean,
     loading: Boolean,
     onClick: () -> Unit,
     modifier: Modifier,
@@ -210,17 +219,7 @@ private fun QqRadioCard(
                 }
                 Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surface, modifier = Modifier.size(42.dp), shadowElevation = 1.dp) {
                     Box(contentAlignment = Alignment.Center) {
-                        when {
-                            loading -> CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = Color(0xFF1E8E6B),
-                            )
-                            active -> Icon(Icons.Default.GraphicEq, contentDescription = "正在播放",
-                                tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
-                            else -> Icon(Icons.Default.PlayArrow, contentDescription = "播放",
-                                tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp))
-                        }
+                        QqRadioPlaybackIndicator(active, playing, loading)
                     }
                 }
             }
@@ -231,7 +230,7 @@ private fun QqRadioCard(
                     Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFF28B887),
                         modifier = Modifier.size(15.dp))
                 }
-                Text(if (active) "正在播放 · 持续推荐" else "为你连续推荐",
+                Text(if (active && playing) "正在播放 · 持续推荐" else if (active) "已暂停 · 持续推荐" else "为你连续推荐",
                     color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
             }
         }
@@ -361,4 +360,10 @@ internal fun QqInlineMessage(message: String, modifier: Modifier = Modifier) {
     }
 }
 
-private fun dayOfMonth(): String = java.text.SimpleDateFormat("dd", java.util.Locale.CHINA).format(java.util.Date())
+private fun dayOfMonth(date: String? = null): String {
+    if (!date.isNullOrBlank()) {
+        val day = date.substringAfterLast('-')
+        if (day.length == 2 && day.all { it.isDigit() }) return day
+    }
+    return java.text.SimpleDateFormat("dd", java.util.Locale.CHINA).format(java.util.Date())
+}

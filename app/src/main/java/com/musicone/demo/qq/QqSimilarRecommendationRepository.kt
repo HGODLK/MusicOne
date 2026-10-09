@@ -2,6 +2,11 @@ package com.musicone.demo
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
@@ -43,26 +48,39 @@ internal class QqSimilarRecommendationRepository(
             hasVipAccess = session.account?.hasVipAccess == true,
         )
         if (recommendation.songs.isEmpty()) throw PlatformApiException("QQ 音乐没有返回相似推荐")
-        val resolvedSongs = recommendation.songs.map { song ->
-            val aliased = artworkAliases.apply(song.track)
-            val resolved = if (aliased.artworkUrl.isNullOrBlank()) {
-                runCatching {
-                    api.resolveTrackArtwork(
-                        aliased,
-                        session.credential,
-                        session.account?.hasVipAccess == true,
-                    )
-                }.getOrDefault(aliased)
-            } else {
-                aliased
+        val ready = coroutineScope {
+            // 权限查询与封面补查彼此独立，同时准备，仍等完整数据就绪后按原动效发布。
+            val permissionRequest = async(Dispatchers.IO) {
+                QqTrackAccessResolver().resolve(recommendation.songs.map { it.track }, session.credential)
+                    .associateBy(MusicTrack::id)
             }
-            song.copy(track = artworkAliases.remember(song.track, resolved))
+            val artworkLimiter = Semaphore(2)
+            val resolvedSongs = recommendation.songs.map { song ->
+                async(Dispatchers.IO) {
+                    val aliased = artworkAliases.apply(song.track)
+                    val resolved = if (aliased.artworkUrl.isNullOrBlank()) {
+                        artworkLimiter.withPermit {
+                            runCatching {
+                                api.resolveTrackArtwork(
+                                    aliased,
+                                    session.credential,
+                                    session.account?.hasVipAccess == true,
+                                )
+                            }.getOrDefault(aliased)
+                        }
+                    } else aliased
+                    song.copy(track = artworkAliases.remember(song.track, resolved))
+                }
+            }.awaitAll()
+            val permissions = permissionRequest.await()
+            resolvedSongs.map { song ->
+                val authorized = permissions[song.track.id] ?: song.track
+                song.copy(track = authorized.copy(artworkUrl = song.track.artworkUrl, album = song.track.album))
+            }
         }
-        val permissions = QqTrackAccessResolver().resolve(resolvedSongs.map { it.track }, session.credential)
-            .associateBy(MusicTrack::id)
         recommendation.copy(
             baseTrack = artworkAliases.apply(recommendation.baseTrack),
-            songs = resolvedSongs.map { it.copy(track = permissions[it.track.id] ?: it.track) },
+            songs = ready,
         )
     }
 }

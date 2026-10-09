@@ -36,7 +36,13 @@ internal fun RowScope.MiniPlayerInformation(track: MusicTrack, favorite: Boolean
             artworkDuration,
             Modifier.fillMaxSize(),
             displayKey = track.source to track.id,
-            onDisplayed = { swipe.onTargetBaseArtworkDrawn(track, it) },
+            onDisplayed = {
+                swipe.onTargetBaseArtworkDrawn(track, it)
+                PlayerOpeningArtworkHandoff.offer(track, it)
+            },
+            onBlendSnapshot = { blends ->
+                PlayerOpeningArtworkHandoff.offer(track, blends.last().frame, blends)
+            },
         ) { MiniArtworkFrame(it) }
         if (swipe.active) {
             val target = swipe.incoming!!

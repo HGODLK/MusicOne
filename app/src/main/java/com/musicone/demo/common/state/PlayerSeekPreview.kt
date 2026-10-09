@@ -33,21 +33,26 @@ internal class PlayerSeekPreview {
         trackId: String,
         fromPositionMs: Long,
         fraction: Float,
+        generation: Long,
     ): ProgressLyricSeek = ProgressLyricSeek(
             trackId,
             fromPositionMs.coerceAtLeast(0L),
             fraction.coerceIn(0f, 1f),
             ++progressLyricSeekRevision,
+            generation,
         ).also { mutableProgressLyricSeek.value = it }
 }
 
 internal data class LyricProgressSeek(val trackId: String, val fraction: Float, val revision: Long)
 
-/** 进度条单击携带跳转前位置，歌词动画不会被同步到达的新播放进度覆盖起点。 */
+/** 进度条单击携带播放轮次及跳转前位置，旧请求不能在同曲重新起播时重放。 */
 internal data class ProgressLyricSeek(
     val trackId: String,
     val fromPositionMs: Long,
     val fraction: Float,
     val revision: Long,
-    val animationPrepared: CompletableDeferred<Unit> = CompletableDeferred(),
+    val generation: Long,
+    val sourceIsolated: CompletableDeferred<Unit> = CompletableDeferred(),
+    val targetReady: CompletableDeferred<Unit> = CompletableDeferred(),
+    val animationPrepared: CompletableDeferred<Unit> = sourceIsolated,
 )

@@ -36,7 +36,7 @@ internal class QqMusicFeedViewModel(application: Application) : AndroidViewModel
     private var snapshot: QqFeedSnapshotStore? = null
     private var refreshedDay: String? = null
 
-    private fun newPager() = QqMusicFeedPager(::loadWithRetry)
+    private fun newPager() = QqMusicFeedPager(prepare = repository::prepare, fetch = ::loadWithRetry)
 
     fun finishRefreshExit() { refreshExit?.complete(Unit) }
 
@@ -142,6 +142,10 @@ internal class QqMusicFeedViewModel(application: Application) : AndroidViewModel
                 // 分页只追加内容，不把昨日列表续期为今日；只有成功首批或整页刷新更新日期。
                 if (startsDailyFeed) refreshedDay = requestedDay
                 withContext(Dispatchers.IO) { store?.write(merged, refreshedDay) }
+                // 已显示三条推荐后，用现有追加流程准备暂存音乐流，不延长首页刷新状态。
+                if (firstBatch && batch.remaining.isNotEmpty() && pager === sessionPager && revision == requestedRevision) {
+                    load(replace = false)
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {

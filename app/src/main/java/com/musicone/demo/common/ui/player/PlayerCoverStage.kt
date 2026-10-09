@@ -20,7 +20,7 @@ internal fun PlayerCoverStage(track: MusicTrack, playing: Boolean, motion: PageM
         val side = minOf(maxWidth, (maxHeight - 24.dp).coerceAtLeast(1.dp), 440.dp)
         val markSize = minOf(120f, side.value * .34f)
         Box(Modifier.size(side).graphicsLayer { scaleX = scale; scaleY = scale }) {
-            PlayerArtwork(track,
+            PlayerArtwork(track, motion,
                 Modifier.fillMaxSize().motionAnchor(if (anchorsEnabled) motion else null, "cover", true, corner = 12f * scale, markSize = markSize * scale, markX = 1f, markY = -1f, boundsScale = scale, contentScale = scale),
                 markSize.sp, RoundedCornerShape(12.dp))
         }

@@ -96,16 +96,14 @@ internal class QqSimilarRecommendationViewModel(application: Application) : Andr
             }
             shownTrackIds += baseTracks.map(MusicTrack::id)
             try {
-                for (pageBase in baseTracks) {
-                    val recommendation = repository.load(
-                        baseTrack = pageBase,
-                        amount = QQ_SIMILAR_RECOMMENDATION_REQUEST_SIZE,
-                    )
-                    if (requestedConfiguration != configurationKey) return@launch
+                loadOrderedQqSimilarRecommendations(baseTracks, load = { pageBase ->
+                    repository.load(baseTrack = pageBase, amount = QQ_SIMILAR_RECOMMENDATION_REQUEST_SIZE)
+                }) { recommendation ->
+                    if (requestedConfiguration != configurationKey) return@loadOrderedQqSimilarRecommendations false
                     val visibleSongs = recommendation.songs
                         .filterNot { it.track.id in shownTrackIds }
                         .take(QQ_SIMILAR_RECOMMENDATION_SIZE)
-                    if (visibleSongs.isEmpty()) break
+                    if (visibleSongs.isEmpty()) return@loadOrderedQqSimilarRecommendations false
                     val page = recommendation.copy(songs = visibleSongs)
                     pages += page
                     shownTrackIds += visibleSongs.map { it.track.id }
@@ -118,6 +116,7 @@ internal class QqSimilarRecommendationViewModel(application: Application) : Andr
                             )
                         }
                     }
+                    true
                 }
                 preloadQqArtwork(
                     pages.flatMap { page -> page.songs.map { it.track.artworkUrl } },

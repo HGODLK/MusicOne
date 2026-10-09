@@ -4,12 +4,17 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+internal enum class CatalogFetchPolicy {
+    CACHE_FIRST,
+    SERVER_VERIFY,
+}
+
 internal interface PlatformCatalogAdapter {
     val source: MusicSource
     suspend fun search(query: String): List<MusicTrack>
     suspend fun searchCollections(query: String): List<MusicPlaylist> = emptyList()
     fun recommendedPlaylists(page: Int): List<MusicPlaylist>
-    fun recommendedTracks(page: Int): List<MusicTrack>
+    fun recommendedTracks(page: Int, policy: CatalogFetchPolicy = CatalogFetchPolicy.CACHE_FIRST): List<MusicTrack>
     fun userPlaylists(): List<MusicPlaylist> = emptyList()
     suspend fun playlistDetail(playlist: MusicPlaylist): MusicPlaylist
 }
@@ -32,8 +37,11 @@ internal class PlatformCatalogRepository(context: Context) {
     suspend fun recommendedPlaylists(source: MusicSource, page: Int): List<MusicPlaylist> =
         onAdapter(source) { it.recommendedPlaylists(page) }
 
-    suspend fun recommendedTracks(source: MusicSource, page: Int): List<MusicTrack> =
-        onAdapter(source) { it.recommendedTracks(page) }
+    suspend fun recommendedTracks(
+        source: MusicSource,
+        page: Int,
+        policy: CatalogFetchPolicy = CatalogFetchPolicy.CACHE_FIRST,
+    ): List<MusicTrack> = onAdapter(source) { it.recommendedTracks(page, policy) }
 
     suspend fun userPlaylists(source: MusicSource): List<MusicPlaylist> =
         onAdapter(source) { it.userPlaylists() }
@@ -56,7 +64,8 @@ private class KugouCatalogAdapter(
     override suspend fun search(query: String): List<MusicTrack> = api.search(query, cookie())
     override suspend fun searchCollections(query: String): List<MusicPlaylist> = api.searchCollections(query, cookie())
     override fun recommendedPlaylists(page: Int): List<MusicPlaylist> = api.recommendedPlaylists(cookie(), page)
-    override fun recommendedTracks(page: Int): List<MusicTrack> = api.recommendedTracks(cookie(), page)
+    override fun recommendedTracks(page: Int, policy: CatalogFetchPolicy): List<MusicTrack> =
+        api.recommendedTracks(cookie(), page)
     override suspend fun playlistDetail(playlist: MusicPlaylist): MusicPlaylist = api.playlistDetail(playlist, cookie())
 }
 
@@ -76,13 +85,24 @@ private class QqCatalogAdapter(
     override fun recommendedPlaylists(page: Int): List<MusicPlaylist> = session().let {
         personalized.recommendedPlaylists(it.credential, page)
     }
-    override fun recommendedTracks(page: Int): List<MusicTrack> = session().let {
+    override fun recommendedTracks(page: Int, policy: CatalogFetchPolicy): List<MusicTrack> = session().let {
         val accountId = it.account?.userId.orEmpty().ifBlank { "guest" }
-        val tracks = dailyMixStore.read(accountId) ?: personalized.dailyTracks(
-            credential = it.credential,
-            deviceId = it.deviceId,
-            hasVipAccess = it.account?.hasVipAccess == true,
-        ).also { tracks -> dailyMixStore.save(accountId, tracks) }
+        val tracks = when (policy) {
+            CatalogFetchPolicy.CACHE_FIRST -> {
+                dailyMixStore.read(accountId) ?: personalized.dailyTracks(
+                    credential = it.credential,
+                    deviceId = it.deviceId,
+                    hasVipAccess = it.account?.hasVipAccess == true,
+                ).also { fresh -> dailyMixStore.save(accountId, fresh) }
+            }
+            CatalogFetchPolicy.SERVER_VERIFY -> {
+                personalized.dailyTracks(
+                    credential = it.credential,
+                    deviceId = it.deviceId,
+                    hasVipAccess = it.account?.hasVipAccess == true,
+                ).also { fresh -> dailyMixStore.save(accountId, fresh) }
+            }
+        }
         artworkAliases.remember(QqTrackAccessResolver().resolve(tracks, it.credential, fresh = false))
     }
     override suspend fun playlistDetail(playlist: MusicPlaylist): MusicPlaylist = session().let {
@@ -109,7 +129,7 @@ private class NeteaseCatalogAdapter(
         api.search(query, it.credential, it.account?.hasVipAccess == true)
     }
     override fun recommendedPlaylists(page: Int): List<MusicPlaylist> = api.recommendedPlaylists(session().credential, page = page)
-    override fun recommendedTracks(page: Int): List<MusicTrack> = session().let {
+    override fun recommendedTracks(page: Int, policy: CatalogFetchPolicy): List<MusicTrack> = session().let {
         api.recommendedTracks(it.credential, page, hasVipAccess = it.account?.hasVipAccess == true)
     }
     override fun userPlaylists(): List<MusicPlaylist> = session().let {

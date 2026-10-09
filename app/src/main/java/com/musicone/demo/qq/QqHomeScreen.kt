@@ -61,10 +61,11 @@ internal fun QqHomeScreen(
     val listState = rememberLazyStaggeredGridState()
     ReportPrimaryHeaderScroll(MusicOnePage.HOME, listState)
     var today by remember { mutableStateOf(homeRefreshDay()) }
-    val dailyPlaylist = remember(today, catalog.recommendedTracks) {
+    val confirmedDay = catalog.recommendedTracksDate ?: today
+    val dailyPlaylist = remember(confirmedDay, catalog.recommendedTracks) {
         val colors = qqArtworkColors("每日推荐")
         MusicPlaylist(
-            id = "qq-daily-$today",
+            id = "qq-daily-$confirmedDay",
             source = MusicSource.QQ,
             title = "每日推荐",
             subtitle = "每天更新 · ${catalog.recommendedTracks.size.coerceAtMost(30)} 首",
@@ -117,9 +118,11 @@ internal fun QqHomeScreen(
             item(key = "personalized", span = StaggeredGridItemSpan.FullLine) {
                 QqPersonalizedCards(
                     dailyPlaylist = dailyPlaylist,
+                    dailyDate = catalog.recommendedTracksDate ?: today,
                     dailyLoading = catalog.loadingRecommendedTracks,
                     dailyMessage = catalog.recommendedTracksMessage,
                     radioActive = state.qqRadioActive,
+                    radioPlaying = state.qqRadioActive && state.isPlaying,
                     radioLoading = state.qqRadioLoading,
                     onDailyClick = {
                         if (dailyPlaylist.tracks.isNotEmpty()) actions.onOpenLoadedPlaylist(dailyPlaylist)
@@ -136,7 +139,7 @@ internal fun QqHomeScreen(
                     edgeInset = if (maxWidth < 600.dp) gutter else 0.dp,
                     currentTrackId = state.currentTrack?.id,
                     playing = state.isPlaying,
-                    onTrackClick = viewModel::playTrack,
+                    onTrackClick = viewModel::playQqRecommendationTrack,
                     onRefresh = {
                         today = homeRefreshDay()
                         homeRefresh.refresh(true)
@@ -215,7 +218,7 @@ internal fun QqHomeScreen(
                 }
             }
             */
-            qqMusicFeedItems(feed, state.currentTrack?.id, state.isPlaying, viewModel::playQqFeedTrack,
+            qqMusicFeedItems(feed, state.currentTrack?.id, state.isPlaying, viewModel::playQqRecommendationTrack,
                 actions, feedViewModel::retry, feedExitProgress,
                 footerBottomInset = bottomInset, artworkSizes = artworkSizes,
                 edgeInset = if (maxWidth < 600.dp) gutter else 0.dp)

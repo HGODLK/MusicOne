@@ -12,7 +12,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlin.coroutines.coroutineContext
 import kotlin.math.abs
 
-internal enum class LyricPlaybackStepChange { NONE, ANIMATE, RESET }
+internal enum class LyricPlaybackStepChange { NONE, ANIMATE, MULTI_STEP, RESET }
 
 internal enum class LyricPlaybackMotionPurpose { PLAYBACK, SEEK, ALIGNMENT }
 
@@ -51,6 +51,7 @@ internal class LyricPlaybackStepMotion(
     private var scrollPosition by mutableFloatStateOf(0f)
     private val scroll = LyricMotionValue(0f)
     private val rows = mutableMapOf<Int, LyricPlaybackRowMotion>()
+    private val rowOwners = mutableMapOf<LyricPlaybackRowMotion, Int>()
     private val wakeups = Channel<Unit>(Channel.CONFLATED)
     private var frameTimeNanos: Long? = null
     private var request: ScrollRequest? = null
@@ -61,7 +62,20 @@ internal class LyricPlaybackStepMotion(
         }
     }
 
+    fun retain(index: Int, row: LyricPlaybackRowMotion) {
+        // 只在组件提交后登记持有者；若旧组件已先退出，接回界面记住的原对象。
+        rowOwners[row] = (rowOwners[row] ?: 0) + 1
+        rows[index] = row
+    }
+
     fun release(index: Int, row: LyricPlaybackRowMotion) {
+        val owners = rowOwners[row] ?: 0
+        if (owners > 1) {
+            rowOwners[row] = owners - 1
+            return
+        }
+        rowOwners.remove(row)
+        // 来源与目标可能短暂共用同一行；最后一个组件退出后才停止驱动。
         if (rows[index] === row) rows.remove(index)
     }
 
@@ -77,7 +91,7 @@ internal class LyricPlaybackStepMotion(
             !enabled -> LyricPlaybackStepChange.RESET
             previous == targetIndex -> LyricPlaybackStepChange.NONE
             targetIndex == previous + 1 -> LyricPlaybackStepChange.ANIMATE
-            else -> LyricPlaybackStepChange.RESET
+            else -> LyricPlaybackStepChange.MULTI_STEP
         }
     }
 

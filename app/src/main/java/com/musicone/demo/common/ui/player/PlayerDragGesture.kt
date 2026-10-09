@@ -20,13 +20,19 @@ internal class PlayerTouchRegions {
 
 internal val LocalPlayerTouchRegions = staticCompositionLocalOf<PlayerTouchRegions?> { null }
 
-internal fun Modifier.playerLyricsRegion(active: Boolean): Modifier = composed {
+internal fun Modifier.playerLyricsRegion(active: Boolean, visualTopExtension: Int = 0): Modifier = composed {
     val regions = LocalPlayerTouchRegions.current
     DisposableEffect(regions, active) {
         if (!active) regions?.lyricsBounds = Rect.Zero
         onDispose { regions?.lyricsBounds = Rect.Zero }
     }
-    onGloballyPositioned { if (active) regions?.lyricsBounds = it.boundsInRoot() }
+    onGloballyPositioned {
+        if (active) {
+            val bounds = it.boundsInRoot()
+            regions?.lyricsBounds = Rect(bounds.left,
+                (bounds.top + visualTopExtension).coerceAtMost(bounds.bottom), bounds.right, bounds.bottom)
+        }
+    }
 }
 
 internal fun canStartPlayerDismiss(point: Offset, height: Float, lyrics: Rect): Boolean =

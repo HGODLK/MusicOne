@@ -42,7 +42,7 @@ internal fun PhoneExpandedPlayer(
     LaunchedEffect(lyrics, canHideControls) {
         if (!lyrics || !canHideControls) controls.show()
     }
-    Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize().playerControlsHintTouches(controls)) {
         PhonePlayerStage(
             state = state,
             track = track,
@@ -59,7 +59,7 @@ internal fun PhoneExpandedPlayer(
             contentHorizontalPadding = spec.horizontalPadding,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 44.dp),
+                .padding(top = PHONE_PLAYER_TOP_PADDING),
         )
         Box(
             Modifier
@@ -92,3 +92,4 @@ internal fun PhoneExpandedPlayer(
 }
 
 private val PHONE_CONTROLS_ESTIMATED_HEIGHT = 208.dp
+internal val PHONE_PLAYER_TOP_PADDING = 44.dp

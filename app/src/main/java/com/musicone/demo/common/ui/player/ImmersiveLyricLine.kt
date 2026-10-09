@@ -27,6 +27,7 @@ internal fun ImmersiveLyricLine(
     playbackMotion: LyricPlaybackStepMotion,
     playbackStepActive: Boolean = false,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val layoutSize = LocalPlayerLayoutSpec.current.lyricBaseSize
     val ink = LocalContentColor.current
@@ -37,14 +38,15 @@ internal fun ImmersiveLyricLine(
     val translationLineHeight = if (largeText) 20f else MusicOneTextStyles.lyricTranslation.lineHeight.value
     val row = remember(playbackMotion, index) { playbackMotion.row(index) }
     DisposableEffect(playbackMotion, index) {
+        playbackMotion.retain(index, row)
         onDispose { playbackMotion.release(index, row) }
     }
     SideEffect { playbackMotion.emphasize(index, current, animateEmphasis, playbackStepActive) }
     val density = LocalDensity.current
-    // 按四分之一 dp 复用模糊效果，保留渐变，避免每帧创建效果对象。
+    // 按四分之一 dp 复用歌词行模糊；顶部和底部的玻璃遮罩仍由独立图层负责。
     val effects = remember(density.density) { lyricBlurEffects(density.density) }
-    // 点击区域保持整行，模糊图层只覆盖歌词；按最大字号测量，动画不改变换行和行高。
-    Box(Modifier.fillMaxWidth().clickable(enabled = active, onClick = onClick).padding(vertical = 5.dp)) {
+    // 点击区域保持整行；字号和焦点动画不改变换行与行高。
+    Box(modifier.fillMaxWidth().clickable(enabled = active, onClick = onClick).padding(vertical = 5.dp)) {
         Column(Modifier.graphicsLayer {
                 val settle = if (index == current) settleProgress().coerceIn(0f, 1f) else 1f
                 val upcomingScale = upcomingSize / activeSize

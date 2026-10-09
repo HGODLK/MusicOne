@@ -25,10 +25,10 @@ internal fun buttonNavigationBottomExtension(navigationBottom: Int, tappableBott
     if (tappableBottom > 0) navigationBottom.coerceAtLeast(0) else 0
 
 /** 扩展歌词及模糊采样的子视口，但向父布局报告原高度，不挤动封面和控件。 */
-internal fun Modifier.playerLyricsDrawExtension(bottom: Int): Modifier =
-    if (bottom <= 0) this else layout { measurable, constraints ->
-        val placeable = measurable.measure(constraints.offset(vertical = bottom))
-        layout(placeable.width, (placeable.height - bottom).coerceAtLeast(0)) {
-            placeable.place(0, 0)
+internal fun Modifier.playerLyricsDrawExtension(bottom: Int = 0, top: Int = 0): Modifier =
+    if (bottom <= 0 && top <= 0) this else layout { measurable, constraints ->
+        val placeable = measurable.measure(constraints.offset(vertical = top + bottom))
+        layout(placeable.width, (placeable.height - top - bottom).coerceAtLeast(0)) {
+            placeable.place(0, -top)
         }
     }

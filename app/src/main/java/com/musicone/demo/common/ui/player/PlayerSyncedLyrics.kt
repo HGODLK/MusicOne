@@ -25,8 +25,8 @@ private class LyricWindow(presentation: LyricPresentation, val slot: Float = 0f)
     val ready = CompletableDeferred<Unit>()
     var cleanup: Job? = null
 
-    fun canReturnTo(target: LyricPresentation, playbackTrackId: String?, restarting: Boolean): Boolean =
-        playback.canReturnTo(playbackTrackId, restarting) &&
+    fun canReturnTo(target: LyricPresentation, progress: PlaybackProgressSnapshot, restarting: Boolean): Boolean =
+        playback.canReturnTo(progress, restarting) &&
             presentation.source == target.source &&
             presentation.id == target.id
 }
@@ -43,9 +43,13 @@ internal fun PlayerSyncedLyrics(
     openingAlignment: CompletableDeferred<Unit>? = null,
     prepareWhileHidden: Boolean = false,
     revealTopLineBeforeEntrance: Boolean = false,
+    limitTransitionHistory: Boolean = false,
+    topExtensionPx: Int = 0,
+    topBufferPx: Int = 0,
     exitProgress: () -> Float = { 1f },
     currentAnchorFraction: Float? = null,
     trackTransitionDirection: TrackTransitionDirection = TrackTransitionDirection.NEXT,
+    onWindowLayout: ((androidx.compose.foundation.lazy.LazyListLayoutInfo, LyricBlurProtection) -> Unit)? = null,
 ) {
     val request by rememberLyricPresentationRequest(
         track, loadState, trackTransitionDirection, viewModel.rapidTrackSwitch, viewModel.state,
@@ -56,7 +60,7 @@ internal fun PlayerSyncedLyrics(
     var current by remember {
         mutableStateOf(request.presentation?.let {
             LyricWindow(it).also { window ->
-                window.playback.update(playbackProgress.value, preview.value,
+                window.playback.update(viewModel.playbackProgress.value, viewModel.seekPreview.position.value,
                     browsing = viewModel.rapidTrackSwitch.presentation.value != null)
             }
         })
@@ -79,7 +83,10 @@ internal fun PlayerSyncedLyrics(
         val window = current?.takeIf { it.presentation.id == request.trackId }
             ?: return@LyricAnimationEffect
         snapshotFlow { playbackProgress.value to preview.value }.collect { (snapshot, previewMs) ->
-            window.playback.update(snapshot, previewMs, browsing = rapid != null)
+            window.playback.updateObserved(snapshot, previewMs, browsing = rapid != null,
+                latest = viewModel.playbackProgress.value,
+                latestPreviewMs = viewModel.seekPreview.position.value,
+                latestBrowsing = viewModel.rapidTrackSwitch.presentation.value != null)
         }
     }
     LyricAnimationEffect(animateChange) {
@@ -90,15 +97,26 @@ internal fun PlayerSyncedLyrics(
         preparing = false
         if (!animateChange) motion.show(current?.slot ?: 0f)
         // 新目标就绪后即可交接；旧窗口在后台完整滑出，等待期间只保留最新请求。
-        snapshotFlow { Triple(requested, direction, rapid?.phase == RapidTrackSwitchPhase.BROWSING) }
-            .conflate().collect { (target, travelDirection, browsing) ->
+        snapshotFlow {
+            Triple(requested, direction to (rapid?.phase == RapidTrackSwitchPhase.BROWSING),
+                playbackProgress.value.generation)
+        }.conflate().collect {
+            // 通知只负责唤醒：旧请求与新轮次不能拼成一次虚假的切歌。
+            val pending = viewModel.rapidTrackSwitch.presentation.value
+            val latest = currentLyricPresentationRequest(viewModel.state.value, pending) ?: return@collect
+            val target = latest.presentation
+            val travelDirection = latest.direction
+            val browsing = pending?.phase == RapidTrackSwitchPhase.BROWSING
+            val progress = viewModel.playbackProgress.value
+            val generation = progress.generation
             if (target == null) {
                 // 无本地歌词的目标不造空白页，让已有窗口停止连续追踪后正常收束。
                 if (animateChange) current?.let { motion.request(this, it.slot) }
                 return@collect
             }
             if (target.source == current?.presentation?.source && target.id == current?.presentation?.id &&
-                (rapid == null || current?.playback?.positionMs == 0L)) {
+                (pending == null || current?.playback?.positionMs == 0L) &&
+                (current?.playback?.generation == generation || current?.playback?.generation == -1L)) {
                 // 同一首中间歌曲的本地歌词稍后命中时，只替换内容，不重播整窗切歌动画。
                 current?.presentation = target
                 if (animateChange) current?.let { motion.request(this, it.slot, browsing) }
@@ -108,7 +126,7 @@ internal fun PlayerSyncedLyrics(
             // 快速切回时接回仍在退场的原窗口，保留其列表锚点、高亮与真实运动位置。
             val returning = outgoing.lastOrNull {
                 previous != null && canReturnLyricWindow(it.slot, previous.slot, motion.offset.value, travelDirection) &&
-                    it.canReturnTo(target, playbackProgress.value.trackId, restarting = rapid != null)
+                    it.canReturnTo(target, progress, restarting = pending != null)
             }
             returning?.cleanup?.cancelAndJoin()
             if (returning != null) outgoing.remove(returning)
@@ -116,7 +134,7 @@ internal fun PlayerSyncedLyrics(
                 ?: LyricWindow(target, if (animateChange) {
                     nextLyricWindowSlot(previous?.slot ?: -motion.offset.value, motion.offset.value, travelDirection, browsing)
                 } else 0f)
-            incoming.playback.update(playbackProgress.value, preview.value, browsing = rapid != null)
+            incoming.playback.update(progress, viewModel.seekPreview.position.value, browsing = pending != null)
             outgoing.filter { it.slot == incoming.slot }.forEach {
                 it.cleanup?.cancelAndJoin()
                 outgoing.remove(it)
@@ -148,7 +166,7 @@ internal fun PlayerSyncedLyrics(
             }
         }
     }
-    Box(modifier.playerLyricsRegion(active).onGloballyPositioned {
+    Box(modifier.playerLyricsRegion(active, topExtensionPx).onGloballyPositioned {
         travelPx = lyricWindowTravelPx(it.positionInWindow().y, it.size.height.toFloat(), view.rootView.height.toFloat())
         motion.updateTravel(travelPx)
     }) {
@@ -198,10 +216,17 @@ internal fun PlayerSyncedLyrics(
                     prepareWhileHidden = !old && (preparing || (prepareWhileHidden && matchesPlayback)),
                     // 切歌窗口仍按原锚点就绪；完整顶行仅用于单栏歌词开关入场。
                     revealTopLineBeforeEntrance = revealTopLineBeforeEntrance && !old && !preparing,
+                    limitTransitionHistory = limitTransitionHistory && !old && !preparing,
+                    topExtensionPx = topExtensionPx,
+                    topBufferPx = topBufferPx,
                     exitProgress = exitProgress,
                     currentAnchorFraction = currentAnchorFraction,
                     seeking = windowSeeking,
-                    progressLyricSeek = if (!old && matchesPlayback) progressLyricSeek.value else null,
+                    progressLyricSeek = if (!old && matchesPlayback) window.playback.progressSeek(progressLyricSeek.value) else null,
+                    onWindowLayout = if (!old && matchesPlayback && onWindowLayout != null) {
+                        { layout, protection -> onWindowLayout(layout,
+                            if (preparing || !settled || outgoing.isNotEmpty()) LyricBlurProtection.HANDOFF else protection) }
+                    } else null,
                 )
             }
         }

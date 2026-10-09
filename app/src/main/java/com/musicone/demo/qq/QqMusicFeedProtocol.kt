@@ -36,7 +36,10 @@ internal sealed interface QqMusicFeedCard {
         val pages: List<List<Song>>,
         override val section: QqMusicFeedSection = QqMusicFeedSection.SONG_RECOMMENDATION,
     ) : QqMusicFeedCard {
-        override val key = "song-shelf:${shelfId.ifBlank { title }}:${pages.flatten().joinToString(",") { it.track.id }}"
+        // 同一货架换歌仍保留身份；同 ID 下的不同主题标题是独立推荐，不能合并成一栏。
+        override val key = if (section == QqMusicFeedSection.SONG_RECOMMENDATION) {
+            "song-shelf:$shelfId:${title.trim().replace(Regex("\\s+"), " ")}"
+        } else "song-shelf:${shelfId.ifBlank { title }}:${pages.flatten().joinToString(",") { it.track.id }}"
     }
 
     data class SongGroup(

@@ -25,11 +25,11 @@ internal fun qqMusicFeedDisplayCards(cards: List<QqMusicFeedCard>): List<QqMusic
     cards.filter { it.section == QqMusicFeedSection.SONG_RECOMMENDATION } +
         cards.filter { it.section == QqMusicFeedSection.MUSIC_FLOW }
 
-/** 后台合并后恢复原有全局分区，歌曲货架始终在音乐流前，分区内顺序和对象保持不变。 */
+/** 后台合并后恢复原有全局分区，三条官方推荐分别合并，横向页和音乐流顺序保持不变。 */
 internal fun appendQqMusicFeedDisplayCards(
     old: List<QqMusicFeedCard>, new: List<QqMusicFeedCard>, replace: Boolean,
 ): List<QqMusicFeedCard> {
-    val merged = if (replace) new else mergeQqMusicFeed(old, new)
+    val merged = if (replace) normalizeQqMusicFlowCards(new) else mergeQqMusicFeed(old, new)
     return qqMusicFeedDisplayCards(merged)
 }
 
@@ -42,7 +42,7 @@ internal fun normalizeQqMusicFlowCards(cards: List<QqMusicFeedCard>): List<QqMus
     val seenCardKeys = HashSet<String>()
     val seenPlaylistIds = HashSet<String>()
     val seenPlaylistVisuals = HashSet<String>()
-    return cards.filter { card ->
+    return combineQqMusicFeedSongShelves(cards).filter { card ->
         if (!seenCardKeys.add(card.key)) return@filter false
         if (card !is QqMusicFeedCard.Playlist) return@filter true
 

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.graphicsLayer
 
@@ -93,8 +94,8 @@ private fun TabletLyricsEntrance(
         if (!motion.mounted) entrance.snapTo(0f)
         else if (visible && motion.phase == MotionPhase.SHOWN) entrance.animateTo(1f, musicMotion(360))
     }
-    // 歌词列表常驻，仅移动外层；预热时在遮罩后真实绘制，进入时保留原上滑效果。
-    if (visible) Box(Modifier.fillMaxSize().graphicsLayer {
+    // 歌词列表常驻，仅移动外层；预热时在遮罩后真实绘制，进入时保留原上滑效果；外层隔离避免文字绘制到左栏。
+    if (visible) Box(Modifier.fillMaxSize().clipToBounds().graphicsLayer {
         translationY = if (prewarming) 0f else size.height * (1f - entrance.value)
     }) {
         PlayerSyncedLyrics(

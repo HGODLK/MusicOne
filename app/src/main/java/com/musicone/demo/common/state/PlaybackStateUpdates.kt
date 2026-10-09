@@ -35,7 +35,7 @@ internal fun MusicOneUiState.withRadioEvent(event: QqRadioEvent): MusicOneUiStat
         else copy(qqRadioActive = false, qqRadioLoading = false)
     is QqRadioEvent.Loading -> copy(qqRadioLoading = true, playbackMessage = null)
     is QqRadioEvent.Started -> copy(qqRadioActive = true, qqRadioLoading = false,
-        playerExpanded = true, shuffle = false, repeatMode = RepeatMode.ALL)
+        shuffle = false, repeatMode = RepeatMode.ALL)
     is QqRadioEvent.Appended -> copy(queue = event.queue, qqRadioLoading = false)
     is QqRadioEvent.Failed -> copy(qqRadioActive = if (event.initial) false else qqRadioActive,
         qqRadioLoading = false, playbackMessage = event.message)

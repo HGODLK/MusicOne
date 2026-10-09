@@ -14,20 +14,32 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun ReadyArtworkCrossfade(frame: PlayerArtworkFrame, durationMillis: Int, modifier: Modifier = Modifier,
     modulateAlpha: Boolean = false,
+    adoptPreparedFrame: Boolean = false,
     displayKey: Any? = null,
     onDisplayed: ((PlayerArtworkFrame) -> Unit)? = null,
+    onBlendSnapshot: ((List<ArtworkBlendSnapshot>) -> Unit)? = null,
     content: @Composable (PlayerArtworkFrame) -> Unit) {
     val latest by rememberUpdatedState(frame)
     val latestDuration by rememberUpdatedState(durationMillis)
+    val latestAdoptPreparedFrame by rememberUpdatedState(adoptPreparedFrame)
     val latestDisplayKey by rememberUpdatedState(displayKey)
     val latestOnDisplayed by rememberUpdatedState(onDisplayed)
+    val latestOnBlendSnapshot by rememberUpdatedState(onBlendSnapshot)
     var layers by remember { mutableStateOf(listOf(ArtworkBlend(frame, mutableFloatStateOf(1f)))) }
     var settling by remember { mutableStateOf(false) }
     val callbackScope = rememberCoroutineScope()
     val lastReported = remember { arrayOfNulls<ArtworkDisplayReport>(1) }
     LaunchedEffect(Unit) {
         // 新目标立刻接管，从当前可见比例续接，不等待旧歌动画播完。
-        snapshotFlow { latest }.collectLatest { next ->
+        snapshotFlow { Pair(latest, latestAdoptPreparedFrame) }.collectLatest { (next, adopt) ->
+            if (adopt) {
+                // 展开播放页交接：直接接管目标封面，立即清除隐藏播放页遗留的上一首图层
+                Snapshot.withMutableSnapshot {
+                    layers = listOf(ArtworkBlend(next, mutableFloatStateOf(1f)))
+                    settling = false
+                }
+                return@collectLatest
+            }
             if (layers.size != 1 || layers.single().frame != next) {
                 val starts = layers.filter { it.opacity.floatValue > .001f }
                     .associate { it.frame to it.opacity.floatValue }.toMutableMap()
@@ -59,6 +71,10 @@ internal fun ReadyArtworkCrossfade(frame: PlayerArtworkFrame, durationMillis: In
             lastReported[0] = report
             // 绘制阶段结束后再通知状态机，确保撤层时底层目标封面已经真实可见。
             callbackScope.launch { latestOnDisplayed?.invoke(drawn) }
+        }
+        if (settling) {
+            val snapshots = layers.map { ArtworkBlendSnapshot(it.frame, it.opacity.floatValue) }
+            latestOnBlendSnapshot?.invoke(snapshots)
         }
     }) {
         // 按累计权重换算覆盖透明度，底图始终不透明，混合途中不透出白底。

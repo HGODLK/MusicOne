@@ -1,29 +1,26 @@
 package com.musicone.demo
 
-import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.rememberGraphicsLayer
-import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.animation.core.Animatable
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.takeWhile
 import kotlin.math.abs
 
 data class TimedLyric(val timeMs: Long, val text: String, val translation: String? = null)
@@ -67,327 +64,411 @@ internal fun ImmersiveLyrics(
     openingAlignment: CompletableDeferred<Unit>? = null,
     prepareWhileHidden: Boolean = false,
     revealTopLineBeforeEntrance: Boolean = false,
+    limitTransitionHistory: Boolean = false,
+    topExtensionPx: Int = 0,
+    topBufferPx: Int = 0,
     exitProgress: () -> Float = { 1f },
     currentAnchorFraction: Float? = null,
     seeking: () -> Boolean = { false },
     progressLyricSeek: ProgressLyricSeek? = null,
     onReady: (() -> Unit)? = null,
+    onWindowLayout: ((androidx.compose.foundation.lazy.LazyListLayoutInfo, LyricBlurProtection) -> Unit)? = null,
 ) {
     val lines = remember(track.id, track.lyrics) {
         track.lyrics.ifEmpty { listOf(TimedLyric(0L, "暂无歌词")) }
     }
-    // 播放进度持续更新时，仅在跨过歌词时间点后才触发列表重组。
     val current by remember(lines, progressMs) {
         derivedStateOf { activeLyric(lines, lyricDisplayPosition(progressMs())) }
     }
     val isSeeking by remember(seeking) { derivedStateOf { seeking() } }
-    val list = rememberLazyListState(initialFirstVisibleItemIndex = current)
-    val seekOffset = remember { Animatable(0f) }
-    val lyricSettle = remember { Animatable(1f) }
     val lyricClock = LocalLyricAnimationClock.current
     val scope = rememberCoroutineScope { lyricClock ?: kotlin.coroutines.EmptyCoroutineContext }
-    val playbackStep = remember(track.id) { LyricPlaybackStepMotion(current) }
-    LyricAnimationEffect(playbackStep) { playbackStep.run() }
-    var clickSeekJob by remember { mutableStateOf<Job?>(null) }
-    var clickNavigation by remember { mutableStateOf(LyricClickNavigation.NONE) }
-    var clickTarget by remember { mutableStateOf<Int?>(null) }
-    var clickRevision by remember { mutableIntStateOf(0) }
-    var frozenSeekSlot by remember { mutableStateOf<Int?>(null) }
-    LyricAnimationEffect(clickNavigation, clickRevision) {
-        if (clickNavigation != LyricClickNavigation.NONE) {
-            // 极短时间戳或重复时间戳没有改变当前索引时，也必须解除点击事务。
-            delay(1_500)
-            clickNavigation = LyricClickNavigation.NONE
-            clickTarget = null
-            frozenSeekSlot = null
-            lyricSettle.snapTo(1f)
-        }
+    val lyricSettle = remember { Animatable(1f) }
+
+    val controller = remember(track.id) {
+        LyricLayerTransitionController(track.id, current)
     }
-    val seekLayers = listOf(rememberGraphicsLayer(), rememberGraphicsLayer())
-    var seekSlot by remember { mutableIntStateOf(0) }
-    var seekTravel by remember { mutableFloatStateOf(0f) }
-    var seekCrossfade by remember { mutableStateOf(false) }
+    LaunchedEffect(current, isSeeking) {
+        // 首个预览目标也由定位事务发布，不能先把旧列表的高亮改成目标句。
+        controller.updatePlaybackLine(current, present = !isSeeking)
+    }
+
+    val activePane = controller.currentPane
+    val shortSeek = remember(activePane) { LyricShortSeek() }
+    DisposableEffect(shortSeek) { onDispose { shortSeek.cancel() } }
+    val transitionHistory = remember(activePane) { LyricTransitionHistory() }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    LyricSeekPreviewEffect(controller, current, isSeeking, active && followPlayback)
+    LyricAnimationEffect(activePane.playbackStep) {
+        activePane.playbackStep.run()
+    }
+
     var handledProgressLyricSeek by remember(track.id) {
         mutableLongStateOf(progressLyricSeek?.revision ?: 0L)
     }
-    val dragging by list.interactionSource.collectIsDraggedAsState()
+    val dragging by activePane.listState.interactionSource.collectIsDraggedAsState()
     var follow by remember(track.id) { mutableStateOf(true) }
-    LyricAnimationEffect(dragging) {
-        if (dragging) follow = false
-        else if (!follow) {
-            // 松手后的惯性仍属于手动浏览，从真正停稳后开始原有的回跟等待。
-            snapshotFlow { list.isScrollInProgress }.first { !it }
-            delay(3500)
+
+    LyricAnimationEffect(dragging, isSeeking) {
+        if (isSeeking) {
             follow = true
+        } else if (dragging) {
+            follow = false
+        } else if (!follow) {
+            snapshotFlow { activePane.listState.isScrollInProgress }.first { !it }
+            delay(3500)
+            val targetIndex = activeLyric(lines, lyricDisplayPosition(progressMs()))
+            val listState = activePane.listState
+            val trulyVisible = isLyricTargetTrulyVisible(listState, targetIndex)
+            val closeDistance = shouldAnimateLyricScroll(listState.firstVisibleItemIndex, targetIndex)
+            if (trulyVisible || closeDistance) {
+                listState.animateScrollToItem(targetIndex)
+                follow = true
+            } else {
+                val direction = if (targetIndex > listState.firstVisibleItemIndex) 1f else -1f
+                val height = listState.layoutInfo.viewportSize.height.toFloat()
+                controller.beginTransition(
+                    targetLine = targetIndex,
+                    travelDirection = direction,
+                    viewportHeight = height,
+                    scope = scope,
+                    onTargetReady = { follow = true },
+                )
+            }
         }
     }
+
     val latestExitProgress by rememberUpdatedState(exitProgress)
+    val historyPhase by remember {
+        derivedStateOf {
+            val progress = 1f - latestExitProgress()
+            when { progress <= 0f -> 0f; progress >= 1f -> 1f; else -> .5f }
+        }
+    }
+    // 在绘制前发布完整段选择，不能等录制来源图层时才改变行的显示状态。
+    transitionHistory.update({ activePane.listState.layoutInfo }, current, density, historyPhase,
+        limitTransitionHistory && follow && !isSeeking && !shortSeek.active &&
+            !controller.previewActive && controller.state == LyricLayerTransitionState.NORMAL)
     val topLineAlignment = rememberLyricTopLineAlignment(
-        list, revealTopLineBeforeEntrance, active, prepareWhileHidden,
+        activePane.listState, revealTopLineBeforeEntrance, active, prepareWhileHidden,
         openingAlignment, exitAlignment, current, { 1f - latestExitProgress() },
     )
     val playbackFollowing = followPlayback && (!revealTopLineBeforeEntrance || !topLineAlignment.pending)
+
     LyricAnimationEffect(exitAlignment) {
         exitAlignment?.let { request ->
-            // 只采集当前裁切量，滚动与残余窗口位移随后由父级收起曲线共同驱动。
-            val initialSeekOffset = seekOffset.value
-            list.alignForLyricsExit(request, { latestExitProgress() }) { fraction ->
-                seekOffset.snapTo(initialSeekOffset * (1f - fraction))
+            activePane.listState.alignForLyricsExit(request, { latestExitProgress() }) { _ -> }
+        }
+    }
+
+    LyricAnimationEffect(openingAlignment, prepareWhileHidden, if (prepareWhileHidden) current else null) {
+        if (openingAlignment != null || prepareWhileHidden) {
+            controller.cancel()
+            progressLyricSeek?.sourceIsolated?.complete(Unit)
+            progressLyricSeek?.targetReady?.complete(Unit)
+            lyricSettle.snapTo(1f)
+            activePane.playbackStep.reset(current)
+            follow = true
+            activePane.listState.scrollToItem(current)
+            if (revealTopLineBeforeEntrance) {
+                topLineAlignment.prepare()
+                activePane.listState.revealTopLineForEntrance()
+                if (limitTransitionHistory) {
+                    activePane.listState.prepareTransitionHistory(transitionHistory, current, density)
+                }
+            }
+            openingAlignment?.complete(Unit)
+        }
+    }
+
+    val pendingProgressSeek = progressLyricSeek?.takeIf {
+        it.trackId == track.id && it.revision != handledProgressLyricSeek
+    }
+
+    LyricAnimationEffect(track.id, pendingProgressSeek?.revision, active, playbackFollowing, isSeeking, controller.previewActive) {
+        pendingProgressSeek?.let { request ->
+            // 松手交接尚未结束的新单击稍后再处理，不能把它误当作拖动取消掉。
+            if (!isSeeking && controller.previewActive) return@LyricAnimationEffect
+            handledProgressLyricSeek = request.revision
+            if (!active || !playbackFollowing || isSeeking) {
+                request.sourceIsolated.complete(Unit)
+                request.targetReady.complete(Unit)
+                return@LyricAnimationEffect
+            }
+            val targetIndex = activeLyric(lines, lyricDisplayPosition((track.durationMs * request.fraction).toLong()))
+            val listState = activePane.listState
+            val trulyVisible = isLyricTargetTrulyVisible(listState, targetIndex)
+            val closeDistance = shouldAnimateLyricScroll(listState.firstVisibleItemIndex, targetIndex)
+            follow = true
+            if (trulyVisible || closeDistance) {
+                // 先占有滚动权，再发布音频 seek，避免正常跟随抢占同一次点击。
+                shortSeek.start(scope, activePane, targetIndex) { request.targetReady.complete(Unit) }
+                request.sourceIsolated.complete(Unit)
+            } else {
+                val direction = if (targetIndex > listState.firstVisibleItemIndex) 1f else -1f
+                val height = listState.layoutInfo.viewportSize.height.toFloat()
+                controller.beginTransition(
+                    targetLine = targetIndex,
+                    travelDirection = direction,
+                    viewportHeight = height,
+                    scope = scope,
+                    onSourceIsolated = { request.sourceIsolated.complete(Unit) },
+                    onTargetReady = { request.targetReady.complete(Unit) },
+                )
             }
         }
     }
+
+    // 正常播放期间的单句步进与跨多句跟随
+    LyricAnimationEffect(current, follow, playbackFollowing, active, isSeeking, controller.state, controller.previewActive, shortSeek.active) {
+        if (active && playbackFollowing && follow && !isSeeking && !shortSeek.active && !controller.previewActive && controller.state == LyricLayerTransitionState.NORMAL) {
+            val listState = activePane.listState
+            val stepChange = activePane.playbackStep.consume(
+                current,
+                enabled = !dragging,
+            )
+            when (stepChange) {
+                LyricPlaybackStepChange.NONE -> {
+                    // 若交接结束后存在未同步的最新句，主动补位定位，避免遗漏
+                    val targetItem = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == current }
+                    if (targetItem == null || !isLyricTargetTrulyVisible(listState, current)) {
+                        val closeDistance = shouldAnimateLyricScroll(listState.firstVisibleItemIndex, current)
+                        if (closeDistance) {
+                            listState.animateScrollToItem(current)
+                        } else {
+                            val direction = if (current > listState.firstVisibleItemIndex) 1f else -1f
+                            val height = listState.layoutInfo.viewportSize.height.toFloat()
+                            controller.beginTransition(
+                                targetLine = current,
+                                travelDirection = direction,
+                                viewportHeight = height,
+                                scope = scope,
+                            )
+                        }
+                    }
+                }
+                LyricPlaybackStepChange.ANIMATE -> {
+                    val targetItem = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == current }
+                    if (targetItem != null && isLyricTargetTrulyVisible(listState, current)) {
+                        val travel = lyricVisibleSeekTravel(targetItem.offset)
+                        listState.animateScrollBy(
+                            travel,
+                            lyricPlaybackMotionSpec(travel, LyricPlaybackMotionPurpose.ALIGNMENT),
+                        )
+                    } else {
+                        listState.animateScrollToItem(current)
+                    }
+                }
+                LyricPlaybackStepChange.MULTI_STEP -> {
+                    // 一次跨过多句：近距离滚动，远距离复用双列表图层交接
+                    val trulyVisible = isLyricTargetTrulyVisible(listState, current)
+                    val closeDistance = shouldAnimateLyricScroll(listState.firstVisibleItemIndex, current)
+                    if (trulyVisible || closeDistance) {
+                        listState.animateScrollToItem(current)
+                    } else {
+                        val direction = if (current > listState.firstVisibleItemIndex) 1f else -1f
+                        val height = listState.layoutInfo.viewportSize.height.toFloat()
+                        controller.beginTransition(
+                            targetLine = current,
+                            travelDirection = direction,
+                            viewportHeight = height,
+                            scope = scope,
+                        )
+                    }
+                }
+                LyricPlaybackStepChange.RESET -> {
+                    activePane.playbackStep.reset(current)
+                }
+            }
+        }
+    }
+
     BoxWithConstraints(modifier.widthIn(max = 760.dp)) {
         val largeText = maxWidth >= 400.dp
-        val anchor = currentAnchorFraction
+        val baseAnchor = currentAnchorFraction
             ?.let { (maxHeight * it).coerceIn(96.dp, 180.dp) }
-            ?: 52.dp
-        val bottomPadding = (maxHeight - anchor).coerceAtLeast(72.dp)
-        val anchorPx = with(androidx.compose.ui.platform.LocalDensity.current) { anchor.roundToPx() }
-        LyricAnimationEffect(openingAlignment, prepareWhileHidden, if (prepareWhileHidden) current else null) {
-            if (openingAlignment != null || prepareWhileHidden) {
-                // 列表仍在屏幕外，先清除收起偏移并定位，再随展开进度抵达最终锚点。
-                clickSeekJob?.cancel()
-                clickNavigation = LyricClickNavigation.NONE
-                clickTarget = null
-                frozenSeekSlot = null
-                seekOffset.snapTo(0f)
-                seekTravel = 0f
-                seekCrossfade = false
-                lyricSettle.snapTo(1f)
-                playbackStep.reset(current)
-                follow = true
-                list.scrollToItem(current)
-                if (revealTopLineBeforeEntrance) {
-                    topLineAlignment.prepare()
-                    list.revealTopLineForEntrance()
-                    topLineAlignment.capture(list, current)
-                }
-                openingAlignment?.complete(Unit)
-            }
+            ?: PLAYER_LYRICS_READING_ANCHOR
+        val anchor = baseAnchor + with(androidx.compose.ui.platform.LocalDensity.current) {
+            (topExtensionPx + topBufferPx).toDp()
         }
-        val pendingProgressSeek = progressLyricSeek?.takeIf {
-            it.trackId == track.id && it.revision != handledProgressLyricSeek
+        val preparingHistory by remember(limitTransitionHistory) {
+            derivedStateOf { limitTransitionHistory && latestExitProgress() > 0f }
         }
-        val pendingProgressTarget = pendingProgressSeek?.let {
-            activeLyric(lines, lyricDisplayPosition((track.durationMs * it.fraction).toLong()))
-        }
-        // 点击期间固定本次目标，播放回传和跨行更新不能中断正在进行的定位。
-        val scrollTarget = clickTarget ?: pendingProgressTarget ?: current
-        // 点击定位期间忽略短暂的预览状态切换，避免同一段位移动画被取消后重新播放。
-        val seekingForAnimation = isSeeking && clickNavigation == LyricClickNavigation.NONE
-        LyricAnimationEffect(track.id, scrollTarget, follow, playbackFollowing, anchorPx,
-            seekingForAnimation, clickRevision, active, progressLyricSeek?.revision) {
-            pendingProgressSeek?.let { request ->
-                handledProgressLyricSeek = request.revision
-                if (!active || !playbackFollowing) {
-                    request.animationPrepared.complete(Unit)
-                    return@LyricAnimationEffect
-                }
-                clickSeekJob?.cancel()
-                val sourceIndex = activeLyric(lines, lyricDisplayPosition(request.fromPositionMs))
-                val targetIndex = pendingProgressTarget ?: return@LyricAnimationEffect
-                val visibleItems = list.layoutInfo.visibleItemsInfo
-                val targetItem = visibleItems.firstOrNull { it.index == targetIndex }
-                val navigation = lyricClickNavigation(targetItem != null)
-                follow = true
-                val alreadySettled = targetIndex == sourceIndex &&
-                    clickNavigation == LyricClickNavigation.NONE && abs(seekOffset.value) <= .5f
-                if (alreadySettled) {
-                    clickSeekJob = scope.launch {
-                        lyricSettle.snapTo(0f)
-                        lyricSettle.animateTo(
-                            1f,
-                            lyricPlaybackMotionSpec(0f, LyricPlaybackMotionPurpose.SEEK),
-                        )
-                    }
-                } else {
-                    frozenSeekSlot = seekSlot.takeIf { navigation != LyricClickNavigation.SCROLL }
-                    clickTarget = targetIndex
-                    clickNavigation = navigation
-                    clickRevision++
-                }
-                request.animationPrepared.complete(Unit)
-                return@LyricAnimationEffect
-            }
-            val clickMode = clickNavigation
-            val stepChange = playbackStep.consume(scrollTarget,
-                enabled = active && playbackFollowing && follow && !seekingForAnimation && !dragging &&
-                    clickMode == LyricClickNavigation.NONE)
-            if (stepChange != LyricPlaybackStepChange.ANIMATE) playbackStep.reset()
-            // 顶部留白由 contentPadding 提供，滚动偏移不能再叠加一次。
-            if ((follow || seekingForAnimation) && playbackFollowing) {
-                if (clickMode == LyricClickNavigation.SCROLL) {
-                    val targetItem = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == scrollTarget }
-                    val travel = targetItem?.let { lyricVisibleSeekTravel(it.offset) } ?: 0f
-                    coroutineScope {
-                        // 中途改点上方时，残余图层位移与列表一起收敛，不能留在半程。
-                        launch {
-                            seekOffset.animateTo(
-                                0f,
-                                lyricPlaybackMotionSpec(travel, LyricPlaybackMotionPurpose.SEEK),
-                            )
-                        }
-                        if (targetItem != null) {
-                            list.animateScrollBy(
-                                travel,
-                                lyricPlaybackMotionSpec(travel, LyricPlaybackMotionPurpose.SEEK),
-                            )
-                        } else {
-                            list.animateScrollToItem(scrollTarget)
-                        }
-                    }
-                    clickNavigation = LyricClickNavigation.NONE
-                    clickTarget = null
-                    frozenSeekSlot = null
-                    return@LyricAnimationEffect
-                }
-                when (if (clickMode == LyricClickNavigation.LAYERED) {
-                    LyricScrollMode.CHANGE_WINDOW
-                } else {
-                    lyricScrollMode(seekingForAnimation, list.firstVisibleItemIndex, scrollTarget,
-                        targetVisible = list.layoutInfo.visibleItemsInfo.any { it.index == scrollTarget })
-                }) {
-                    LyricScrollMode.SNAP -> {
-                        // 进度条连续预览由手指直接驱动，不能把每次更新重播成整页入场。
-                        seekOffset.snapTo(0f)
-                        list.scrollToItem(scrollTarget)
-                    }
-                    LyricScrollMode.ANIMATE -> {
-                        val targetItem = list.layoutInfo.visibleItemsInfo
-                            .firstOrNull { it.index == scrollTarget }
-                        if (stepChange == LyricPlaybackStepChange.ANIMATE && targetItem != null) {
-                            val indices = list.layoutInfo.visibleItemsInfo.map { it.index }
-                            list.scroll {
-                                playbackStep.move(scrollTarget, indices,
-                                    lyricVisibleSeekTravel(targetItem.offset)) { scrollBy(it) }
-                            }
-                        } else {
-                            if (stepChange == LyricPlaybackStepChange.ANIMATE) playbackStep.reset()
-                            if (targetItem != null) {
-                                val travel = lyricVisibleSeekTravel(targetItem.offset)
-                                list.animateScrollBy(
-                                    travel,
-                                    lyricPlaybackMotionSpec(
-                                        travel,
-                                        LyricPlaybackMotionPurpose.ALIGNMENT,
-                                    ),
-                                )
-                            } else {
-                                list.animateScrollToItem(scrollTarget)
-                            }
-                        }
-                    }
-                    LyricScrollMode.CHANGE_WINDOW -> {
-                        // 目标窗口先在不可见位置完成定位，再随同一段位移动画进入最终锚点。
-                        val direction = if (scrollTarget > list.firstVisibleItemIndex) 1f else -1f
-                        seekTravel = direction * list.layoutInfo.viewportSize.height
-                        seekCrossfade = false
-                        seekSlot = 1 - seekSlot
-                        seekOffset.snapTo(seekTravel)
-                        list.scrollToItem(scrollTarget)
-                    }
-                }
-                val settleTravel = when (clickMode) {
-                    LyricClickNavigation.LAYERED -> seekTravel
-                    else -> seekOffset.value
-                }
-                seekOffset.animateTo(
-                    0f,
-                    lyricPlaybackMotionSpec(
-                        settleTravel,
-                        if (clickMode == LyricClickNavigation.NONE) {
-                            LyricPlaybackMotionPurpose.ALIGNMENT
-                        } else {
-                            LyricPlaybackMotionPurpose.SEEK
-                        },
-                    ),
-                )
-                if (clickMode != LyricClickNavigation.NONE) {
-                    clickNavigation = LyricClickNavigation.NONE
-                    clickTarget = null
-                    frozenSeekSlot = null
-                }
-            }
-        }
+        // 屏外准备完整段落需要尾部行程；到展开端点时已回到原锚点和原留白。
+        val bottomPadding = (maxHeight - anchor).coerceAtLeast(72.dp) +
+            if (preparingHistory) anchor else 0.dp
+
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
-                // 位移由独立图层处理，seek 的每个动画帧不再重新录制整窗歌词。
-                Box(Modifier.matchParentSize().graphicsLayer {
-                    translationY = seekOffset.value - seekTravel
-                    alpha = lyricSeekLayerAlpha(
-                        seekOffset.value,
-                        seekTravel,
-                        outgoing = true,
-                        crossfade = seekCrossfade,
-                    )
-                }.drawWithContent { drawLayer(seekLayers[1 - seekSlot]) })
-                LazyColumn(state = list, modifier = Modifier.fillMaxSize()
-                    .graphicsLayer {
-                        translationY = seekOffset.value
-                        alpha = lyricSeekLayerAlpha(
-                            seekOffset.value,
-                            seekTravel,
-                            outgoing = false,
-                            crossfade = seekCrossfade,
-                        )
-                    }
-                    .drawWithContent {
-                        val currentLayer = seekLayers[seekSlot]
-                        // 点击提交和列表换位发生在同一帧时，保留已经录好的来源层，禁止目标高亮覆盖它。
-                        if (frozenSeekSlot != seekSlot) {
-                            currentLayer.record { this@drawWithContent.drawContent() }
-                        }
-                        if (lyricWindowAligned(list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == current }?.offset,
-                                list.isScrollInProgress, seekOffset.value)) onReady?.invoke()
-                        drawLayer(currentLayer)
-                    }, userScrollEnabled = active && playbackFollowing,
-                    contentPadding = PaddingValues(top = anchor, bottom = bottomPadding),
-                    verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                    itemsIndexed(lines, key = { index, line -> "$index-${line.timeMs}" },
-                        contentType = { _, line -> line.translation != null }) { index, line ->
-                        ImmersiveLyricLine(
-                            line,
-                            index,
-                            current,
-                            largeText,
-                            active,
-                            // 点击定位期间由整窗图层承载动效，行内属性不再单独争抢渲染预算。
-                            animateEmphasis = clickNavigation == LyricClickNavigation.NONE ||
-                                clickNavigation == LyricClickNavigation.SCROLL,
-                            settleProgress = { lyricSettle.value },
-                            playbackMotion = playbackStep,
-                            playbackStepActive = active && follow && playbackFollowing && !isSeeking &&
-                                clickNavigation == LyricClickNavigation.NONE,
-                        ) {
-                            clickSeekJob?.cancel()
-                            val sameLine = index == current &&
-                                clickNavigation == LyricClickNavigation.NONE && abs(seekOffset.value) <= .5f
-                            val visibleItems = list.layoutInfo.visibleItemsInfo
-                            val fraction = lyricSeekFraction(line.timeMs, track.durationMs)
-                            val targetIndex = activeLyric(lines,
-                                lyricDisplayPosition((track.durationMs * fraction).toLong()))
-                            val targetItem = visibleItems.firstOrNull { it.index == targetIndex }
-                            val navigation = lyricClickNavigation(targetItem != null)
-                            if (!sameLine) frozenSeekSlot =
-                                seekSlot.takeIf { navigation != LyricClickNavigation.SCROLL }
-                            clickSeekJob = scope.launch {
-                                if (sameLine) lyricSettle.snapTo(0f) else {
-                                    clickTarget = targetIndex
-                                    clickNavigation = navigation
-                                    clickRevision++
+                val outgoing = controller.outgoingPane
+                if (outgoing != null) {
+                    key(outgoing.id) {
+                        val outgoingLayer = rememberGraphicsLayer()
+                        Box(
+                            Modifier.fillMaxSize()
+                                .graphicsLayer {
+                                    if (controller.state == LyricLayerTransitionState.PREPARING) {
+                                        // 准备交接：来源窗口位移固定为 0，透明度固定为 1，不套用滑动公式，避免空帧
+                                        translationY = 0f
+                                        alpha = 1f
+                                    } else {
+                                        translationY = controller.seekOffset.value - controller.seekTravel
+                                        alpha = lyricSeekLayerAlpha(
+                                            controller.seekOffset.value,
+                                            controller.seekTravel,
+                                            outgoing = true,
+                                            crossfade = true,
+                                        )
+                                    }
                                 }
-                                // 旧图层已经持续缓存，立即提交目标，避免额外保留一帧旧歌词。
-                                onSeek(fraction)
-                                if (sameLine) lyricSettle.animateTo(
-                                    1f,
-                                    lyricPlaybackMotionSpec(0f, LyricPlaybackMotionPurpose.SEEK),
-                                )
-                            }
-                            follow = true
+                                .drawWithContent {
+                                    outgoingLayer.record { this@drawWithContent.drawContent() }
+                                    drawLayer(outgoingLayer)
+                                },
+                        ) {
+                            LyricListView(
+                                pane = outgoing,
+                                lines = lines,
+                                anchor = anchor,
+                                bottomPadding = bottomPadding,
+                                largeText = largeText,
+                                active = false,
+                                isSeeking = false,
+                                lyricSettleProgress = { 1f },
+                                onLineClick = { _, _ -> },
+                            )
                         }
                     }
                 }
+
+                val currentDisplayPane = controller.currentPane
+                key(currentDisplayPane.id) {
+                    val activeLayer = rememberGraphicsLayer()
+                    Box(
+                        Modifier.fillMaxSize()
+                            .graphicsLayer {
+                                if (controller.state == LyricLayerTransitionState.PREPARING) {
+                                    // 准备交接：目标层保持不可见，在屏外静默完成布局和录制
+                                    translationY = 0f
+                                    alpha = 0f
+                                } else {
+                                    translationY = controller.seekOffset.value
+                                    alpha = lyricSeekLayerAlpha(
+                                        controller.seekOffset.value,
+                                        controller.seekTravel,
+                                        outgoing = false,
+                                        crossfade = true,
+                                    )
+                                }
+                            }
+                            .drawWithContent {
+                                activeLayer.record { this@drawWithContent.drawContent() }
+                                onWindowLayout?.let { record ->
+                                    val info = currentDisplayPane.listState.layoutInfo
+                                    record(info, lyricBlurProtection(info, currentDisplayPane.currentLine,
+                                        currentDisplayPane.playbackStep.offsetPx(currentDisplayPane.currentLine),
+                                        controller.state == LyricLayerTransitionState.NORMAL && !controller.previewActive))
+                                }
+                                if (!currentDisplayPane.drawnFirstFrame &&
+                                    currentDisplayPane.id == controller.currentPane.id &&
+                                    currentDisplayPane.listState.layoutInfo.visibleItemsInfo.any { it.index == currentDisplayPane.initialLine }
+                                ) {
+                                    currentDisplayPane.drawnFirstFrame = true
+                                    currentDisplayPane.ready.complete(Unit)
+                                }
+                                if (onReady != null && lyricWindowAligned(
+                                        currentDisplayPane.listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == current }?.offset,
+                                        currentDisplayPane.listState.isScrollInProgress,
+                                        controller.seekOffset.value,
+                                    )
+                                ) onReady()
+                                drawLayer(activeLayer)
+                            },
+                    ) {
+                        LyricListView(
+                            pane = currentDisplayPane,
+                            lines = lines,
+                            anchor = anchor,
+                            bottomPadding = bottomPadding,
+                            largeText = largeText,
+                            active = active && playbackFollowing,
+                            isSeeking = isSeeking,
+                            shortSeeking = shortSeek.active,
+                            transitionHistory = if (limitTransitionHistory) transitionHistory else null,
+                            lyricSettleProgress = { lyricSettle.value },
+                            onLineClick = { index, line ->
+                                val fraction = lyricSeekFraction(line.timeMs, track.durationMs)
+                                val listState = currentDisplayPane.listState
+                                val trulyVisible = isLyricTargetTrulyVisible(listState, index)
+                                val closeDistance = shouldAnimateLyricScroll(listState.firstVisibleItemIndex, index)
+                                follow = true
+                                if (trulyVisible || closeDistance) {
+                                    shortSeek.start(scope, currentDisplayPane, index)
+                                    onSeek(fraction)
+                                } else {
+                                    val direction = if (index > listState.firstVisibleItemIndex) 1f else -1f
+                                    val height = listState.layoutInfo.viewportSize.height.toFloat()
+                                    controller.beginTransition(
+                                        targetLine = index,
+                                        travelDirection = direction,
+                                        viewportHeight = height,
+                                        scope = scope,
+                                    )
+                                    onSeek(fraction)
+                                }
+                            },
+                        )
+                    }
+                }
+                LyricSeekPreviewTarget(controller, lines, anchor, bottomPadding, largeText)
             }
+        }
+    }
+}
+
+@Composable
+internal fun LyricListView(
+    pane: LyricWindowPane,
+    lines: List<TimedLyric>,
+    anchor: Dp,
+    bottomPadding: Dp,
+    largeText: Boolean,
+    active: Boolean,
+    isSeeking: Boolean,
+    lyricSettleProgress: () -> Float,
+    onLineClick: (Int, TimedLyric) -> Unit,
+    modifier: Modifier = Modifier,
+    shortSeeking: Boolean = false,
+    transitionHistory: LyricTransitionHistory? = null,
+) {
+    LazyColumn(
+        state = pane.listState,
+        modifier = modifier.fillMaxSize(),
+        userScrollEnabled = active && !pane.isFrozen,
+        contentPadding = PaddingValues(top = anchor, bottom = bottomPadding),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        itemsIndexed(
+            lines,
+            key = { index, line -> "$index-${line.timeMs}" },
+            contentType = { _, line -> line.translation != null },
+        ) { index, line ->
+            ImmersiveLyricLine(
+                line = line,
+                index = index,
+                current = pane.currentLine,
+                largeText = largeText,
+                active = active && !pane.isFrozen,
+                animateEmphasis = !pane.isFrozen,
+                settleProgress = lyricSettleProgress,
+                playbackMotion = pane.playbackStep,
+                playbackStepActive = active && !pane.isFrozen && !isSeeking && !shortSeeking,
+                onClick = { onLineClick(index, line) },
+                modifier = if (transitionHistory == null) Modifier else Modifier.drawWithContent {
+                    // 仅跳过过量的完整历史段，原文、翻译和图层位移都不裁剪。
+                    if (transitionHistory.draws(index)) drawContent()
+                },
+            )
         }
     }
 }
@@ -410,8 +491,12 @@ internal fun lyricSeekLayerAlpha(
 
 internal enum class LyricScrollMode { SNAP, ANIMATE, CHANGE_WINDOW }
 
-internal fun lyricScrollMode(seeking: Boolean, visibleIndex: Int, targetIndex: Int,
-    targetVisible: Boolean = false): LyricScrollMode = when {
+internal fun lyricScrollMode(
+    seeking: Boolean,
+    visibleIndex: Int,
+    targetIndex: Int,
+    targetVisible: Boolean = false,
+): LyricScrollMode = when {
     seeking -> LyricScrollMode.SNAP
     targetVisible || shouldAnimateLyricScroll(visibleIndex, targetIndex) -> LyricScrollMode.ANIMATE
     else -> LyricScrollMode.CHANGE_WINDOW
@@ -431,7 +516,6 @@ private suspend fun LazyListState.alignForLyricsExit(
         var applied = 0f
         ready.complete(Unit)
         if (start >= 1f) return@scroll
-        // 前段自然露出被裁切行，后段继续整体退场，不先瞬移对齐再另起动画。
         snapshotFlow { lyricExitRevealFraction(progress(), start) }.takeWhile { fraction ->
             val target = delta * fraction
             applied += scrollBy(target - applied)

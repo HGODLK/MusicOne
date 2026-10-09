@@ -21,12 +21,14 @@ import kotlinx.coroutines.launch
 /** 歌词和页眉保存各自的实际位置与速度，反向操作只更换目标。 */
 @Stable
 internal class PhoneLyricsMotion(initiallyVisible: Boolean) {
+    val spatialTravel = PhoneLyricsSpatialTravel()
     val lyrics = Animatable(if (initiallyVisible) 1f else 0f, visibilityThreshold = .0005f)
     val header = Animatable(if (initiallyVisible) 1f else 0f, visibilityThreshold = .0005f)
     private var lyricsVelocity = 0f
     private var headerVelocity = 0f
     var contactProgress = .4f
     var dragTravelPx = 1f
+    var controlsSpacePx = 0f
     private var animationJob: Job? = null
     private var dragOrigin = LyricsDragPosition(0f, 0f)
     private var dragged by mutableStateOf<LyricsDragPosition?>(null)
@@ -38,8 +40,18 @@ internal class PhoneLyricsMotion(initiallyVisible: Boolean) {
         private set
     val lyricsProgress get() = dragged?.lyrics ?: lyrics.value
     val headerProgress get() = dragged?.header ?: header.value
+    val windowOffsetPx get() = phoneLyricsSpatialWindowOffset(dragTravelPx, lyricsProgress,
+        headerProgress, if (spatialTravel.compactHeightPx > 0f) {
+            spatialTravel.compactHeightPx + controlsSpacePx
+        } else 0f, spatialTravel.softnessPx)
+
+    private fun captureSpatialTravelAtRest() {
+        if ((lyricsProgress == 0f && headerProgress == 0f) ||
+            (lyricsProgress == 1f && headerProgress == 1f)) spatialTravel.capture()
+    }
 
     fun beginDrag() {
+        captureSpatialTravelAtRest()
         dragOrigin = LyricsDragPosition(lyricsProgress, headerProgress)
         animationJob?.cancel()
         lyricsVelocity = 0f
@@ -73,6 +85,7 @@ internal class PhoneLyricsMotion(initiallyVisible: Boolean) {
                 if (openingAlignment === ready) openingAlignment = null
             }
         }
+        captureSpatialTravelAtRest()
         dragged?.let {
             lyrics.snapTo(it.lyrics)
             header.snapTo(it.header)

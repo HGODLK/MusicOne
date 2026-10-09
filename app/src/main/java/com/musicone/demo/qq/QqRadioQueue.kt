@@ -54,9 +54,14 @@ internal class QqRadioQueueWindow(
 
     fun reset() = seenTrackIds.clear()
 
-    fun start(tracks: List<MusicTrack>): List<MusicTrack> {
+    fun start(tracks: List<MusicTrack>, initialTrack: MusicTrack? = null): List<MusicTrack> {
         reset()
-        val queue = tracks.distinctBy(MusicTrack::id).take(initialRequestSize)
+        val all = if (initialTrack != null) {
+            (listOf(initialTrack) + tracks).distinctBy(MusicTrack::id)
+        } else {
+            tracks.distinctBy(MusicTrack::id)
+        }
+        val queue = all.take(initialRequestSize)
         remember(queue)
         return queue
     }

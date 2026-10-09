@@ -18,6 +18,7 @@ internal data class MusicCatalogUiState(
     val sessionRevision: Long? = null,
     val recommendations: List<MusicPlaylist> = emptyList(),
     val recommendedTracks: List<MusicTrack> = emptyList(),
+    val recommendedTracksDate: String? = null,
     val libraryPlaylists: List<MusicPlaylist> = emptyList(),
     val loadingRecommendations: Boolean = false,
     val loadingRecommendedTracks: Boolean = false,
@@ -47,6 +48,7 @@ internal class MusicCatalogViewModel(application: Application) : AndroidViewMode
     private var recommendedTracksLoadedDay: String? = null
     private var recommendedTracksSnapshot: RecommendedTracksSnapshotStore? = null
     private var preparingRecommendedTracks = false
+    private var recommendedTracksRequestId = 0L
     private var recommendedTracksPage = 0
     private var recommendationsPage = 0
 
@@ -200,47 +202,82 @@ internal class MusicCatalogViewModel(application: Application) : AndroidViewMode
             recommendedTracksSnapshot = store
             recommendedTracksLoadedDay = cached?.refreshedDay
             recommendedTracksPage = cached?.nextPage ?: 0
-            _state.update { it.copy(recommendedTracks = cached?.tracks.orEmpty(),
-                loadingRecommendedTracks = false, recommendedTracksSettled = cached != null) }
+            _state.update {
+                it.copy(
+                    recommendedTracks = cached?.tracks.orEmpty(),
+                    recommendedTracksDate = cached?.refreshedDay,
+                    loadingRecommendedTracks = false,
+                    recommendedTracksSettled = cached != null,
+                )
+            }
             preparingRecommendedTracks = false
             recommendedTracksJob = null
-            refreshRecommendedTracks()
+            refreshRecommendedTracks(force = false)
         }
     }
 
     fun refreshRecommendedTracks(force: Boolean = false) {
-        val day = homeRefreshDay()
-        if (preparingRecommendedTracks || recommendedTracksJob?.isActive == true || !recommendedTracksRefreshDue(
-                force, _state.value.recommendedTracks.isNotEmpty(), recommendedTracksLoadedDay, day,
-            )) return
+        if (preparingRecommendedTracks || recommendedTracksJob?.isActive == true) return
         val requestedConfiguration = configurationKey
         val requestedSource = selectedSource
         val requestedPage = recommendedTracksPage
         val store = recommendedTracksSnapshot
+        val requestId = ++recommendedTracksRequestId
         recommendedTracksJob = viewModelScope.launch {
             _state.update { it.copy(loadingRecommendedTracks = true, recommendedTracksMessage = null) }
             try {
-                val tracks = catalog.recommendedTracks(requestedSource, requestedPage)
-                if (requestedConfiguration != configurationKey) return@launch
+                var currentDay = homeRefreshDay()
+                var tracks: List<MusicTrack>
+                while (true) {
+                    val attemptStartDay = currentDay
+                    val result = catalog.recommendedTracks(
+                        requestedSource,
+                        requestedPage,
+                        policy = CatalogFetchPolicy.SERVER_VERIFY,
+                    )
+                    val attemptEndDay = homeRefreshDay()
+                    if (attemptStartDay == attemptEndDay) {
+                        tracks = result
+                        currentDay = attemptEndDay
+                        break
+                    }
+                    currentDay = attemptEndDay
+                }
+                if (requestedConfiguration != configurationKey || requestId != recommendedTracksRequestId) return@launch
                 if (tracks.isEmpty()) throw PlatformApiException("暂时没有推荐歌曲，请稍后重试")
-                recommendedTracksLoadedDay = day
+                recommendedTracksLoadedDay = currentDay
                 recommendedTracksPage = requestedPage + 1
+                val existingTracks = _state.value.recommendedTracks
+                val sameTracks = existingTracks.isNotEmpty() &&
+                    existingTracks.size == tracks.size &&
+                    existingTracks.zip(tracks).all { (a, b) -> a.id == b.id }
                 _state.update {
                     it.copy(
-                        recommendedTracks = tracks,
+                        recommendedTracks = if (sameTracks) it.recommendedTracks else tracks,
+                        recommendedTracksDate = currentDay,
                         loadingRecommendedTracks = false,
                         recommendedTracksSettled = true,
+                        recommendedTracksMessage = null,
                     )
                 }
                 withContext(Dispatchers.IO) {
-                    store?.write(RecommendedTracksSnapshot(tracks, requestedPage + 1, day))
+                    store?.write(RecommendedTracksSnapshot(tracks, requestedPage + 1, currentDay))
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                if (requestedConfiguration != configurationKey) return@launch
-                _state.update { it.copy(loadingRecommendedTracks = false, recommendedTracksSettled = true,
-                    recommendedTracksMessage = error.asUserMessage()) }
+                if (requestedConfiguration != configurationKey || requestId != recommendedTracksRequestId) return@launch
+                _state.update {
+                    it.copy(
+                        loadingRecommendedTracks = false,
+                        recommendedTracksSettled = true,
+                        recommendedTracksMessage = error.asUserMessage(),
+                    )
+                }
+            } finally {
+                if (requestId == recommendedTracksRequestId) {
+                    recommendedTracksJob = null
+                }
             }
         }
     }

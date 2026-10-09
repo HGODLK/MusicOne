@@ -154,11 +154,12 @@ private fun PlayerProgressTimeline(viewModel: MusicOneViewModel, modifier: Modif
                     timeline.trackId,
                     position,
                     target,
+                    generation = viewModel.playbackProgress.value.generation,
                 )
                 tapSeekJob?.cancel()
                 tapSeekJob = scope.launch {
                     // 歌词页未挂载时不阻塞操作；已挂载时先锁住旧图层再更新权威进度。
-                    withTimeoutOrNull(48L) { lyricRequest.animationPrepared.await() }
+                    withTimeoutOrNull(120L) { lyricRequest.animationPrepared.await() }
                     viewModel.seekToForTrack(timeline.trackId, target)
                     seeking = null
                     userDragged = false

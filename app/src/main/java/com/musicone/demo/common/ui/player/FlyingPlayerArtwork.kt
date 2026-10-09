@@ -4,7 +4,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -25,9 +24,12 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 internal fun FlyingPlayerArtwork(motion: PageMotion, track: MusicTrack) {
-    val frame by rememberPlayerArtwork(track)
+    val frame = rememberPlayerOpeningArtwork(track, motion)
     // 换图按时间推进，手指停在转场中途时仍能完成渐变；几何继续跟随手势。
-    ReadyArtworkCrossfade(frame, 420, Modifier.fillMaxSize(), modulateAlpha = true) { artwork ->
+    ReadyArtworkCrossfade(frame, 420, Modifier.fillMaxSize(), modulateAlpha = true,
+        adoptPreparedFrame = motion.wantsOpen &&
+            (motion.phase == MotionPhase.PREPARING || motion.phase == MotionPhase.MOVING) &&
+            PlayerOpeningArtworkHandoff.frameFor(track) != null) { artwork ->
         FlyingPlayerArtworkFrame(motion, artwork)
     }
 }

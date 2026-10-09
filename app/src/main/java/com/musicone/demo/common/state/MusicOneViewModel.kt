@@ -248,22 +248,37 @@ class MusicOneViewModel(application: Application) : AndroidViewModel(application
         startTrack(track, queue)
     }
 
-    fun playQqFeedTrack(track: MusicTrack) {
+    fun playQqRecommendationTrack(track: MusicTrack) {
         val snapshot = _state.value
-        if (snapshot.qqRadioActive && snapshot.currentTrack?.id == track.id) {
-            playTrack(track)
+        val isSameTrack: (MusicTrack?) -> Boolean = { it != null && it.source == track.source && it.id == track.id }
+        if (snapshot.qqRadioActive) {
+            if (isSameTrack(snapshot.currentTrack)) {
+                togglePlay()
+                return
+            }
+            val existingIndex = snapshot.queue.indexOfFirst { it.source == track.source && it.id == track.id }
+            if (existingIndex >= 0) {
+                val existingTrack = snapshot.queue[existingIndex]
+                playbackHistory.remember(snapshot.currentTrack?.id, existingTrack.id)
+                startTrackFromQueue(existingTrack)
+                return
+            }
+            val queue = qqRadio.insert(
+                snapshot.queue,
+                snapshot.currentTrack?.takeIf { it.source == MusicSource.QQ },
+                track,
+            )
+            playbackHistory.remember(snapshot.currentTrack?.id, track.id)
+            startTrack(track, queue, preserveQqRadio = true)
+            prefetchQqRadioIfNeeded()
             return
         }
-        if (!snapshot.qqRadioActive) stopQqRadio()
-        val queue = qqRadio.insert(
-            if (snapshot.qqRadioActive) snapshot.queue else emptyList(),
-            snapshot.currentTrack?.takeIf { it.source == MusicSource.QQ }, track,
-        )
-        playbackHistory.remember(snapshot.currentTrack?.id, track.id)
-        _state.update { it.copy(qqRadioActive = true, shuffle = false, repeatMode = RepeatMode.ALL) }
-        startTrack(track, queue, preserveQqRadio = true)
-        prefetchQqRadioIfNeeded()
+        stopQqRadio()
+        playbackHistory.clear()
+        qqRadio.startWithSeed(track)
     }
+
+    fun playQqFeedTrack(track: MusicTrack) = playQqRecommendationTrack(track)
 
     fun playPlaylist(playlist: MusicPlaylist, shuffle: Boolean = false) {
         _state.update { it.withPlaylistQueue(playlist.tracks, shuffle) }
@@ -411,6 +426,7 @@ class MusicOneViewModel(application: Application) : AndroidViewModel(application
             if (!snapshot.isPlaying) togglePlay()
             return
         }
+        if (snapshot.qqRadioLoading) return
         qqRadio.start()
     }
 
@@ -629,7 +645,7 @@ class MusicOneViewModel(application: Application) : AndroidViewModel(application
     private fun updateProgress(positionMs: Long, trackId: String? = _state.value.currentTrack?.id) {
         val position = positionMs.coerceAtLeast(0L)
         _progressMs.value = position
-        _playbackProgress.value = PlaybackProgressSnapshot(trackId, position)
+        _playbackProgress.value = PlaybackProgressSnapshot(trackId, position, playbackRequestGeneration)
     }
 
     private fun reportRecentPlay(track: MusicTrack, generation: Long) = recentPlayReporter.report(track, generation)

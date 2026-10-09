@@ -17,7 +17,7 @@ import kotlin.math.sin
 
 /** 三根柔和音量条；暂停时回落，减弱动态时使用静态播放标识。 */
 @Composable
-internal fun QueuePlayingIndicator(playing: Boolean) {
+internal fun QueuePlayingIndicator(playing: Boolean, color: Color = Color.White) {
     val phase = remember { Animatable(0f) }
     val amplitude by animateFloatAsState(if (playing) 1f else 0f, musicMotion(240), label = "队列音量回落")
     val reduce = ExperiencePreferences.options.reduceMotion
@@ -31,7 +31,7 @@ internal fun QueuePlayingIndicator(playing: Boolean) {
         repeat(3) { index ->
             val wave = if (reduce) .55f else (sin(phase.value + index * 2f) + 1f) * .5f
             val height = size.height * (.18f + .72f * wave * amplitude)
-            drawRoundRect(Color.White, Offset(index * size.width / 3f, (size.height - height) / 2f),
+            drawRoundRect(color, Offset(index * size.width / 3f, (size.height - height) / 2f),
                 Size(size.width / 5f, height), CornerRadius(2.dp.toPx()))
         }
     }

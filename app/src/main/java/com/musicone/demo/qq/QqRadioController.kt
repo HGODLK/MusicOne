@@ -57,6 +57,15 @@ internal class QqRadioController(
         request(initial = true)
     }
 
+    fun startWithSeed(seed: MusicTrack) {
+        stop()
+        active = true
+        val queue = window.start(emptyList(), seed)
+        publish(QqRadioEvent.Mode(true))
+        publish(QqRadioEvent.Started(queue))
+        prefetch()
+    }
+
     fun prefetch() {
         if (!active || job?.isActive == true) return
         val current = snapshot()

@@ -32,13 +32,19 @@ internal class QqMusicFeedRepository(context: Context) {
             data.optInt("retcode", 0) != 0) {
             throw PlatformApiException("音乐流加载失败，请稍后重试")
         }
-        parseQqMusicFeed(data, session.account?.hasVipAccess == true).forFeedPage(page).resolveSeedSongs(
+        // 游标分页先接收官方原始卡位；选定显示批次后再补齐必要字段。
+        parseQqMusicFeed(data, session.account?.hasVipAccess == true).forFeedPage(page)
+    }
+
+    suspend fun prepare(cards: List<QqMusicFeedCard>): List<QqMusicFeedCard> = withContext(Dispatchers.IO) {
+        val session = preferences.readSession(MusicSource.QQ)
+        QqMusicFeedPage(cards, emptyList(), 0, emptyList(), 0).resolveSeedSongs(
             credential = session.credential,
             hasVipAccess = session.account?.hasVipAccess == true,
         ).resolveMissingMetadata(
             credential = session.credential,
             hasVipAccess = session.account?.hasVipAccess == true,
-        )
+        ).cards
     }
 
     private suspend fun QqMusicFeedPage.resolveSeedSongs(
@@ -53,9 +59,11 @@ internal class QqMusicFeedRepository(context: Context) {
             .map { query ->
                 async(Dispatchers.IO) {
                     query to limiter.withPermit {
-                        runCatching {
+                        try {
                             api.searchFeedSeedTrack(query, credential, hasVipAccess)
-                        }.getOrNull()
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) { null }
                     }
                 }
             }
@@ -80,30 +88,28 @@ internal class QqMusicFeedRepository(context: Context) {
         val limiter = Semaphore(QQ_FEED_SEED_LOOKUP_CONCURRENCY)
         val originals = cards.flatMap { card -> card.qqMusicFeedTracks() }
             .distinctBy(MusicTrack::id)
-            .let { QqTrackAccessResolver().resolve(it, credential) }
+            .map(artworkAliases::apply)
         val groupTrackIds = cards.filterIsInstance<QqMusicFeedCard.SongGroup>()
             .flatMap(QqMusicFeedCard.SongGroup::tracks)
             .mapTo(hashSetOf(), MusicTrack::id)
+        val missingMetadata = originals.filter { needsQqFeedMetadata(it, it.id in groupTrackIds) }
+            .mapTo(hashSetOf(), MusicTrack::id)
+        // 横滑推荐和单曲卡不显示权益角标，完整鉴权仍由点播链执行。
+        // 三歌曲卡沿用显示前的权益校验，缺失元数据直接复用同一批详情。
+        val lookupTracks = originals.filter { it.id in groupTrackIds || it.id in missingMetadata }
+        val details = QqTrackAccessResolver().resolve(lookupTracks, credential, metadataTrackIds = missingMetadata)
+            .associateBy(MusicTrack::id)
         val resolved = originals.map { original ->
-            val aliased = artworkAliases.apply(original)
+            val ready = details[original.id] ?: original
             async(Dispatchers.IO) {
-                // 信息流先发布官方已经返回的标题、歌手和封面；只有没有可用歌曲身份时才提前查详情。
-                // 数字 songId 的短卡由播放解析器在点击前补齐 MID、音质和时长，避免刷新为每首歌等待详情请求。
-                val canResolveOnPlay = aliased.qqPlaybackMid().isBlank() && aliased.canResolveQqFeedTrackOnPlay()
-                // 官方信息流请求主动关闭音质字段；音质必须在播放前通过详情和取票链路确认，
-                // 不应让首屏刷新为每一首已经有 MID 的歌曲再发一次详情请求。
-                val needsMetadata = original.id in groupTrackIds || (!canResolveOnPlay && (
-                    aliased.qqPlaybackMid().isBlank() ||
-                        aliased.album.isBlank() ||
-                        aliased.durationMs <= 0L ||
-                        aliased.artworkUrl.isNullOrBlank()
-                    ))
-                val complete = if (needsMetadata) limiter.withPermit {
-                    runCatching { api.enrichTrackMetadata(aliased, credential, hasVipAccess) }
-                        .getOrDefault(aliased)
-                } else {
-                    aliased
-                }
+                // 封面仍沿用已有搜索后备；不为列表展示查询或校验播放音质。
+                val complete = if (ready.artworkUrl.isNullOrBlank()) limiter.withPermit {
+                    try {
+                        api.resolveTrackArtwork(ready, credential, hasVipAccess)
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) { ready }
+                } else ready
                 original.id to complete.withCanonicalQqIdentity()
             }
         }.awaitAll().toMap()
@@ -119,12 +125,6 @@ internal class QqMusicFeedRepository(context: Context) {
     }
 
 }
-
-/** 信息流短卡通常只有数字 songId；播放入口会复用详情补全和正式取票链路。 */
-private fun MusicTrack.canResolveQqFeedTrackOnPlay(): Boolean =
-    source == MusicSource.QQ &&
-        title.isNotBlank() &&
-        catalogId.toLongOrNull()?.let { it > 0L } == true
 
 /**
  * 官方分页会同时返回歌曲推荐货架和音乐流货架；两者由页面分区显示，不能把前者静默丢掉。
@@ -171,7 +171,7 @@ private fun QqMusicFeedCard.resolveQqMusicFeedMetadata(
 
 private const val QQ_FEED_SEED_LOOKUP_CONCURRENCY = 4
 
-/** 只有补齐并确认来自不同专辑时才保留官方三歌曲卡，避免把专辑试听误显示成三连卡。 */
+/** 官方已给出专辑身份时直接验证，缺失时补齐后验证，避免把专辑试听误显示成三连卡。 */
 internal fun normalizeQqMusicFeedSongGroup(card: QqMusicFeedCard.SongGroup): List<QqMusicFeedCard> {
     val tracks = card.tracks.take(3)
     if (tracks.size == 3 && hasQqMusicFeedMixedAlbums(tracks)) return listOf(card.copy(tracks = tracks))

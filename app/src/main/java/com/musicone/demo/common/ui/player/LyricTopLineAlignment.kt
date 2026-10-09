@@ -23,26 +23,15 @@ internal suspend fun LazyListState.revealTopLineForEntrance() {
 /** 保存列表交接状态，防止父级到终点的同一帧又启动播放跟随补位。 */
 @Stable
 internal class LyricTopLineAlignment {
-    private var prepared: Pair<Int, LyricEntranceTravel>? = null
     var pending by mutableStateOf(false)
         private set
 
     fun prepare() { pending = true }
 
-    fun capture(list: LazyListState, current: Int) {
-        prepared = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == current }?.let {
-            current to LyricEntranceTravel(0f, it.offset.toFloat())
-        }
-    }
-
     suspend fun align(list: LazyListState, current: () -> Int, progress: () -> Float) {
         pending = true
-        val origin = prepared
-        prepared = null
         list.scroll(MutatePriority.PreventUserInput) {
-            var target = origin?.first ?: -1
-            var measured = origin != null
-            var travel = origin?.second
+            val session = LyricEntranceAlignmentSession()
             snapshotFlow { current() to progress().coerceIn(0f, 1f) }.takeWhile { (index, fraction) ->
                 val viewport = list.layoutInfo
                 val item = viewport.visibleItemsInfo.firstOrNull { it.index == index }
@@ -51,12 +40,7 @@ internal class LyricTopLineAlignment {
                     // 跨句先从真实位置接续；跨出视口时按邻近行推进，目标可见后改用实测行高。
                     val offset = item?.offset?.toFloat() ?: (nearest.offset +
                         (index - nearest.index) * (nearest.size + viewport.mainAxisItemSpacing)).toFloat()
-                    if (target != index || travel == null || (!measured && item != null)) {
-                        target = index
-                        measured = item != null
-                        travel = LyricEntranceTravel(fraction, offset)
-                    }
-                    travel!!.moveTo(fraction) { scrollBy(it) }
+                    session.moveTo(index, fraction, offset, measured = item != null) { scrollBy(it) }
                     if (fraction == 1f) {
                         // 同帧收掉列表整数像素余量，恢复跟随时已经处于最终锚点。
                         val finalItem = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
@@ -69,6 +53,23 @@ internal class LyricTopLineAlignment {
         // 展开尾帧若恰逢大跨度进度跳转，目标仍在屏外时直接准备该目标，不补播对齐弹簧。
         if (list.layoutInfo.visibleItemsInfo.none { it.index == current() }) list.scrollToItem(current())
         pending = false
+    }
+}
+
+/** 接管时读取当前画面，不补播等待滚动权期间已经走过的展开进度。 */
+internal class LyricEntranceAlignmentSession {
+    private var target = -1
+    private var measured = false
+    private var travel: LyricEntranceTravel? = null
+
+    fun moveTo(index: Int, progress: Float, offset: Float, measured: Boolean,
+        scrollBy: (Float) -> Float) {
+        if (target != index || travel == null || (!this.measured && measured)) {
+            target = index
+            this.measured = measured
+            travel = LyricEntranceTravel(progress, offset)
+        }
+        travel!!.moveTo(progress, scrollBy)
     }
 }
 

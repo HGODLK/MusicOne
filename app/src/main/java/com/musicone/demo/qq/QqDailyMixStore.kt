@@ -11,28 +11,35 @@ import java.util.Locale
 internal class QqDailyMixStore(context: Context) {
     private val preferences = context.getSharedPreferences("qq_daily_mix", Context.MODE_PRIVATE)
 
-    fun read(accountId: String): List<MusicTrack>? {
+    fun readEntry(accountId: String): Pair<List<MusicTrack>, String>? {
         if (preferences.getInt(KEY_VERSION, 0) != CACHE_VERSION ||
-            preferences.getString(KEY_DATE, null) != today() ||
             preferences.getString(KEY_ACCOUNT, null) != accountId
         ) return null
         val raw = preferences.getString(KEY_TRACKS, null) ?: return null
+        val savedDate = preferences.getString(KEY_DATE, null) ?: return null
         return runCatching {
             val values = JSONArray(raw)
-            buildList {
+            val tracks = buildList {
                 for (index in 0 until values.length()) {
                     values.optJSONObject(index)?.toQqStoredTrack()?.let(::add)
                 }
             }.takeIf(List<MusicTrack>::isNotEmpty)
+            tracks?.let { it to savedDate }
         }.getOrNull()
     }
 
-    fun save(accountId: String, tracks: List<MusicTrack>) {
+    fun read(accountId: String, todayOnly: Boolean = false): List<MusicTrack>? {
+        val entry = readEntry(accountId) ?: return null
+        if (todayOnly && entry.second != today()) return null
+        return entry.first
+    }
+
+    fun save(accountId: String, tracks: List<MusicTrack>, date: String = today()) {
         if (tracks.isEmpty()) return
         val values = JSONArray().apply { tracks.take(30).forEach { put(it.toQqStoredTrackJson()) } }
         preferences.edit {
             putInt(KEY_VERSION, CACHE_VERSION)
-            putString(KEY_DATE, today())
+            putString(KEY_DATE, date)
             putString(KEY_ACCOUNT, accountId)
             putString(KEY_TRACKS, values.toString())
         }

@@ -7,7 +7,8 @@ internal class QqTrackAccessResolver(
     private val membership: (String) -> QqMembership? = QqEntitlements::membership,
     private val details: (List<MusicTrack>, String) -> JSONObject = ::requestQqTrackAccess,
 ) {
-    fun resolve(tracks: List<MusicTrack>, credential: String, fresh: Boolean = true): List<MusicTrack> {
+    fun resolve(tracks: List<MusicTrack>, credential: String, fresh: Boolean = true,
+        metadataTrackIds: Set<String> = emptySet()): List<MusicTrack> {
         if (tracks.isEmpty()) return tracks
         val accountId = qqCredentialAccountId(credential)
         val member = membership(credential)
@@ -21,6 +22,7 @@ internal class QqTrackAccessResolver(
             track.copy(qqAccess = info).withQqAccess(accountId, member?.vip == true, member?.superVip == true)
         }
         val resolved = mutableMapOf<String, QqTrackAccessInfo>()
+        val metadata = mutableMapOf<String, MusicTrack>()
         val missing = prepared.filter { track ->
             if (track.source != MusicSource.QQ) return@filter false
             val cached = QqEntitlements.cached(credential, track.id)
@@ -28,8 +30,9 @@ internal class QqTrackAccessResolver(
                     track.qqAccess.kind != cached.kind) && !(fresh && track.qqAccess?.payStatus != null &&
                     track.qqAccess.permissionAccountId == accountId)) {
                 resolved[track.id] = cached
-                return@filter false
+                if (track.id !in metadataTrackIds) return@filter false
             }
+            if (track.id in metadataTrackIds) return@filter true
             val info = track.qqAccess ?: return@filter true
             !info.complete || (accountId.isNotBlank() && track.accessBadge != null &&
                 (info.payStatus == null || info.permissionAccountId != accountId ||
@@ -43,6 +46,12 @@ internal class QqTrackAccessResolver(
                     if (request.optInt("code", -1) != 0) return@forEachIndexed
                     val detail = request.optJSONObject("data")?.optJSONObject("track_info") ?: return@forEachIndexed
                     if (!qqAccessDetailMatches(track, detail)) return@forEachIndexed
+                    // 推荐展示复用同一次详情里的专辑和封面，避免权限查询后再次查询同一首歌。
+                    if (track.id in metadataTrackIds) {
+                        runCatching { detail.toQqTrack(member?.vip == true) }.getOrNull()?.let {
+                            metadata[track.id] = track.mergeQqTrackMetadata(it)
+                        }
+                    }
                     val info = detail.qqTrackAccessInfo(track.qqAccess?.trial ?: track.trialAvailable)
                         .copy(permissionAccountId = accountId, checkedAtMs = now)
                     if (!info.complete) return@forEachIndexed
@@ -54,9 +63,10 @@ internal class QqTrackAccessResolver(
             }
         }
         return prepared.map { track ->
-            val info = resolved[track.id] ?: track.qqAccess ?: return@map track
+            val ready = metadata[track.id] ?: track
+            val info = resolved[track.id] ?: ready.qqAccess ?: return@map ready
             if (info.complete && info.checkedAtMs > 0L) QqEntitlements.remember(credential, track.id, info)
-            track.copy(qqAccess = info).withQqAccess(accountId, member?.vip == true, member?.superVip == true)
+            ready.copy(qqAccess = info).withQqAccess(accountId, member?.vip == true, member?.superVip == true)
         }
     }
 }

@@ -14,7 +14,10 @@ internal class QqFeedSnapshotStore(private val cache: MusicDiskCache, private va
         refreshedDay = snapshot?.refreshedDay
         val raw = snapshot?.payload ?: cache.read("feed:v3:$namespace")?.let { String(it, Charsets.UTF_8) }
             ?: return emptyList()
-        JSONArray(raw).searchObjects().mapNotNull { value ->
+        val values = JSONArray(raw).searchObjects()
+        // 上一版合并丢失了不同货架的标题，旧快照无法本地拆回三条；保留旧画面并触发刷新恢复。
+        if (requiresQqFeedShelfLayoutRefresh(values)) refreshedDay = null
+        values.mapNotNull { value ->
             when (value.optString("kind")) {
                 "song" -> value.optJSONObject("track")?.toQqStoredTrack()?.let {
                     QqMusicFeedCard.Song(
@@ -36,7 +39,7 @@ internal class QqFeedSnapshotStore(private val cache: MusicDiskCache, private va
                         value.optString("shelfId"),
                         value.optString("title"),
                         pages,
-                        value.qqMusicFeedSection(),
+                        value.qqMusicFeedSection(QqMusicFeedSection.SONG_RECOMMENDATION),
                     )
                 }
                 else -> null
@@ -71,6 +74,7 @@ internal class QqFeedSnapshotStore(private val cache: MusicDiskCache, private va
                     .put("section", card.section.name))
                 is QqMusicFeedCard.SongShelf -> array.put(JSONObject().put("kind", "song-shelf")
                     .put("shelfId", card.shelfId).put("title", card.title)
+                    .put("shelfLayoutVersion", 2)
                     .put("pages", card.pages.toFeedPages()).put("section", card.section.name))
             }
         }
@@ -79,13 +83,19 @@ internal class QqFeedSnapshotStore(private val cache: MusicDiskCache, private va
     }
 }
 
+internal fun requiresQqFeedShelfLayoutRefresh(values: List<JSONObject>): Boolean = values.any {
+    it.optString("kind") == "song-shelf" && it.optInt("shelfLayoutVersion") < 2
+}
+
 /** 版本升级前的缓存可能仍有已下线的节目/VIP货架，读取时也必须清理。 */
 private fun String.isQqFeedHiddenSnapshotShelf(): Boolean = replace(Regex("\\s+"), "")
     .let { it == "今日专属精彩节目" || it.startsWith("VIP专属歌曲推荐") }
 
-private fun JSONObject.qqMusicFeedSection(): QqMusicFeedSection = runCatching {
+private fun JSONObject.qqMusicFeedSection(
+    fallback: QqMusicFeedSection = QqMusicFeedSection.MUSIC_FLOW,
+): QqMusicFeedSection = runCatching {
     QqMusicFeedSection.valueOf(optString("section"))
-}.getOrDefault(QqMusicFeedSection.MUSIC_FLOW)
+}.getOrDefault(fallback)
 
 private fun List<MusicTrack>.toFeedSongs(titles: List<String> = emptyList()): JSONArray = JSONArray().apply {
     forEachIndexed { index, track ->

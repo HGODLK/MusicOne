@@ -81,6 +81,7 @@ internal fun CrossfadingArtworkBitmapOrPlaceholder(
     shape: androidx.compose.ui.graphics.Shape,
     markAlignment: Alignment = Alignment.TopEnd,
     fadeInitialArtwork: Boolean = false,
+    onDisplayedArtworkChange: ((Bitmap?) -> Unit)? = null,
 ) {
     val candidate = if (awaitingArtwork) null else ArtworkCrossfadeFrame(bitmap, start, end, mark)
     val latest by rememberUpdatedState(candidate)
@@ -88,6 +89,9 @@ internal fun CrossfadingArtworkBitmapOrPlaceholder(
         ?: ArtworkCrossfadeFrame(null, start, end, mark)) }
     var incoming by remember { mutableStateOf<ArtworkCrossfadeFrame?>(null) }
     val opacity = remember { Animatable(0f) }
+    LaunchedEffect(displayed.bitmap) {
+        onDisplayedArtworkChange?.invoke(displayed.bitmap)
+    }
     LaunchedEffect(Unit) {
         // 新远程封面准备好前保留旧图；新图只覆盖淡入，避免中途露出占位或页面底色。
         snapshotFlow { latest }.filterNotNull().conflate().collect { next ->
@@ -97,9 +101,11 @@ internal fun CrossfadingArtworkBitmapOrPlaceholder(
                 opacity.animateTo(1f, musicMotion(360))
                 displayed = next
                 incoming = null
+                onDisplayedArtworkChange?.invoke(next.bitmap)
             } else if (next != displayed) {
                 // 强制刷新得到相同像素时只替换引用，不制造一次肉眼可见的闪烁。
                 displayed = next
+                onDisplayedArtworkChange?.invoke(next.bitmap)
             }
         }
     }

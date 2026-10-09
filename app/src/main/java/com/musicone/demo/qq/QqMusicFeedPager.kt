@@ -5,6 +5,7 @@ package com.musicone.demo
  * 服务端决定内容和游标，客户端只负责跨页去重、暂存卡位及本地卡池类型平衡。
  */
 internal class QqMusicFeedPager(
+    private val prepare: suspend (List<QqMusicFeedCard>) -> List<QqMusicFeedCard> = { it },
     private val fetch: suspend (Int, Int, List<String>, List<String>) -> QqMusicFeedPage,
 ) {
     private var page = 0
@@ -27,10 +28,15 @@ internal class QqMusicFeedPager(
 
         // 刷新代表官方清空旧列表后重新接收第一页；不能把旧页面的 key 当成刷新排重集，
         // 否则服务端正常返回相同推荐时会被客户端误删，最终只剩后续少量歌单。
-        val seen = if (replace) hashSetOf() else displayed.mapTo(hashSetOf(), QqMusicFeedCard::key)
-        var pool = pending.filter { it.key !in seen }.distinctBy(QqMusicFeedCard::key)
+        val previous = if (replace) emptyList() else displayed
+        var pool = normalizeQqMusicFlowCards(unseenQqMusicFeedCards(pending, previous))
+        val firstBatch = replace || displayed.isEmpty()
         var requests = 0
-        while (pool.size < size && requests < QQ_FEED_PAGE_PROBE_LIMIT && !endReached) {
+        val probeLimit = if (firstBatch) QQ_FEED_INITIAL_PROBE_LIMIT else QQ_FEED_PAGE_PROBE_LIMIT
+        while (requests < probeLimit && !endReached) {
+            val officialCount = pool.count { it is QqMusicFeedCard.SongShelf && it.section == QqMusicFeedSection.SONG_RECOMMENDATION }
+            if (pool.isNotEmpty() && (!firstBatch || officialCount == 0 ||
+                    officialCount >= minOf(size, QQ_OFFICIAL_RECOMMENDATION_LIMIT))) break
             val result = fetch(page + 1, shelfCount, shelfIds, uniqueKeys)
             requests++
             page++
@@ -40,7 +46,10 @@ internal class QqMusicFeedPager(
             shelfCount += result.shelfCount
             uniqueKeys = (uniqueKeys + result.uniqueKeys).distinct().takeLast(QQ_FEED_UNIQUE_KEY_LIMIT)
             endReached = result.shelfCount == 0
-            pool = mergeQqMusicFeed(pool, result.cards.filter { it.key !in seen })
+            val incoming = unseenQqMusicFeedCards(result.cards, previous + pool)
+            pool = mergeQqMusicFeed(pool, incoming)
+            // 原始响应先留在池中；准备失败重试时复用已取得的数据，不丢失成功页。
+            pending = pool
         }
 
         if (pool.isEmpty()) {
@@ -49,12 +58,17 @@ internal class QqMusicFeedPager(
             )
         }
         // 只在当前已取得的池内整理顺序，不为了寻找另一种卡型额外探测接口。
-        val arrangedPool = interleaveQqMusicFeedCards(pool)
-        val batch = takeQqMusicFeedBatch(arrangedPool, size)
-        pending = batch.remaining
-        return batch
+        val arrangedPool = qqMusicFeedDisplayCards(interleaveQqMusicFeedCards(pool))
+        val candidates = if (firstBatch) qqFeedInitialCandidates(arrangedPool) else arrangedPool
+        val selected = takeQqMusicFeedBatch(candidates, size).visible
+        val visible = prepare(selected)
+        val selectedKeys = selected.mapTo(hashSetOf(), QqMusicFeedCard::key)
+        pending = arrangedPool.filterNot { it.key in selectedKeys }
+        if (visible.isEmpty()) throw PlatformApiException("暂未获得可展示的推荐内容，轻触继续加载")
+        return QqMusicFeedBatch(visible, pending)
     }
 }
 
 private const val QQ_FEED_PAGE_PROBE_LIMIT = 8
+private const val QQ_FEED_INITIAL_PROBE_LIMIT = 3
 private const val QQ_FEED_UNIQUE_KEY_LIMIT = 100
