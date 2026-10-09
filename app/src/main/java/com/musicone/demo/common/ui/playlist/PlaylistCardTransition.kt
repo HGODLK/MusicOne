@@ -13,6 +13,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 internal class PlaylistCardTransition(private val scope: CoroutineScope) {
+    val artworkSync = PlaylistArtworkSynchronization()
+    var activeArtworkLayers by mutableStateOf<List<ArtworkBlendSnapshot>?>(null)
+        private set
+    fun artworkLocked(key: String) = activeSourceKey == key || artworkSync.held(key)
+    fun preparePlayback(key: String) = artworkSync.holdPlayback(key)
+    suspend fun releasePlaybackAfterReturn() = artworkSync.returned()
     var activeSourceKey by mutableStateOf<String?>(null)
         private set
     private val opacity = Animatable(1f)
@@ -21,10 +27,6 @@ internal class PlaylistCardTransition(private val scope: CoroutineScope) {
     var activeArtwork by mutableStateOf<Bitmap?>(null)
         private set
 
-    fun updateArtwork(sourceKey: String, artwork: Bitmap?) {
-        if (activeSourceKey == sourceKey && artwork != null) activeArtwork = artwork
-    }
-
     fun alphaFor(sourceKey: String) = if (activeSourceKey == sourceKey) opacity.value else 1f
 
     fun open(sourceKey: String, artwork: Bitmap?, reveal: suspend () -> Unit, navigate: () -> Unit) {
@@ -32,6 +34,7 @@ internal class PlaylistCardTransition(private val scope: CoroutineScope) {
         busy = true
         activeSourceKey = sourceKey
         activeArtwork = artwork
+        activeArtworkLayers = artworkSync.snapshot(sourceKey)
         scope.launch {
             try {
                 reveal()
@@ -52,6 +55,7 @@ internal class PlaylistCardTransition(private val scope: CoroutineScope) {
                 tween(300, easing = CubicBezierEasing(.4f, 0f, .2f, 1f)))
             activeSourceKey = null
             activeArtwork = null
+            activeArtworkLayers = null
         }
     }
 

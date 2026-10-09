@@ -37,7 +37,8 @@ internal class MusicFavoriteViewModel(application: Application) : AndroidViewMod
     private val _state = MutableStateFlow(MusicFavoriteUiState())
     val state: StateFlow<MusicFavoriteUiState> = _state.asStateFlow()
     private var configurationKey = ""
-    private var loadJob: Job? = null
+    private val refresh = MusicFavoriteRefresh(viewModelScope)
+    private var configuredSource = MusicSource.QQ
     private val deferredRemovals = linkedMapOf<String, MusicTrack>()
     private val deferredPreviousChanges = mutableMapOf<String, Pair<MusicTrack, Boolean>?>()
     private val deferredFlushMutex = Mutex()
@@ -49,22 +50,27 @@ internal class MusicFavoriteViewModel(application: Application) : AndroidViewMod
         if (configurationKey == key) return
         flushDeferredRemovals()
         configurationKey = key
-        loadJob?.cancel()
+        configuredSource = source
+        refresh.cancel()
         qqReconcileJob?.cancel()
         qqReconcileJob = null
         qqReconcileTracks.clear()
         _state.value = MusicFavoriteUiState()
-        loadJob = viewModelScope.launch {
-            val ids = runCatching { repository.likedTrackIds(source) }.getOrDefault(emptySet())
-            if (configurationKey == key) _state.update { state ->
-                val updated = ids.toMutableSet()
-                state.changes.forEach { (id, change) -> if (change.second) updated.add(id) else updated.remove(id) }
-                state.copy(ids = updated)
-            }
+        refresh()
+    }
+
+    fun refresh() {
+        val key = configurationKey
+        val source = configuredSource
+        val started = _state.value
+        val mutations = refresh.snapshot()
+        refresh.request({ repository.likedTrackIds(source) }) { ids ->
+            if (configurationKey == key) _state.update { it.withRefreshedFavorites(ids, started, refresh.changedSince(mutations)) }
         }
     }
 
     fun toggleDeferredRemoval(track: MusicTrack) {
+        refresh.markChanged(track.id)
         cancelQqReconcile()
         if (track.id in _state.value.updating) return
         if (deferredRemovals.remove(track.id) != null) {
@@ -122,6 +128,7 @@ internal class MusicFavoriteViewModel(application: Application) : AndroidViewMod
     }
 
     fun toggle(track: MusicTrack) {
+        refresh.markChanged(track.id)
         cancelQqReconcile()
         val alreadyUpdating = track.id in _state.value.updating
         val liked = !track.isQqFavorite(_state.value.ids)

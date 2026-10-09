@@ -101,7 +101,6 @@ private fun QqDailyCard(
     val artwork by rememberArtworkBitmap(playlist.artworkUrl)
     var visualArtwork by remember { mutableStateOf<Bitmap?>(null) }
     val effectiveArtwork = visualArtwork ?: artwork
-    LaunchedEffect(playlist.id, effectiveArtwork) { transition?.updateArtwork(playlist.id, effectiveArtwork) }
     Surface(
         modifier = modifier.fillMaxHeight().bringIntoViewRequester(requester).clip(shape).clickable(
             enabled = transition?.busy != true && motion?.mounted != true,
@@ -118,7 +117,7 @@ private fun QqDailyCard(
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
         Box(Modifier.fillMaxSize()) {
-            CrossfadingArtworkBitmapOrPlaceholder(
+            PlaylistSyncedArtwork(
                 artwork,
                 playlist.artworkUrl?.isNotBlank() == true && artwork == null,
                 playlist.artworkStart,
@@ -137,6 +136,7 @@ private fun QqDailyCard(
                 shape,
                 Alignment.Center,
                 onDisplayedArtworkChange = { visualArtwork = it },
+                sourceKey = playlist.id, imageUrl = playlist.artworkUrl,
             )
             Box(
                 Modifier.fillMaxSize().graphicsLayer {
@@ -265,7 +265,6 @@ internal fun QqPlaylistCard(
     )
     // 直接观察加载状态，封面从磁盘或网络完成后无需依赖点击触发再次组合。
     val artwork = requestedArtwork ?: ArtworkRepository.peek(playlist.artworkUrl, artworkMaxSide)
-    LaunchedEffect(sourceKey, artwork) { transition?.updateArtwork(sourceKey, artwork) }
     BoxWithConstraints(
         modifier.widthIn(max = width).aspectRatio(1f).bringIntoViewRequester(requester).clip(shape)
             .onGloballyPositioned { cardBounds = it.boundsInRoot() }.combinedClickable(
@@ -282,7 +281,7 @@ internal fun QqPlaylistCard(
             }, onClick)
         }),
     ) {
-        CrossfadingArtworkBitmapOrPlaceholder(
+        PlaylistSyncedArtwork(
             artwork,
             playlist.artworkUrl?.isNotBlank() == true && artwork == null,
             playlist.artworkStart,
@@ -300,6 +299,7 @@ internal fun QqPlaylistCard(
             48.sp,
             shape,
             Alignment.Center,
+            sourceKey = sourceKey, imageUrl = playlist.artworkUrl,
         )
         Box(
             Modifier.fillMaxSize().graphicsLayer {
@@ -336,7 +336,7 @@ internal fun QqPlaylistCard(
             }
         }
         Surface(
-            onClick = onPlay,
+            onClick = { transition?.preparePlayback(sourceKey); onPlay() },
             modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).size(42.dp).graphicsLayer {
                 alpha = transition?.alphaFor(sourceKey) ?: 1f
             },

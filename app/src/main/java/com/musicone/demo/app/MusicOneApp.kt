@@ -113,16 +113,21 @@ fun MusicOneApp(viewModel: MusicOneViewModel = viewModel()) {
     LaunchedEffect(favoriteState.changes) {
         qqLibraryViewModel.syncFavoriteChanges(favoriteState.changes)
     }
-    LaunchedEffect(navigation.page, platformState.selectedSource) {
-        if (navigation.page == MusicOnePage.MY && platformState.selectedSource == MusicSource.QQ) {
-            qqLibraryViewModel.refresh()
-        }
-        if (navigation.page == MusicOnePage.MY && platformState.selectedSource == MusicSource.KUGOU) {
-            kugouLibraryViewModel.refresh()
-        }
-    }
+    val rootVisible = !recommendationNavigation.motion.mounted && !playerMotion.mounted &&
+        !settingsMotion.mounted && entityNavigation.pages.isEmpty()
+    val myVisible = navigation.page == MusicOnePage.MY && rootVisible
+    MusicLibrarySynchronization(viewModel, favoriteViewModel, platformState.selectedSource,
+        platformState.sessionRevision, myVisible, {
+            when (platformState.selectedSource) {
+                MusicSource.QQ -> qqLibraryViewModel.refresh()
+                MusicSource.KUGOU -> kugouLibraryViewModel.refresh()
+                MusicSource.NETEASE -> catalogViewModel.refreshLibrary()
+            }
+        }, recommendationNavigation.cards,
+        rootVisible)
 
     androidx.compose.runtime.CompositionLocalProvider(
+        LocalMyPageVisible provides myVisible,
         LocalPlaylistMotion provides recommendationNavigation.motion,
         LocalPlaylistCardTransition provides recommendationNavigation.cards,
         LocalPlayerMotion provides playerMotion,

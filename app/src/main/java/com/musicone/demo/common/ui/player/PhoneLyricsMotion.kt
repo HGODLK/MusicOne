@@ -31,6 +31,9 @@ internal class PhoneLyricsMotion(initiallyVisible: Boolean) {
     var controlsSpacePx = 0f
     private var animationJob: Job? = null
     private var dragOrigin = LyricsDragPosition(0f, 0f)
+    private var dragContact = .4f
+    private var opening by mutableStateOf<PhoneLyricsOpeningHandoff?>(null)
+    private var dragOpening: PhoneLyricsOpeningHandoff? = null
     private var dragged by mutableStateOf<LyricsDragPosition?>(null)
     var dragging by mutableStateOf(false)
         private set
@@ -38,8 +41,12 @@ internal class PhoneLyricsMotion(initiallyVisible: Boolean) {
         private set
     var openingAlignment by mutableStateOf<CompletableDeferred<Unit>?>(null)
         private set
-    val lyricsProgress get() = dragged?.lyrics ?: lyrics.value
-    val headerProgress get() = dragged?.header ?: header.value
+    val lyricsProgress get() = dragged?.lyrics ?: opening?.position(lyrics.value) ?: lyrics.value
+    val headerProgress get() = dragged?.header ?: opening?.header(lyricsProgress) ?: header.value
+    val visibleLyricsVelocity get() = opening?.let { it.speed(lyrics.value) * lyricsVelocity } ?: lyricsVelocity
+    val visibleHeaderVelocity get() = opening?.let { it.headerSpeed(lyricsProgress) * visibleLyricsVelocity } ?: headerVelocity
+    // 入场对齐跟随窗口实际行程，页眉占位期间不能继续反向补滚列表。
+    val entranceProgress get() = phoneLyricsEntranceProgress(windowOffsetPx, dragTravelPx)
     val windowOffsetPx get() = phoneLyricsSpatialWindowOffset(dragTravelPx, lyricsProgress,
         headerProgress, if (spatialTravel.compactHeightPx > 0f) {
             spatialTravel.compactHeightPx + controlsSpacePx
@@ -53,16 +60,19 @@ internal class PhoneLyricsMotion(initiallyVisible: Boolean) {
     fun beginDrag() {
         captureSpatialTravelAtRest()
         dragOrigin = LyricsDragPosition(lyricsProgress, headerProgress)
+        dragContact = contactProgress
+        dragOpening = if (dragOrigin.lyrics == 0f && dragOrigin.header == 0f) newOpening() else null
         animationJob?.cancel()
         lyricsVelocity = 0f
         headerVelocity = 0f
         dragged = dragOrigin
+        opening = null
         dragging = true
     }
 
     fun dragTo(progress: Float) {
-        val p = progress.coerceIn(0f, 1f)
-        val h = lyricsDragHeaderProgress(p, dragOrigin.lyrics, dragOrigin.header, contactProgress)
+        val p = dragOpening?.position(progress) ?: progress.coerceIn(0f, 1f)
+        val h = dragOpening?.header(p) ?: lyricsDragHeaderProgress(p, dragOrigin.lyrics, dragOrigin.header, dragContact)
         dragged = LyricsDragPosition(p, h)
     }
 
@@ -86,15 +96,49 @@ internal class PhoneLyricsMotion(initiallyVisible: Boolean) {
             }
         }
         captureSpatialTravelAtRest()
+        if (visible && (dragOpening != null || lyricsProgress == 0f && headerProgress == 0f)) {
+            val path = dragOpening ?: newOpening()
+            if (path != null) {
+                val input = dragged?.let { path.input(it.lyrics) } ?: 0f
+                lyrics.snapTo(input)
+                opening = path
+                dragged = null
+                dragOpening = null
+                lyrics.animateTo(1f, musicSpring(stiffness = 210f, visibilityThreshold = .0005f),
+                    initialVelocity = lyricsVelocity) { lyricsVelocity = velocity }
+                header.snapTo(1f)
+                opening = null
+                lyricsVelocity = 0f
+                headerVelocity = 0f
+                return@coroutineScope
+            }
+        }
+        opening?.let {
+            val p = lyricsProgress
+            val h = headerProgress
+            val pv = visibleLyricsVelocity
+            val hv = visibleHeaderVelocity
+            lyrics.snapTo(p)
+            header.snapTo(h)
+            opening = null
+            lyricsVelocity = pv
+            headerVelocity = hv
+        }
+        dragOpening = null
+        val targetContact = if (dragged != null) dragContact else contactProgress
         dragged?.let {
             lyrics.snapTo(it.lyrics)
             header.snapTo(it.header)
             dragged = null
         }
-        moveToTarget(visible)
+        moveToTarget(visible, targetContact)
     }
 
-    private suspend fun moveToTarget(visible: Boolean) = coroutineScope {
+    private fun newOpening(): PhoneLyricsOpeningHandoff? = spatialTravel.compactHeightPx.takeIf { it > 0f }?.let {
+        PhoneLyricsOpeningHandoff(dragTravelPx, it + controlsSpacePx, contactProgress, spatialTravel.softnessPx)
+    }
+
+    private suspend fun moveToTarget(visible: Boolean, contact: Float) = coroutineScope {
         val target = if (visible) 1f else 0f
         launch {
             lyrics.animateTo(
@@ -108,7 +152,7 @@ internal class PhoneLyricsMotion(initiallyVisible: Boolean) {
         launch {
             // 仅从完整封面页打开时等待接触；中途反向立即接续，不重播等待阶段。
             if (visible && header.value <= .0005f && headerVelocity == 0f) {
-                snapshotFlow { lyrics.value }.first { it >= contactProgress }
+                snapshotFlow { lyrics.value }.first { it >= contact }
             }
             header.animateTo(
                 target,
@@ -150,3 +194,6 @@ internal fun lyricsDragHeaderProgress(progress: Float, start: Float, header: Flo
 
 internal fun lyricsContactProgress(height: Float, headerHeight: Float, informationBottom: Float): Float =
     ((height - informationBottom) / (height - headerHeight).coerceAtLeast(1f)).coerceIn(0f, 1f)
+
+internal fun phoneLyricsEntranceProgress(offsetPx: Float, travelPx: Float): Float =
+    (1f - offsetPx / travelPx.coerceAtLeast(1f)).coerceIn(0f, 1f)

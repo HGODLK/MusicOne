@@ -117,6 +117,9 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
                 topExtensionPx = lyricTopExtension,
                 topBufferPx = lyricTopExtension,
                 exitProgress = { 1f - lyricsMotion.lyricsProgress },
+                entranceProgress = { lyricsMotion.entranceProgress },
+                heldTrackChange = lyricsMotion.dragging &&
+                    lyricsMotion.entranceProgress > 0f && lyricsMotion.entranceProgress < 1f,
                 trackTransitionDirection = state.trackTransitionDirection,
                 onWindowLayout = recordWindowLayout,
             )

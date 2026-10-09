@@ -67,9 +67,6 @@ internal fun QqFavoritesRow(
     val artworkUrl = playlist?.artworkUrl
     val requestedArtwork by rememberArtworkBitmap(artworkUrl, artworkVersion.takeIf { it > 0L })
     val artwork = if (artworkUrl.isNullOrBlank()) requestedArtwork else ArtworkRepository.peek(artworkUrl)
-    LaunchedEffect(playlist?.id, artwork) {
-        playlist?.let { transition?.updateArtwork(it.id, artwork) }
-    }
     Surface(
         modifier = Modifier.fillMaxWidth().heightIn(min = 78.dp).clickable(
             enabled = transition?.busy != true && motion?.mounted != true,
@@ -82,7 +79,7 @@ internal fun QqFavoritesRow(
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            CrossfadingArtworkBitmapOrPlaceholder(
+            PlaylistSyncedArtwork(
                 artwork,
                 artworkUrl?.isNotBlank() == true && artwork == null,
                 playlist?.artworkStart ?: 0xFFB7D8CC,
@@ -100,6 +97,7 @@ internal fun QqFavoritesRow(
                 20.sp,
                 RoundedCornerShape(16.dp),
                 Alignment.Center,
+                sourceKey = playlist?.id.orEmpty(), imageUrl = artworkUrl,
             )
             Column(
                 Modifier.weight(1f).padding(horizontal = 14.dp).graphicsLayer {
@@ -180,7 +178,6 @@ internal fun QqLibraryPlaylistRow(playlist: MusicPlaylist, artworkVersion: Long,
     } else {
         ArtworkRepository.peek(playlist.artworkUrl)
     }
-    LaunchedEffect(playlist.id, artwork) { transition?.updateArtwork(playlist.id, artwork) }
     Row(
         Modifier.fillMaxWidth().heightIn(min = 76.dp).clickable(
             enabled = transition?.busy != true && motion?.mounted != true,
@@ -191,7 +188,7 @@ internal fun QqLibraryPlaylistRow(playlist: MusicPlaylist, artworkVersion: Long,
         }.padding(vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CrossfadingArtworkBitmapOrPlaceholder(
+        PlaylistSyncedArtwork(
             artwork,
             playlist.artworkUrl?.isNotBlank() == true && artwork == null,
             playlist.artworkStart,
@@ -209,6 +206,7 @@ internal fun QqLibraryPlaylistRow(playlist: MusicPlaylist, artworkVersion: Long,
             24.sp,
             RoundedCornerShape(16.dp),
             Alignment.Center,
+            sourceKey = playlist.id, imageUrl = playlist.artworkUrl,
         )
         Column(
             Modifier.weight(1f).padding(horizontal = 13.dp).graphicsLayer {
@@ -242,7 +240,6 @@ internal fun QqLibraryPlaylistCard(
     val requested by rememberArtworkBitmap(playlist.artworkUrl, artworkVersion.takeIf { it > 0L })
     // 直接观察异步加载结果，不能等点击触发重组后才显示封面。
     val artwork = requested ?: ArtworkRepository.peek(playlist.artworkUrl)
-    LaunchedEffect(sourceKey, artwork) { transition?.updateArtwork(sourceKey, artwork) }
     Column(
         Modifier.fillMaxWidth().clickable(
             enabled = transition?.busy != true && motion?.mounted != true,
@@ -250,13 +247,14 @@ internal fun QqLibraryPlaylistCard(
         ) { if (transition == null) onClick() else transition.open(sourceKey, artwork, {}, onClick) },
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        CrossfadingArtworkBitmapOrPlaceholder(
+        PlaylistSyncedArtwork(
             artwork, playlist.artworkUrl?.isNotBlank() == true && artwork == null,
             playlist.artworkStart, playlist.artworkEnd, playlist.artworkMark,
             Modifier.fillMaxWidth().aspectRatio(1f).motionAnchor(
                 motion, sourceKey, false, corner = 20f, markSize = 48f, markX = 0f, markY = 0f,
             ),
             48.sp, RoundedCornerShape(20.dp), Alignment.Center,
+            sourceKey = sourceKey, imageUrl = playlist.artworkUrl,
         )
         Text(playlist.title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
             minLines = if (reserveTwoTitleLines) 2 else 1, maxLines = 2,

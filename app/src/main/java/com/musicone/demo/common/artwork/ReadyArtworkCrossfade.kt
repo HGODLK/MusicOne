@@ -18,20 +18,27 @@ internal fun ReadyArtworkCrossfade(frame: PlayerArtworkFrame, durationMillis: In
     displayKey: Any? = null,
     onDisplayed: ((PlayerArtworkFrame) -> Unit)? = null,
     onBlendSnapshot: ((List<ArtworkBlendSnapshot>) -> Unit)? = null,
+    freezeBlend: Boolean = false,
+    initialBlend: List<ArtworkBlendSnapshot>? = null,
+    respectReduceMotion: Boolean = true,
     content: @Composable (PlayerArtworkFrame) -> Unit) {
     val latest by rememberUpdatedState(frame)
     val latestDuration by rememberUpdatedState(durationMillis)
     val latestAdoptPreparedFrame by rememberUpdatedState(adoptPreparedFrame)
     val latestDisplayKey by rememberUpdatedState(displayKey)
+    val latestFrozen by rememberUpdatedState(freezeBlend)
+    val latestRespectReduceMotion by rememberUpdatedState(respectReduceMotion)
     val latestOnDisplayed by rememberUpdatedState(onDisplayed)
     val latestOnBlendSnapshot by rememberUpdatedState(onBlendSnapshot)
-    var layers by remember { mutableStateOf(listOf(ArtworkBlend(frame, mutableFloatStateOf(1f)))) }
-    var settling by remember { mutableStateOf(false) }
+    var layers by remember { mutableStateOf(initialBlend?.map { ArtworkBlend(it.frame, mutableFloatStateOf(it.opacity)) }
+        ?: listOf(ArtworkBlend(frame, mutableFloatStateOf(1f)))) }
+    var settling by remember { mutableStateOf(layers.size > 1) }
     val callbackScope = rememberCoroutineScope()
     val lastReported = remember { arrayOfNulls<ArtworkDisplayReport>(1) }
     LaunchedEffect(Unit) {
         // 新目标立刻接管，从当前可见比例续接，不等待旧歌动画播完。
-        snapshotFlow { Pair(latest, latestAdoptPreparedFrame) }.collectLatest { (next, adopt) ->
+        snapshotFlow { Triple(latest, latestAdoptPreparedFrame, latestFrozen) }.collectLatest { (next, adopt, frozen) ->
+            if (frozen) return@collectLatest
             if (adopt) {
                 // 展开播放页交接：直接接管目标封面，立即清除隐藏播放页遗留的上一首图层
                 Snapshot.withMutableSnapshot {
@@ -48,7 +55,10 @@ internal fun ReadyArtworkCrossfade(frame: PlayerArtworkFrame, durationMillis: In
                 if (next !in starts) starts[next] = 0f
                 val transition = starts.map { (artwork, weight) -> ArtworkBlend(artwork, mutableFloatStateOf(weight)) }
                 Snapshot.withMutableSnapshot { layers = transition; settling = true }
-                animate(0f, 1f, animationSpec = musicMotion<Float>(latestDuration)) { value, _ ->
+                val spec = if (latestRespectReduceMotion) musicMotion<Float>(latestDuration)
+                    else androidx.compose.animation.core.tween<Float>(latestDuration,
+                        easing = androidx.compose.animation.core.CubicBezierEasing(.2f, 0f, 0f, 1f))
+                animate(0f, 1f, animationSpec = spec) { value, _ ->
                     Snapshot.withMutableSnapshot {
                         transition.forEach { layer ->
                             layer.opacity.floatValue = starts.getValue(layer.frame) * (1f - value) +

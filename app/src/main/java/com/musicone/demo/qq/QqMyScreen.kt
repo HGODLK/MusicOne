@@ -63,7 +63,10 @@ internal fun QqMyScreen(
     val favorite = library.favoritePlaylist ?: MusicPlaylist(QQ_FAVORITES_PLAYLIST_ID, MusicSource.QQ,
         "我喜欢", "", "", 0, 0xFFE6B8C8, 0xFF98677D, "喜", emptyList())
     val displayedPlaylists = playlists.filterNot { it.id == favorite.id || it.id in locallyDeletedIds }
-    LaunchedEffect(library.signedIn) { recentPlayViewModel.ensureLoaded() }
+    val myVisible = LocalMyPageVisible.current
+    LaunchedEffect(library.signedIn, myVisible) {
+        if (library.signedIn && myVisible) recentPlayViewModel.ensureLoaded(force = true)
+    }
     LaunchedEffect(library.createdPlaylists.map(MusicPlaylist::id)) {
         locallyDeletedIds = locallyDeletedIds.intersect(library.createdPlaylists.mapTo(mutableSetOf(), MusicPlaylist::id))
     }

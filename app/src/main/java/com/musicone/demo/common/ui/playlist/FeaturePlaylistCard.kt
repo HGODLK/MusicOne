@@ -69,7 +69,6 @@ internal fun FeaturePlaylistCard(
     }
     val foreground = if (useDarkInk) Color(0xFF101318) else Color.White
     val protection = if (useDarkInk) Color.White else Color.Black
-    LaunchedEffect(playlist.id, artwork) { transition?.updateArtwork(playlist.id, artwork) }
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -87,12 +86,14 @@ internal fun FeaturePlaylistCard(
                 }, onClick)
             },
     ) {
-        ArtworkBitmapOrPlaceholder(
+        PlaylistSyncedArtwork(
             artwork,
+            playlist.artworkUrl?.isNotBlank() == true && artwork == null,
             cover?.artworkStart ?: playlist.artworkStart, cover?.artworkEnd ?: playlist.artworkEnd,
             cover?.artworkMark ?: playlist.artworkMark,
             Modifier.fillMaxSize().motionAnchor(motion, playlist.id, false, corner = corner.value, markSize = 120f, markX = 0f, markY = 0f),
             120.sp, shape, Alignment.Center,
+            sourceKey = playlist.id, imageUrl = playlist.artworkUrl,
         )
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = transition?.alphaFor(playlist.id) ?: 1f }
             .background(Brush.verticalGradient(listOf(Color.Transparent, protection.copy(alpha = .68f)))))
@@ -122,7 +123,7 @@ internal fun FeaturePlaylistCard(
             )
             Spacer(Modifier.size(12.dp))
             Surface(
-                onClick = onPlay,
+                onClick = { transition?.preparePlayback(playlist.id); onPlay() },
                 shape = CircleShape,
                 color = foreground,
                 modifier = Modifier.size(if (compact) 40.dp else 42.dp),

@@ -48,8 +48,9 @@ internal fun PlaylistCover(
         }
         Box(coverModifier) {
             if (!usePageBackground) {
-                ArtworkBitmapOrPlaceholder(
+                PlaylistSyncedArtwork(
                     artwork,
+                    imageUrl?.isNotBlank() == true && artwork == null,
                     track?.artworkStart ?: playlist.artworkStart,
                     track?.artworkEnd ?: playlist.artworkEnd,
                     track?.artworkMark ?: playlist.artworkMark,
@@ -57,6 +58,7 @@ internal fun PlaylistCover(
                     markSize,
                     RectangleShape,
                     Alignment.Center,
+                    sourceKey = motion?.coverKey ?: playlist.id, imageUrl = imageUrl,
                 )
             }
         }

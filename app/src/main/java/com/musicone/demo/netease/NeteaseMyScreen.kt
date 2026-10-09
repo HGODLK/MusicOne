@@ -445,7 +445,10 @@ private fun NeteasePlaylistRow(
             Modifier.fillMaxWidth().padding(9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            RemoteArtwork(
+            val artwork by rememberArtworkBitmap(playlist.artworkUrl)
+            PlaylistSyncedArtwork(
+                bitmap = artwork,
+                awaitingArtwork = playlist.artworkUrl?.isNotBlank() == true && artwork == null,
                 imageUrl = playlist.artworkUrl,
                 start = playlist.artworkStart,
                 end = playlist.artworkEnd,
@@ -453,6 +456,7 @@ private fun NeteasePlaylistRow(
                 modifier = Modifier.size(58.dp),
                 markSize = 20.sp,
                 shape = RoundedCornerShape(13.dp),
+                sourceKey = playlist.id,
             )
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(

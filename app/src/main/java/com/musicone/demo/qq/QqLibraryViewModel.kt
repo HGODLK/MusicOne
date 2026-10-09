@@ -42,10 +42,11 @@ internal class QqLibraryViewModel(application: Application) : AndroidViewModel(a
     private var collectedJob: Job? = null
     private val collectionJobs = mutableMapOf<String, Job>()
     private var favoriteChanges: Map<String, Pair<MusicTrack, Boolean>> = emptyMap()
+    private val favoriteSnapshot = QqFavoritePlaylistSnapshot()
 
     fun syncFavoriteChanges(changes: Map<String, Pair<MusicTrack, Boolean>>) {
         favoriteChanges = changes
-        _state.update { state -> state.copy(favoritePlaylist = state.favoritePlaylist?.withFavoriteChanges(changes)) }
+        _state.update { state -> state.copy(favoritePlaylist = favoriteSnapshot.present(changes)) }
     }
 
     fun toggleCollected(playlist: MusicPlaylist) {
@@ -85,6 +86,7 @@ internal class QqLibraryViewModel(application: Application) : AndroidViewModel(a
         collectionJobs.values.forEach { it.cancel() }
         collectionJobs.clear()
         favoriteChanges = emptyMap()
+        favoriteSnapshot.clear()
         val session = preferences.readSession(MusicSource.QQ)
         val signedIn = source == MusicSource.QQ && session.credential.isNotBlank() && session.account != null
         _state.value = QqLibraryUiState(signedIn = signedIn)
@@ -127,8 +129,9 @@ internal class QqLibraryViewModel(application: Application) : AndroidViewModel(a
                     )
                 }
                 if (requestedKey == configurationKey) {
+                    favoriteSnapshot.record(playlist)
                     _state.update { state ->
-                        val refreshed = playlist.withFavoriteChanges(favoriteChanges)
+                        val refreshed = requireNotNull(favoriteSnapshot.present(favoriteChanges))
                         state.copy(
                             favoritePlaylist = refreshed,
                             loadingFavorites = false,

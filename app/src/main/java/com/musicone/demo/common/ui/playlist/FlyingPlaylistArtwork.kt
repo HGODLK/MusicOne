@@ -35,6 +35,9 @@ internal fun FlyingPlaylistArtwork(motion: PageMotion, imageUrl: String?, start:
     val style = LocalTextStyle.current.merge(TextStyle(color = Color.White, fontSize = 120.sp, fontWeight = FontWeight.Black,
         lineHeight = if (centeredMark) 120.sp else androidx.compose.ui.unit.TextUnit.Unspecified))
     val text = remember(mark, style, measurer) { measurer.measure(mark, style) }
+    val held = LocalPlaylistCardTransition.current?.activeArtworkLayers
+    val heldImages = remember(held) { held?.map { it.frame.bitmap?.asImageBitmap() } }
+    val heldText = remember(held, style, measurer) { held?.map { measurer.measure(it.frame.identity.mark, style) } }
     val pageColor = PlaylistPageColor
     val path = remember { Path() }
     val pull = LocalPlaylistPull.current.takeIf { followPull }
@@ -49,6 +52,28 @@ internal fun FlyingPlaylistArtwork(motion: PageMotion, imageUrl: String?, start:
         path.reset()
         path.addRoundRect(RoundRect(bounds, CornerRadius(motionLerp(source.corner, target.corner, p).dp.toPx())))
         clipPath(path) {
+            if (!held.isNullOrEmpty() && artistAvatar == null) {
+                var cumulative = 0f
+                held.forEachIndexed { index, layer ->
+                    cumulative += layer.opacity
+                    val alpha = if (index == 0) 1f else if (cumulative > 0f) layer.opacity / cumulative else 0f
+                    val heldImage = heldImages?.get(index)
+                    if (heldImage != null) drawCoverBitmap(heldImage, bounds, alpha)
+                    else {
+                        val identity = layer.frame.identity
+                        drawRect(Brush.linearGradient(listOf(Color(identity.start), Color(identity.end)), bounds.topLeft, bounds.bottomRight),
+                            bounds.topLeft, bounds.size, alpha = alpha)
+                        val factor = motionLerp(source.markSize, target.markSize, p) / 120f
+                        val origin = if (centeredMark) bounds.center else Offset(bounds.center.x + 11.dp.toPx() / 2, bounds.center.y - 8.dp.toPx() / 2)
+                        val layout = heldText!!.get(index)
+                        scale(factor, factor, origin) {
+                            drawText(layout, topLeft = Offset(origin.x - layout.size.width / 2f, origin.y - layout.size.height / 2f), alpha = alpha)
+                        }
+                    }
+                }
+                drawPlaylistArtworkFade(bounds, motionLerp(source.bottomFade, target.bottomFade, p), pageColor)
+                return@clipPath
+            }
             val placeholderAlpha = artistAvatar?.placeholderAlpha?.value ?: if (image == null) 1f else 0f
             if (placeholderAlpha > 0f) {
                 drawRect(Brush.linearGradient(listOf(Color(start), Color(end)), bounds.topLeft, bounds.bottomRight),

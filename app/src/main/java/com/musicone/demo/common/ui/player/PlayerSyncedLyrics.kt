@@ -13,23 +13,10 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-
-private class LyricWindow(presentation: LyricPresentation, val slot: Float = 0f) {
-    var presentation by mutableStateOf(presentation)
-    val playback = LyricWindowPlayback(presentation.id)
-    val ready = CompletableDeferred<Unit>()
-    var cleanup: Job? = null
-
-    fun canReturnTo(target: LyricPresentation, progress: PlaybackProgressSnapshot, restarting: Boolean): Boolean =
-        playback.canReturnTo(progress, restarting) &&
-            presentation.source == target.source &&
-            presentation.id == target.id
-}
 
 @Composable
 internal fun PlayerSyncedLyrics(
@@ -47,6 +34,8 @@ internal fun PlayerSyncedLyrics(
     topExtensionPx: Int = 0,
     topBufferPx: Int = 0,
     exitProgress: () -> Float = { 1f },
+    entranceProgress: (() -> Float)? = null,
+    heldTrackChange: Boolean = false,
     currentAnchorFraction: Float? = null,
     trackTransitionDirection: TrackTransitionDirection = TrackTransitionDirection.NEXT,
     onWindowLayout: ((androidx.compose.foundation.lazy.LazyListLayoutInfo, LyricBlurProtection) -> Unit)? = null,
@@ -67,6 +56,11 @@ internal fun PlayerSyncedLyrics(
     }
     val outgoing = remember { mutableStateListOf<LyricWindow>() }
     val motion = remember { LyricWindowMotion() }
+    val held = remember { LyricHeldTrackTransition() }
+    val lyricClock = LocalLyricAnimationClock.current
+    val heldScope = rememberCoroutineScope { lyricClock ?: kotlin.coroutines.EmptyCoroutineContext }
+    val latestHeldTrackChange by rememberUpdatedState(heldTrackChange)
+    DisposableEffect(held) { onDispose { held.cancel() } }
     val view = LocalView.current
     var travelPx by remember { mutableFloatStateOf(0f) }
     var preparing by remember { mutableStateOf(false) }
@@ -95,7 +89,7 @@ internal fun PlayerSyncedLyrics(
         }
         outgoing.clear()
         preparing = false
-        if (!animateChange) motion.show(current?.slot ?: 0f)
+        if (!animateChange && !held.active) motion.show(current?.slot ?: 0f)
         // 新目标就绪后即可交接；旧窗口在后台完整滑出，等待期间只保留最新请求。
         snapshotFlow {
             Triple(requested, direction to (rapid?.phase == RapidTrackSwitchPhase.BROWSING),
@@ -111,7 +105,7 @@ internal fun PlayerSyncedLyrics(
             val generation = progress.generation
             if (target == null) {
                 // 无本地歌词的目标不造空白页，让已有窗口停止连续追踪后正常收束。
-                if (animateChange) current?.let { motion.request(this, it.slot) }
+                if (animateChange && !held.active) current?.let { motion.request(this, it.slot) }
                 return@collect
             }
             if (target.source == current?.presentation?.source && target.id == current?.presentation?.id &&
@@ -119,7 +113,17 @@ internal fun PlayerSyncedLyrics(
                 (current?.playback?.generation == generation || current?.playback?.generation == -1L)) {
                 // 同一首中间歌曲的本地歌词稍后命中时，只替换内容，不重播整窗切歌动画。
                 current?.presentation = target
-                if (animateChange) current?.let { motion.request(this, it.slot, browsing) }
+                if (animateChange && !held.active) current?.let { motion.request(this, it.slot, browsing) }
+                return@collect
+            }
+            // 只有按住中间态发起的跨曲交接走原位渐变；松手后完成已有事务。
+            if (latestHeldTrackChange || held.active) {
+                val source = current
+                val incoming = LyricWindow(target, source?.slot ?: 0f)
+                incoming.playback.update(progress, viewModel.seekPreview.position.value, browsing = pending != null)
+                held.request(source, incoming, heldScope)
+                current = incoming
+                preparing = false
                 return@collect
             }
             val previous = current.takeIf { animateChange }
@@ -169,11 +173,14 @@ internal fun PlayerSyncedLyrics(
     Box(modifier.playerLyricsRegion(active, topExtensionPx).onGloballyPositioned {
         travelPx = lyricWindowTravelPx(it.positionInWindow().y, it.size.height.toFloat(), view.rootView.height.toFloat())
         motion.updateTravel(travelPx)
-    }) {
-        (outgoing.toList() + listOfNotNull(current)).forEach { window ->
+    }.lyricHeldComposite { held.active }) {
+        val windows = if (held.active) held.layers.map { it.window } else outgoing.toList() + listOfNotNull(current)
+        windows.forEach { window ->
             key(window) {
                 val shown = window.presentation
                 val old = window !== current
+                val heldPreparing = !old && held.active && held.preparation != null
+                val windowPreparing = preparing || heldPreparing
                 val layer = rememberGraphicsLayer()
                 val recorded = remember { booleanArrayOf(false) }
                 val matchesPlayback = shown.id == track.id
@@ -191,8 +198,8 @@ internal fun PlayerSyncedLyrics(
                         viewModel.seekPreview.requestLyricSeek(track.id, fraction)
                         viewModel.seekTo(fraction)
                     },
-                    Modifier.fillMaxSize().graphicsLayer {
-                        translationY = if (preparing && !old) 0f else travelPx * (motion.offset.value + window.slot)
+                    Modifier.fillMaxSize().lyricHeldWeight { if (held.active) held.weight(window) else null }.graphicsLayer {
+                        translationY = if (held.active || (preparing && !old)) 0f else travelPx * (motion.offset.value + window.slot)
                     }.drawWithContent {
                         if (old) {
                             // 退场只记录一次，后续位移直接复用图层。
@@ -202,28 +209,35 @@ internal fun PlayerSyncedLyrics(
                             }
                             drawLayer(layer)
                         } else {
-                            recorded[0] = false
+                            val recordHeldSource = heldTrackChange || held.active
+                            recorded[0] = recordHeldSource
                             // 待入场窗口先完成绘制和定位，正式显示后直接绘制当前歌词。
-                            if (preparing) layer.record { this@drawWithContent.drawContent() }
+                            if (recordHeldSource) {
+                                layer.record { this@drawWithContent.drawContent() }
+                                drawLayer(layer)
+                            } else if (preparing) layer.record { this@drawWithContent.drawContent() }
                             else drawContent()
                         }
                     },
-                    active = active && !old && matchesPlayback && !preparing && settled,
-                    followPlayback = followPlayback && !old && matchesPlayback && !preparing && settled,
+                    active = active && !old && matchesPlayback && !windowPreparing && settled,
+                    followPlayback = followPlayback && !old && matchesPlayback && !windowPreparing && settled && !held.active,
                     onReady = if (!old && preparing) { { window.ready.complete(Unit); Unit } } else null,
                     exitAlignment = if (old) null else exitAlignment,
                     openingAlignment = if (old) null else openingAlignment,
-                    prepareWhileHidden = !old && (preparing || (prepareWhileHidden && matchesPlayback)),
+                    prepareWhileHidden = !old && !held.active && (preparing || (prepareWhileHidden && matchesPlayback)),
                     // 切歌窗口仍按原锚点就绪；完整顶行仅用于单栏歌词开关入场。
                     revealTopLineBeforeEntrance = revealTopLineBeforeEntrance && !old && !preparing,
-                    limitTransitionHistory = limitTransitionHistory && !old && !preparing,
+                    limitTransitionHistory = limitTransitionHistory && (!old || held.active) && !preparing,
+                    heldPreparation = if (heldPreparing) held.preparation else null,
+                    freezeWindow = old && held.active,
                     topExtensionPx = topExtensionPx,
                     topBufferPx = topBufferPx,
                     exitProgress = exitProgress,
+                    entranceProgress = entranceProgress,
                     currentAnchorFraction = currentAnchorFraction,
                     seeking = windowSeeking,
                     progressLyricSeek = if (!old && matchesPlayback) window.playback.progressSeek(progressLyricSeek.value) else null,
-                    onWindowLayout = if (!old && matchesPlayback && onWindowLayout != null) {
+                    onWindowLayout = if (!old && matchesPlayback && !held.active && onWindowLayout != null) {
                         { layout, protection -> onWindowLayout(layout,
                             if (preparing || !settled || outgoing.isNotEmpty()) LyricBlurProtection.HANDOFF else protection) }
                     } else null,

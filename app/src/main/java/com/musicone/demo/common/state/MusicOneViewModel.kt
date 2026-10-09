@@ -47,6 +47,7 @@ class MusicOneViewModel(application: Application) : AndroidViewModel(application
         beginBrowsing = ::beginRapidTrackBrowsing,
         waitForSingleLyrics = { _state.value.currentTrack?.source == MusicSource.QQ },
     )
+    internal val favoritePreparation = MusicFavoritePreparationTargets()
     private var playbackRequestGeneration = 0L
     private var playWhenReadyRequested = false
     private val playbackPresentation = PlaybackPresentationDelay(
@@ -517,6 +518,7 @@ class MusicOneViewModel(application: Application) : AndroidViewModel(application
         nextAudioPreloader.stop()
         if (!preserveQqRadio) stopQqRadio()
         val requestGeneration = ++playbackRequestGeneration
+        favoritePreparation.prepare(track, requestGeneration)
         playbackSession.clearPendingSeek()
         playWhenReadyRequested = playWhenReady
         cancelPendingTrackWork()
