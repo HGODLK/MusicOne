@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -59,6 +60,9 @@ internal fun QqHomeScreen(
     }
     val feedExitProgress = rememberQqFeedExitProgress(feed, feedViewModel::finishRefreshExit)
     val listState = rememberLazyStaggeredGridState()
+    val personalizedVisible by remember(listState) {
+        derivedStateOf { listState.layoutInfo.visibleItemsInfo.any { it.key == "personalized" } }
+    }
     ReportPrimaryHeaderScroll(MusicOnePage.HOME, listState)
     var today by remember { mutableStateOf(homeRefreshDay()) }
     val confirmedDay = catalog.recommendedTracksDate ?: today
@@ -124,6 +128,8 @@ internal fun QqHomeScreen(
                     radioActive = state.qqRadioActive,
                     radioPlaying = state.qqRadioActive && state.isPlaying,
                     radioLoading = state.qqRadioLoading,
+                    radioVisible = personalizedVisible && state.page == MusicOnePage.HOME &&
+                        LocalRecommendationVisible.current && LocalPlayerMotion.current?.mounted != true,
                     onDailyClick = {
                         if (dailyPlaylist.tracks.isNotEmpty()) actions.onOpenLoadedPlaylist(dailyPlaylist)
                         else actions.onRefreshRecommendedTracks(true)

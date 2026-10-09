@@ -51,6 +51,10 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
         if (lyrics) null else CompletableDeferred<Unit>()
     }
     val lyricsMotion = rememberPhoneLyricsMotion(lyrics, lyricExitAlignment)
+    lyricsMotion.expectOpeningTrack(track.source, track.id)
+    val recordOpeningFront = remember(lyricsMotion, track.source, track.id) {
+        { front: PhoneLyricsOpeningFront -> lyricsMotion.recordOpeningFront(track.source, track.id, front) }
+    }
     val recordWindowLayout = remember(lyricsMotion, density) {
         { layout: androidx.compose.foundation.lazy.LazyListLayoutInfo, protection: LyricBlurProtection ->
             lyricsMotion.spatialTravel.record(layout, density, protection) }
@@ -122,6 +126,7 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
                     lyricsMotion.entranceProgress > 0f && lyricsMotion.entranceProgress < 1f,
                 trackTransitionDirection = state.trackTransitionDirection,
                 onWindowLayout = recordWindowLayout,
+                onOpeningFront = recordOpeningFront,
             )
         } else {
             Box(Modifier.fillMaxSize())
@@ -155,6 +160,16 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
         val heart = children[3].measure(Constraints.fixed(heartSize, heartSize))
         val lines = children[4].measure(Constraints.fixed(width,
             (height - header + lyricTopExtension).coerceAtLeast(1)))
+        val closedTitleTop = coverContentHeight - infoHeight + 8.dp.roundToPx()
+        val closedSide = coverSide * playingScale.value
+        val informationBottom = maxOf(closedTitleTop + title.height + artist.height.toFloat(),
+            closedTitleTop + heartSize.toFloat(), (coverContentHeight - infoHeight + closedSide) / 2f)
+        val compactBottom = maxOf(10.dp.toPx() + compactSide,
+            15.dp.toPx() + (title.height + artist.height) * .9f, 17.dp.toPx() + heartSize)
+        lyricsMotion.openingStage = PhoneLyricsOpeningStage(
+            phoneLyricsWindowTop(height, header, lyricTopExtension, 0f, false, lyricTopExtension,
+                lyricsMotion.dragTravelPx).toFloat() - lyricTopExtension,
+            informationBottom, informationBottom - compactBottom, lyricsMotion.dragTravelPx, density.density)
         layout(width, height) {
             val p = lyricsMotion.headerProgress
             val side = motionLerp(coverSide * playingScale.value, compactSide, p)

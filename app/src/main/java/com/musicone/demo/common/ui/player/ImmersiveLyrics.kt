@@ -75,6 +75,7 @@ internal fun ImmersiveLyrics(
     progressLyricSeek: ProgressLyricSeek? = null,
     onReady: (() -> Unit)? = null,
     onWindowLayout: ((androidx.compose.foundation.lazy.LazyListLayoutInfo, LyricBlurProtection) -> Unit)? = null,
+    onOpeningFront: ((PhoneLyricsOpeningFront) -> Unit)? = null,
 ) {
     val lines = remember(track.id, track.lyrics) {
         track.lyrics.ifEmpty { listOf(TimedLyric(0L, "暂无歌词")) }
@@ -102,6 +103,7 @@ internal fun ImmersiveLyrics(
     DisposableEffect(shortSeek) { onDispose { shortSeek.cancel() } }
     val transitionHistory = remember(activePane) { LyricTransitionHistory() }
     val density = androidx.compose.ui.platform.LocalDensity.current
+    val openingBaseSize = LocalPlayerLayoutSpec.current.lyricBaseSize
     LyricSeekPreviewEffect(controller, current, isSeeking, active && followPlayback)
     LyricAnimationEffect(activePane.playbackStep, freezeWindow) {
         if (!freezeWindow) activePane.playbackStep.run()
@@ -194,7 +196,11 @@ internal fun ImmersiveLyrics(
         }
     }
 
-    LyricAnimationEffect(openingAlignment, prepareWhileHidden, if (prepareWhileHidden) current else null) {
+    val openingViewport by remember(activePane) {
+        derivedStateOf { activePane.listState.layoutInfo.viewportSize }
+    }
+    LyricAnimationEffect(openingAlignment, prepareWhileHidden, if (prepareWhileHidden) current else null,
+        onOpeningFront != null, if (prepareWhileHidden && onOpeningFront != null) openingViewport else null) {
         if (openingAlignment != null || prepareWhileHidden) {
             controller.cancel()
             progressLyricSeek?.sourceIsolated?.complete(Unit)
@@ -204,16 +210,19 @@ internal fun ImmersiveLyrics(
             follow = true
             activePane.listState.scrollToItem(current)
             if (revealTopLineBeforeEntrance) {
-                topLineAlignment.prepare()
-                activePane.listState.revealTopLineForEntrance()
+                topLineAlignment.prepare(current.takeIf { limitTransitionHistory && heldPreparation == null })
                 if (limitTransitionHistory) {
-                    activePane.listState.prepareTransitionHistory(transitionHistory, current, density)
-                }
+                    activePane.listState.prepareOpeningContext(transitionHistory, current, density, topBufferPx)
+                } else activePane.listState.revealTopLineForEntrance()
             }
             // 首开采用屏外准备后的实测行块，不能沿用上一帧绘制记录。
-            onWindowLayout?.invoke(activePane.listState.layoutInfo,
+            onWindowLayout?.invoke(transitionHistory.openingContext?.compactLayout ?: activePane.listState.layoutInfo,
                 lyricBlurProtection(activePane.listState.layoutInfo, current,
                     activePane.playbackStep.offsetPx(current), true))
+            transitionHistory.openingContext?.let { context ->
+                if (onOpeningFront != null) phoneLyricsOpeningFront(activePane.listState.layoutInfo, context,
+                    current, activePane.playbackStep, density, openingBaseSize, lyricSettle.value)?.let(onOpeningFront)
+            }
             openingAlignment?.complete(Unit)
         }
     }
@@ -407,7 +416,8 @@ internal fun ImmersiveLyrics(
                                 activeLayer.record { this@drawWithContent.drawContent() }
                                 onWindowLayout?.let { record ->
                                     val info = currentDisplayPane.listState.layoutInfo
-                                    record(info, lyricBlurProtection(info, currentDisplayPane.currentLine,
+                                    record(transitionHistory.openingContext?.compactLayout ?: info,
+                                        lyricBlurProtection(info, currentDisplayPane.currentLine,
                                         currentDisplayPane.playbackStep.offsetPx(currentDisplayPane.currentLine),
                                         controller.state == LyricLayerTransitionState.NORMAL && !controller.previewActive))
                                 }

@@ -23,36 +23,50 @@ internal suspend fun LazyListState.revealTopLineForEntrance() {
 /** 保存列表交接状态，防止父级到终点的同一帧又启动播放跟随补位。 */
 @Stable
 internal class LyricTopLineAlignment {
+    private var preparedAnchor: Int? = null
+    private var preparationRevision = 0L
     var pending by mutableStateOf(false)
         private set
 
-    fun prepare() { pending = true }
+    fun prepare(anchor: Int? = null) {
+        preparedAnchor = anchor
+        preparationRevision++
+        pending = true
+    }
 
     suspend fun align(list: LazyListState, current: () -> Int, progress: () -> Float) {
+        val anchor = preparedAnchor
+        val revision = preparationRevision
         pending = true
-        list.scroll(MutatePriority.PreventUserInput) {
-            val session = LyricEntranceAlignmentSession()
-            snapshotFlow { current() to progress().coerceIn(0f, 1f) }.takeWhile { (index, fraction) ->
-                val viewport = list.layoutInfo
-                val item = viewport.visibleItemsInfo.firstOrNull { it.index == index }
-                val nearest = item ?: viewport.visibleItemsInfo.minByOrNull { abs(it.index - index) }
-                if (nearest != null) {
-                    // 跨句先从真实位置接续；跨出视口时按邻近行推进，目标可见后改用实测行高。
-                    val offset = item?.offset?.toFloat() ?: (nearest.offset +
-                        (index - nearest.index) * (nearest.size + viewport.mainAxisItemSpacing)).toFloat()
-                    session.moveTo(index, fraction, offset, measured = item != null) { scrollBy(it) }
-                    if (fraction == 1f) {
-                        // 同帧收掉列表整数像素余量，恢复跟随时已经处于最终锚点。
-                        val finalItem = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
-                        if (finalItem != null) scrollBy(finalItem.offset.toFloat())
+        try {
+            list.scroll(MutatePriority.PreventUserInput) {
+                val session = LyricEntranceAlignmentSession()
+                // 首开定位只送入本次准备句，高亮换句由原行内动画继续呈现。
+                snapshotFlow { (anchor ?: current()) to progress().coerceIn(0f, 1f) }.takeWhile { (index, fraction) ->
+                    val viewport = list.layoutInfo
+                    val item = viewport.visibleItemsInfo.firstOrNull { it.index == index }
+                    val nearest = item ?: viewport.visibleItemsInfo.minByOrNull { abs(it.index - index) }
+                    if (nearest != null) {
+                        // 跨句先从真实位置接续；跨出视口时按邻近行推进，目标可见后改用实测行高。
+                        val offset = item?.offset?.toFloat() ?: (nearest.offset +
+                            (index - nearest.index) * (nearest.size + viewport.mainAxisItemSpacing)).toFloat()
+                        session.moveTo(index, fraction, offset, measured = item != null) { scrollBy(it) }
+                        if (fraction == 1f) {
+                            // 同帧收掉列表整数像素余量，恢复跟随时已经处于最终锚点。
+                            val finalItem = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+                            if (finalItem != null) scrollBy(finalItem.offset.toFloat())
+                        }
                     }
-                }
-                fraction < 1f
-            }.collect()
+                    fraction < 1f
+                }.collect()
+            }
+            // 首开换句不在终点硬补新目标，释放滚动权后由正常逐句或多句跟随接续。
+            if (anchor == null && list.layoutInfo.visibleItemsInfo.none { it.index == current() }) list.scrollToItem(current())
+            if (preparationRevision == revision) pending = false
+        } finally {
+            // 反向或重新准备时取消旧锚点，旧任务不能清除后来的准备结果。
+            if (preparationRevision == revision) preparedAnchor = null
         }
-        // 展开尾帧若恰逢大跨度进度跳转，目标仍在屏外时直接准备该目标，不补播对齐弹簧。
-        if (list.layoutInfo.visibleItemsInfo.none { it.index == current() }) list.scrollToItem(current())
-        pending = false
     }
 }
 

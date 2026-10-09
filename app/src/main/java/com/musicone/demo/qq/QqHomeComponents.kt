@@ -27,9 +27,7 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -48,7 +46,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 
 @Composable
@@ -62,6 +59,7 @@ internal fun QqPersonalizedCards(
     radioLoading: Boolean,
     onDailyClick: () -> Unit,
     onRadioClick: () -> Unit,
+    radioVisible: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
@@ -79,6 +77,7 @@ internal fun QqPersonalizedCards(
             active = radioActive,
             playing = radioPlaying,
             loading = radioLoading,
+            visible = radioVisible,
             onClick = onRadioClick,
             modifier = Modifier.weight(1f),
         )
@@ -181,53 +180,6 @@ private fun QqDailyCard(
                     )
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun QqRadioCard(
-    active: Boolean,
-    playing: Boolean,
-    loading: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier,
-) {
-    Surface(
-        modifier = modifier.fillMaxHeight().clip(RoundedCornerShape(24.dp)).clickable(
-            onClickLabel = if (active) "打开猜你喜欢" else "播放猜你喜欢",
-            onClick = onClick,
-        ),
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-    ) {
-        Column(
-            Modifier.fillMaxSize().padding(16.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Row(verticalAlignment = Alignment.Top) {
-                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.size(82.dp)) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                Icons.Default.Favorite,
-                                contentDescription = null,
-                                tint = Color(0xFF28B887),
-                                modifier = Modifier.size(50.dp),
-                            )
-                        }
-                    }
-                }
-                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surface, modifier = Modifier.size(42.dp), shadowElevation = 1.dp) {
-                    Box(contentAlignment = Alignment.Center) {
-                        QqRadioPlaybackIndicator(active, playing, loading)
-                    }
-                }
-            }
-            Text("猜你喜欢", modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurface,
-                autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 28.sp, stepSize = 1.sp),
-                fontWeight = FontWeight.Bold, lineHeight = 1.15.em, letterSpacing = (-.5).sp,
-                maxLines = 1, softWrap = false)
         }
     }
 }

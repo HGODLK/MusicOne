@@ -15,8 +15,11 @@ internal class LyricTransitionHistory {
     private var prepared = false
     private var firstRetained by mutableIntStateOf(0)
     private var limited by mutableStateOf(false)
+    var openingContext: LyricOpeningContext? = null
+        private set
 
     fun prepare(layout: LazyListLayoutInfo, current: Int, density: Density): Int {
+        openingContext = null
         val previous = layout.visibleItemsInfo.firstOrNull { it.index == current - 1 }
         val earlier = layout.visibleItemsInfo.firstOrNull { it.index == current - 2 }
         val largeText = layout.viewportSize.width >= with(density) { 400.dp.toPx() }
@@ -33,11 +36,20 @@ internal class LyricTransitionHistory {
         return firstRetained
     }
 
+    fun prepareOpening(context: LyricOpeningContext) {
+        openingContext = context
+        firstRetained = context.first
+        prepared = true
+    }
+
     fun update(layout: () -> LazyListLayoutInfo, current: Int, density: Density, progress: Float, enabled: Boolean) {
         limited = enabled && progress > 0f && progress < 1f
         if (limited && !prepared) prepare(layout(), current, density)
         // 中途反向沿用同一批完整段；到展开端点后恢复全部历史歌词。
-        if (progress == 1f || !enabled) prepared = false
+        if (progress == 1f || !enabled) {
+            prepared = false
+            openingContext = null
+        }
     }
 
     fun draws(index: Int): Boolean = !limited || index >= firstRetained

@@ -39,6 +39,7 @@ internal fun PlayerSyncedLyrics(
     currentAnchorFraction: Float? = null,
     trackTransitionDirection: TrackTransitionDirection = TrackTransitionDirection.NEXT,
     onWindowLayout: ((androidx.compose.foundation.lazy.LazyListLayoutInfo, LyricBlurProtection) -> Unit)? = null,
+    onOpeningFront: ((PhoneLyricsOpeningFront) -> Unit)? = null,
 ) {
     val request by rememberLyricPresentationRequest(
         track, loadState, trackTransitionDirection, viewModel.rapidTrackSwitch, viewModel.state,
@@ -241,6 +242,7 @@ internal fun PlayerSyncedLyrics(
                         { layout, protection -> onWindowLayout(layout,
                             if (preparing || !settled || outgoing.isNotEmpty()) LyricBlurProtection.HANDOFF else protection) }
                     } else null,
+                    onOpeningFront = if (!old && matchesPlayback && !held.active && !preparing) onOpeningFront else null,
                 )
             }
         }
