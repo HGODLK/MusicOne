@@ -5,6 +5,7 @@ internal data class PlaybackProgressSnapshot(
     val trackId: String? = null,
     val positionMs: Long = 0L,
     val generation: Long = 0L,
+    val sampledAtMs: Long = 0L,
 )
 
 /** 只描述播放器实际是否正在推进，不复用界面上的乐观播放状态。 */

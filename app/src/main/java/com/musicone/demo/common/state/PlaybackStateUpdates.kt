@@ -27,6 +27,9 @@ internal fun MusicOneUiState.withQualityEvent(event: PlaybackQualityEvent): Musi
 
 internal fun MusicOneUiState.withLyricsUpdate(update: PlaybackLyricsUpdate): MusicOneUiState = copy(
     currentTrack = update.lyrics?.let { currentTrack?.copy(lyrics = it) } ?: currentTrack,
+    queue = update.lyrics?.let { lyrics -> queue.map {
+        if (it.id == update.key.trackId && it.source == currentTrack?.source) it.copy(lyrics = lyrics) else it
+    } } ?: queue,
     lyricLoadState = update.state,
 )
 
@@ -44,10 +47,11 @@ internal fun MusicOneUiState.withRadioEvent(event: QqRadioEvent): MusicOneUiStat
 internal fun MusicOneUiState.withResolvedPlayback(event: PlaybackTrackEvent.Ready): MusicOneUiState {
     val resolved = event.playback
     val loadedLyrics = currentTrack?.takeIf { it.id == resolved.track.id }?.lyrics.orEmpty()
-    val track = resolved.track.copy(lyrics = loadedLyrics.ifEmpty { resolved.track.lyrics })
+    val preferredLyrics = loadedLyrics.takeIf { hasReusableLyrics(resolved.track, it) }
+        ?: resolved.track.lyrics.ifEmpty { loadedLyrics }
+    val track = resolved.track.copy(lyrics = preferredLyrics)
     val verifiedSource = resolved.source.takeUnless { it.trial || it.verificationPending }
     return copy(currentTrack = track, queue = queue.map { if (it.id == track.id) track else it },
-        isPlaying = event.playWhenReady,
         lyricLoadState = if (track.lyrics.isEmpty()) LyricLoadState.LOADING else LyricLoadState.READY,
         activeQuality = verifiedSource?.let { playerDisplayedQuality(event.preferred, it.actualQuality) },
         availableQualities = verifiedSource?.let { listOf(it.actualQuality) }.orEmpty(), playbackMessage = null)

@@ -13,7 +13,7 @@ import androidx.compose.ui.unit.offset
 /** 只扩展底部实体导航区；手势条、隐藏导航及横屏侧边导航不增加歌词高度。 */
 @Composable
 internal fun playerButtonNavigationBottomExtension(): Int {
-    if (Build.VERSION.SDK_INT < 31 || ExperiencePreferences.options.disableBlur) return 0
+    if (Build.VERSION.SDK_INT < 31) return 0
     val density = LocalDensity.current
     return buttonNavigationBottomExtension(
         WindowInsets.navigationBars.getBottom(density),

@@ -31,6 +31,8 @@ internal class LyricHeldTrackTransition {
         private set
     private var animation: Job? = null
     private var revision = 0L
+    private val slidingWeights = mutableStateMapOf<LyricWindow, Float>()
+    val hasSlidingBlend get() = slidingWeights.isNotEmpty()
 
     fun request(source: LyricWindow?, target: LyricWindow, scope: CoroutineScope) {
         val starts = (if (active) layers.map { LyricHeldBlend(it.window, it.weight) } else emptyList())
@@ -68,6 +70,23 @@ internal class LyricHeldTrackTransition {
     }
 
     fun weight(window: LyricWindow): Float = layers.firstOrNull { it.window === window }?.weight ?: 0f
+
+    /** 松手后的新切歌保留当前混合画面，把已有权重交给正常滑出窗口。 */
+    fun releaseForSlide(): List<LyricWindow> {
+        if (!active) return emptyList()
+        val visible = layers.filter { it.weight > 0f }.map { LyricHeldBlend(it.window, it.weight) }
+        Snapshot.withMutableSnapshot {
+            cancel()
+            visible.forEach { slidingWeights[it.window] = it.weight }
+        }
+        return visible.map { it.window }
+    }
+
+    fun slidingWeight(window: LyricWindow): Float? = slidingWeights[window]
+
+    fun forgetSlide(window: LyricWindow) { slidingWeights.remove(window) }
+
+    fun clearSlides() { slidingWeights.clear() }
 
     fun cancel() {
         ++revision

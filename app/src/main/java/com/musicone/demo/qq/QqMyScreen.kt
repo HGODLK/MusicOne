@@ -64,6 +64,7 @@ internal fun QqMyScreen(
         "我喜欢", "", "", 0, 0xFFE6B8C8, 0xFF98677D, "喜", emptyList())
     val displayedPlaylists = playlists.filterNot { it.id == favorite.id || it.id in locallyDeletedIds }
     val myVisible = LocalMyPageVisible.current
+    ObserveQqRecentPlayVisibility(recentPlayViewModel, myVisible && LocalRecommendationVisible.current)
     LaunchedEffect(library.signedIn, myVisible) {
         if (library.signedIn && myVisible) recentPlayViewModel.ensureLoaded(force = true)
     }

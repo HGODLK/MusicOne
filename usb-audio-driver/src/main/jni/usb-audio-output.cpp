@@ -327,6 +327,12 @@ Java_com_decent_usbaudio_UsbAudioStream_nativePollPending(JNIEnv *, jobject, jlo
     return ctx->residualBytes > 0 || ctx->transfers.pending > 0 ? 1 : 0;
 }
 
+JNIEXPORT jlong JNICALL
+Java_com_decent_usbaudio_UsbAudioStream_nativeGetPendingAudioFrames(JNIEnv *, jobject, jlong h) {
+    auto *ctx = reinterpret_cast<UsbAudioContext *>(h);
+    return ctx ? ctx->pendingAudioFrames.load() : 0;
+}
+
 JNIEXPORT jboolean JNICALL
 Java_com_decent_usbaudio_UsbAudioStream_nativeFinish(JNIEnv *, jobject, jlong h) {
     auto *ctx = reinterpret_cast<UsbAudioContext *>(h);

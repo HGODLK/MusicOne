@@ -16,7 +16,7 @@ internal fun PlatformHomeScreen(
     source: MusicSource,
     state: MusicOneUiState,
     catalog: MusicCatalogUiState,
-    viewModel: MusicOneViewModel,
+    viewModel: MusicPlaybackRuntime,
     sessionRevision: Long,
     sessionStatus: SessionStatus,
     bottomInset: Dp,

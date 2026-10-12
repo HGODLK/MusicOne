@@ -19,12 +19,13 @@ class PlayerSeekPreviewTest {
         preview.requestLyricSeek("track", .25f)
         val lyricClick = preview.lyricSeek.value
 
-        preview.requestProgressLyricSeek("track", -20L, 1.5f)
+        preview.requestProgressLyricSeek("track", -20L, 1.5f, generation = 3L)
 
         assertSame(lyricClick, preview.lyricSeek.value)
         assertEquals(0L, preview.progressLyricSeek.value?.fromPositionMs)
         assertEquals(1f, preview.progressLyricSeek.value?.fraction ?: 0f, .0001f)
         assertEquals(1L, preview.progressLyricSeek.value?.revision)
+        assertEquals(3L, preview.progressLyricSeek.value?.generation)
     }
 
     @Test fun onlyDraggingProgressPublishesRealtimeLyricPreview() {

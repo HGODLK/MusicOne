@@ -15,11 +15,14 @@ internal data class LivePlaybackRestore(
 
 /** 会话持有播放器连接、进度归属和持久化，页面重建时优先接管仍在播放的服务。 */
 internal class PlaybackSessionCoordinator(private val context: Context) {
-    private val connection = SystemPlaybackConnection(context)
+    private val connection = ServicePlaybackConnection()
     private val positionOwner = PlaybackPositionOwner()
     private val pendingSeek = PlaybackPendingSeek()
     private val persistence = QqPlaybackPersistence(context)
     val player get() = connection.player
+
+    fun attach(player: Player) = connection.attach(player)
+    fun detach(player: Player) = connection.detach(player)
 
     fun whenReady(action: (Player) -> Unit) = connection.whenReady(action)
     fun clearPendingSeek() = pendingSeek.clear()
@@ -59,7 +62,7 @@ internal class PlaybackSessionCoordinator(private val context: Context) {
     fun resetProgressBucket(position: Long) = persistence.resetProgressBucket(position)
 
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-    fun start(track: MusicTrack, key: PlaybackRequestKey, positionMs: Long, playWhenReady: Boolean,
+    fun start(track: MusicTrack, key: PlaybackRequestKey, positionMs: Long, playWhenReady: () -> Boolean,
               isCurrent: (PlaybackRequestKey) -> Boolean, started: (Player, Long) -> Unit, failed: () -> Unit) {
         whenReady { player ->
             if (!isCurrent(key)) return@whenReady
@@ -76,9 +79,12 @@ internal class PlaybackSessionCoordinator(private val context: Context) {
                         .setUri(track.previewUrl).setMediaMetadata(metadata).build(), startingPosition)
                 }
                 playbackTrace("MusicOne:audio-prepare") { player.prepare() }
+                PlaybackPipelineDiagnostics.stage("已请求准备", key.generation)
                 positionOwner.attach(key.generation, track.id, startingPosition)
                 started(player, startingPosition)
-                if (playWhenReady) playbackTrace("MusicOne:audio-play") { player.play() }
+                // 服务连接和音源准备都可能晚于暂停操作，执行时读取最新意图。
+                if (playWhenReady()) playbackTrace("MusicOne:audio-play") { player.play() }
+                else player.pause()
             }.onFailure { if (isCurrent(key)) failed() }
         }
     }

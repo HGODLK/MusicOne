@@ -73,6 +73,10 @@ class UsbAudioStream(
     val completedFrames: Long
         get() = if (nativeHandle != 0L) nativeGetCompletedFrames(nativeHandle) else 0L
 
+    /** 原生在途音频帧数，仅用于供数诊断，不包含反馈请求。 */
+    val pendingAudioFrames: Long
+        get() = if (nativeHandle != 0L) nativeGetPendingAudioFrames(nativeHandle) else 0L
+
     /**
      * Select alternate setting on the USB streaming interface.
      * This determines the active format (bit depth) of the endpoint.
@@ -207,6 +211,7 @@ class UsbAudioStream(
     private external fun nativeUsbAudioStop(handle: Long)
     private external fun nativeFlush(handle: Long): Boolean
     private external fun nativePollPending(handle: Long): Int
+    private external fun nativeGetPendingAudioFrames(handle: Long): Long
     private external fun nativeFinish(handle: Long): Boolean
     private external fun nativeDrainUrbs(handle: Long): Int
     private external fun nativeUsbAudioDestroy(handle: Long): Boolean

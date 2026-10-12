@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.sp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun PlayerQueueSheet(state: MusicOneUiState, viewModel: MusicOneViewModel, onDismiss: () -> Unit) {
+internal fun PlayerQueueSheet(state: MusicOneUiState, viewModel: MusicPlaybackRuntime, onDismiss: () -> Unit) {
     val height = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() * .8f }
     val list = rememberLazyListState()
     LaunchedEffect(Unit) {

@@ -135,11 +135,13 @@ internal fun qqQualityIdsFromFileSizes(
 }
 
 internal fun decodeQqPlaylistDescription(raw: String): String {
+    // 普通歌曲与歌手名称直接返回，避免批量映射时反复执行富文本清理。
+    if (raw.none { it == '<' || it == '&' || it == '\u00A0' || it == '\n' }) return raw.trim()
     var text = raw
-        .replace(Regex("(?i)<br\\s*/?>"), "\n")
-        .replace(Regex("(?i)</p\\s*>"), "\n")
-        .replace(Regex("<[^>]+>"), "")
-    repeat(2) {
+        .replace(QQ_HTML_BREAK, "\n")
+        .replace(QQ_HTML_PARAGRAPH_END, "\n")
+        .replace(QQ_HTML_TAG, "")
+    for (round in 0 until 2) {
         val decoded = QQ_HTML_ENTITY.replace(text) { match ->
             val entity = match.groupValues[1]
             val codePoint = when {
@@ -159,17 +161,22 @@ internal fun decodeQqPlaylistDescription(raw: String): String {
                 else -> match.value
             }
         }
-        if (decoded == text) return@repeat
+        if (decoded == text) break
         text = decoded
     }
     return text
         .replace('\u00A0', ' ')
-        .replace(Regex("[ \\t]+\n"), "\n")
-        .replace(Regex("\n{3,}"), "\n\n")
+        .replace(QQ_LINE_TRAILING_SPACE, "\n")
+        .replace(QQ_EXTRA_LINE_BREAKS, "\n\n")
         .trim()
 }
 
 private val QQ_HTML_ENTITY = Regex("&(#x[0-9a-fA-F]+|#[0-9]+|amp|lt|gt|quot|apos|nbsp);", RegexOption.IGNORE_CASE)
+private val QQ_HTML_BREAK = Regex("(?i)<br\\s*/?>")
+private val QQ_HTML_PARAGRAPH_END = Regex("(?i)</p\\s*>")
+private val QQ_HTML_TAG = Regex("<[^>]+>")
+private val QQ_LINE_TRAILING_SPACE = Regex("[ \\t]+\n")
+private val QQ_EXTRA_LINE_BREAKS = Regex("\n{3,}")
 
 private fun JSONObject.firstQqString(vararg names: String): String = names.firstNotNullOfOrNull { name ->
     optString(name).takeIf(String::isNotBlank)

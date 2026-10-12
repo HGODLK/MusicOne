@@ -8,6 +8,9 @@ import kotlinx.coroutines.flow.asStateFlow
 internal class PlayerSeekPreview {
     private var lyricSeekRevision = 0L
     private var progressLyricSeekRevision = 0L
+    private var commitRevision = 0L
+    private val mutableProgressCommit = MutableStateFlow<ProgressLyricSeekCommit?>(null)
+    val progressCommit = mutableProgressCommit.asStateFlow()
     private val mutableLyricSeek = MutableStateFlow<LyricProgressSeek?>(null)
     val lyricSeek = mutableLyricSeek.asStateFlow()
     private val mutableProgressLyricSeek = MutableStateFlow<ProgressLyricSeek?>(null)
@@ -16,10 +19,26 @@ internal class PlayerSeekPreview {
     val position = mutablePosition.asStateFlow()
 
     fun update(fraction: Float, durationMs: Long) {
+        if (mutablePosition.value == null) mutableProgressCommit.value = null
         mutablePosition.value = (fraction.coerceIn(0f, 1f) * durationMs).toLong()
     }
 
-    fun clear() { mutablePosition.value = null }
+    fun clear() {
+        mutableProgressCommit.value = null
+        mutablePosition.value = null
+    }
+
+    fun prepareProgressCommit(trackId: String, generation: Long, positionMs: Long): ProgressLyricSeekCommit =
+        ProgressLyricSeekCommit(trackId, generation, ++commitRevision, positionMs.coerceAtLeast(0L))
+            .also { mutableProgressCommit.value = it }
+
+    fun completeProgressCommit(snapshot: PlaybackProgressSnapshot) {
+        val pending = mutableProgressCommit.value
+        mutableProgressCommit.value = pending?.takeIf {
+            it.trackId == snapshot.trackId && it.generation == snapshot.generation && it.positionMs == snapshot.positionMs
+        }?.copy(confirmed = snapshot)
+        mutablePosition.value = null
+    }
 
     fun requestLyricSeek(trackId: String, fraction: Float) {
         mutableLyricSeek.value = LyricProgressSeek(

@@ -172,7 +172,7 @@ class PlaylistInteractionTest {
         swipe.incoming = track("2")
         swipe.amount = .4f
         assertEquals(0, commits)
-        swipe.finish(false) { _, _ -> commits++ }
+        swipe.finish(false, onCommit = { _, _ -> commits++ })
         repeat(30) { yield(); clock.sendFrame(it * 16_000_000L) }
         yield()
         assertEquals(0, commits)
@@ -180,11 +180,11 @@ class PlaylistInteractionTest {
         swipe.outgoing = track("1")
         swipe.incoming = track("2")
         swipe.amount = 1f
-        swipe.finish(true) { selected, next ->
+        swipe.finish(true, onCommit = { selected, next ->
             assertEquals(track("2"), selected)
             assertTrue(next)
             commits++
-        }
+        })
         assertEquals(1, commits)
         coroutineContext.cancelChildren()
     }
@@ -197,7 +197,7 @@ class PlaylistInteractionTest {
         swipe.outgoing = first
         swipe.incoming = second
         swipe.amount = 1f
-        swipe.finish(true) { _, _ -> }
+        swipe.finish(true, onCommit = { _, _ -> })
         repeat(20) { yield(); clock.sendFrame(it * 16_000_000L) }
         yield()
         assertTrue(swipe.active)
@@ -222,7 +222,7 @@ class PlaylistInteractionTest {
         swipe.outgoing = first
         swipe.incoming = second
         swipe.amount = .85f
-        swipe.finish(true) { _, _ -> }
+        swipe.finish(true, onCommit = { _, _ -> })
         swipe.onTrackPresented(second)
         swipe.onTargetBaseArtworkDrawn(second, PlayerArtworkFrame(second.artworkIdentity(), null))
         swipe.onTargetOverlayArtworkDrawn(second, PlayerArtworkFrame(second.artworkIdentity(), null))

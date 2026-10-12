@@ -16,6 +16,7 @@ internal class RecommendationNavigation(private val selectedPlaylist: MutableSta
     private var afterClosed: (() -> Unit)? = null
 
     init {
+        motion.beforeShownHandoff = ::settlePlaylistCoverHandoff
         motion.onHidden = {
             selectedPlaylist.value = null
             cards.restore()
@@ -48,6 +49,7 @@ internal fun rememberRecommendationNavigation(): RecommendationNavigation {
         initialOpen = selectedPlaylist.value != null,
         exitAnimation = PlaylistReturnAnimation,
         enterAnimation = PlaylistEnterAnimation,
+        dragAnimation = PlaylistGestureSettlementAnimation,
     )
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val cards = remember { PlaylistCardTransition(scope) }
@@ -59,7 +61,7 @@ internal fun rememberRecommendationNavigation(): RecommendationNavigation {
 internal fun RecommendationDestination(
     navigation: RecommendationNavigation,
     state: MusicOneUiState,
-    viewModel: MusicOneViewModel,
+    viewModel: MusicPlaybackRuntime,
     bottomInset: Dp,
     loadingPlaylistId: String?,
     loadMessage: String?,

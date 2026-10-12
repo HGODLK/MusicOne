@@ -1,6 +1,6 @@
 package com.musicone.demo
 
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -22,10 +22,11 @@ import kotlinx.coroutines.launch
 internal fun PlayerSyncedLyrics(
     track: MusicTrack,
     loadState: LyricLoadState,
-    viewModel: MusicOneViewModel,
+    viewModel: MusicPlaybackRuntime,
     modifier: Modifier,
     active: Boolean = true,
     followPlayback: Boolean = active,
+    animateTrackChange: Boolean = followPlayback,
     exitAlignment: CompletableDeferred<Unit>? = null,
     openingAlignment: CompletableDeferred<Unit>? = null,
     prepareWhileHidden: Boolean = false,
@@ -36,7 +37,11 @@ internal fun PlayerSyncedLyrics(
     exitProgress: () -> Float = { 1f },
     entranceProgress: (() -> Float)? = null,
     heldTrackChange: Boolean = false,
-    currentAnchorFraction: Float? = null,
+    intermediateSeek: Boolean = false,
+    lyricsGestureHeld: Boolean = false,
+    closingLyricsDrag: Boolean = false,
+    readingBounds: LyricReadingBounds? = null,
+    boundaryWindow: LyricBoundaryWindow? = null,
     trackTransitionDirection: TrackTransitionDirection = TrackTransitionDirection.NEXT,
     onWindowLayout: ((androidx.compose.foundation.lazy.LazyListLayoutInfo, LyricBlurProtection) -> Unit)? = null,
     onOpeningFront: ((PhoneLyricsOpeningFront) -> Unit)? = null,
@@ -45,8 +50,10 @@ internal fun PlayerSyncedLyrics(
         track, loadState, trackTransitionDirection, viewModel.rapidTrackSwitch, viewModel.state,
     )
     val playbackProgress = viewModel.playbackProgress.collectAsStateWithLifecycle()
+    val playbackActivity = viewModel.playbackActivity.collectAsStateWithLifecycle()
     val preview = viewModel.seekPreview.position.collectAsStateWithLifecycle()
     val progressLyricSeek = viewModel.seekPreview.progressLyricSeek.collectAsStateWithLifecycle()
+    val progressCommit = viewModel.seekPreview.progressCommit.collectAsStateWithLifecycle()
     var current by remember {
         mutableStateOf(request.presentation?.let {
             LyricWindow(it).also { window ->
@@ -61,13 +68,15 @@ internal fun PlayerSyncedLyrics(
     val lyricClock = LocalLyricAnimationClock.current
     val heldScope = rememberCoroutineScope { lyricClock ?: kotlin.coroutines.EmptyCoroutineContext }
     val latestHeldTrackChange by rememberUpdatedState(heldTrackChange)
-    DisposableEffect(held) { onDispose { held.cancel() } }
+    val latestIntermediateSeek by rememberUpdatedState(intermediateSeek)
+    val latestActive by rememberUpdatedState(active)
+    DisposableEffect(held) { onDispose { held.cancel(); held.clearSlides() } }
     val view = LocalView.current
     var travelPx by remember { mutableFloatStateOf(0f) }
     var preparing by remember { mutableStateOf(false) }
     val requested by rememberUpdatedState(request.presentation)
     val direction by rememberUpdatedState(request.direction)
-    val animateChange = active && followPlayback
+    val animateChange = active && animateTrackChange
     val rapid by rememberRapidLyricHandoff(viewModel.rapidTrackSwitch, animateChange) { pending ->
         val window = current
         !preparing && (window == null || motion.settledAt(window.slot)) &&
@@ -77,11 +86,16 @@ internal fun PlayerSyncedLyrics(
     LyricAnimationEffect(current, request.trackId, rapid != null) {
         val window = current?.takeIf { it.presentation.id == request.trackId }
             ?: return@LyricAnimationEffect
-        snapshotFlow { playbackProgress.value to preview.value }.collect { (snapshot, previewMs) ->
+        snapshotFlow { Triple(Triple(playbackProgress.value, preview.value, progressCommit.value),
+            latestIntermediateSeek || window.playback.intermediatePositionOwned,
+            latestActive) }.collect { (progress, intermediate, windowActive) ->
+            val (snapshot, previewMs, commit) = progress
             window.playback.updateObserved(snapshot, previewMs, browsing = rapid != null,
                 latest = viewModel.playbackProgress.value,
                 latestPreviewMs = viewModel.seekPreview.position.value,
-                latestBrowsing = viewModel.rapidTrackSwitch.presentation.value != null)
+                latestBrowsing = viewModel.rapidTrackSwitch.presentation.value != null,
+                intermediateSeek = intermediate, active = windowActive,
+                observedCommit = commit, latestCommit = viewModel.seekPreview.progressCommit.value)
         }
     }
     LyricAnimationEffect(animateChange) {
@@ -89,6 +103,7 @@ internal fun PlayerSyncedLyrics(
             it.cleanup?.cancel()
         }
         outgoing.clear()
+        held.clearSlides()
         preparing = false
         if (!animateChange && !held.active) motion.show(current?.slot ?: 0f)
         // 新目标就绪后即可交接；旧窗口在后台完整滑出，等待期间只保留最新请求。
@@ -117,8 +132,14 @@ internal fun PlayerSyncedLyrics(
                 if (animateChange && !held.active) current?.let { motion.request(this, it.slot, browsing) }
                 return@collect
             }
+            if (pending == null && !held.active && !preparing && current?.let { motion.settledAt(it.slot) } == true) {
+                current?.refreshPlaybackRound(target, progress)?.let { refreshed ->
+                    current = refreshed
+                    return@collect
+                }
+            }
             // 只有按住中间态发起的跨曲交接走原位渐变；松手后完成已有事务。
-            if (latestHeldTrackChange || held.active) {
+            if (latestHeldTrackChange) {
                 val source = current
                 val incoming = LyricWindow(target, source?.slot ?: 0f)
                 incoming.playback.update(progress, viewModel.seekPreview.position.value, browsing = pending != null)
@@ -127,10 +148,13 @@ internal fun PlayerSyncedLyrics(
                 preparing = false
                 return@collect
             }
-            val previous = current.takeIf { animateChange }
+            val released = held.releaseForSlide()
+            released.filter { it !in outgoing }.forEach(outgoing::add)
+            val previous = (released.lastOrNull() ?: current).takeIf { animateChange }
             // 快速切回时接回仍在退场的原窗口，保留其列表锚点、高亮与真实运动位置。
             val returning = outgoing.lastOrNull {
-                previous != null && canReturnLyricWindow(it.slot, previous.slot, motion.offset.value, travelDirection) &&
+                previous != null && held.slidingWeight(it) == null &&
+                    canReturnLyricWindow(it.slot, previous.slot, motion.offset.value, travelDirection) &&
                     it.canReturnTo(target, progress, restarting = pending != null)
             }
             returning?.cleanup?.cancelAndJoin()
@@ -143,6 +167,7 @@ internal fun PlayerSyncedLyrics(
             outgoing.filter { it.slot == incoming.slot }.forEach {
                 it.cleanup?.cancelAndJoin()
                 outgoing.remove(it)
+                held.forgetSlide(it)
             }
             // 屏外待播页被替换时不加入退场列表，避免积累不可见歌词和同位置副本。
             previous?.takeIf { it.slot != incoming.slot && it !in outgoing }?.let(outgoing::add)
@@ -162,19 +187,27 @@ internal fun PlayerSyncedLyrics(
                             .first { it }
                         // 完全滑出后再错开数帧释放整棵歌词列表，避免收尾帧同时承担销毁工作。
                         kotlinx.coroutines.delay(64)
-                        playbackTrace("MusicOne:lyric-dispose-request") { outgoing.remove(old) }
+                        playbackTrace("MusicOne:lyric-dispose-request") {
+                            outgoing.remove(old)
+                            held.forgetSlide(old)
+                        }
                     }
                 }
             } else {
                 motion.show(incoming.slot)
                 outgoing.clear()
+                held.clearSlides()
             }
         }
     }
-    Box(modifier.playerLyricsRegion(active, topExtensionPx).onGloballyPositioned {
+    BoxWithConstraints(modifier.playerLyricsRegion(active, topExtensionPx).onGloballyPositioned {
         travelPx = lyricWindowTravelPx(it.positionInWindow().y, it.size.height.toFloat(), view.rootView.height.toFloat())
         motion.updateTravel(travelPx)
-    }.lyricHeldComposite { held.active }) {
+    }.lyricHeldComposite { held.active || held.hasSlidingBlend }) {
+        val layoutMode = LocalPlayerLayoutSpec.current.mode
+        val typography = remember(layoutMode, maxWidth) {
+            lyricTypographyForWidth(layoutMode, minOf(maxWidth.value, 760f))
+        }
         val windows = if (held.active) held.layers.map { it.window } else outgoing.toList() + listOfNotNull(current)
         windows.forEach { window ->
             key(window) {
@@ -192,6 +225,16 @@ internal fun PlayerSyncedLyrics(
                 val windowSeeking = remember(window, old, matchesPlayback, preview) {
                     { preview.value != null && !old && matchesPlayback }
                 }
+                val advancing = playbackActivity.value.advancing && playbackActivity.value.trackId == shown.id &&
+                    playbackProgress.value.generation == window.playback.generation && !old && matchesPlayback &&
+                    rapid == null && !window.playback.intermediateCommitPending && !window.playback.intermediatePositionOwned
+                val latestAdvancing by rememberUpdatedState(advancing)
+                val wordClock = rememberContinuousLyricClock(
+                    { window.playback.wordSnapshot(playbackProgress.value, if (old) null else preview.value).positionMs },
+                    { window.playback.wordSnapshot(playbackProgress.value, if (old) null else preview.value).sampledAtMs },
+                    { latestAdvancing }, windowSeeking, shown.durationMs,
+                    active && !old && !windowPreparing && settled && ExperiencePreferences.options.verbatimLyricAnimation &&
+                        shown.lyrics.any { it.words.isNotEmpty() })
                 ImmersiveLyrics(
                     shown,
                     windowProgress,
@@ -199,8 +242,11 @@ internal fun PlayerSyncedLyrics(
                         viewModel.seekPreview.requestLyricSeek(track.id, fraction)
                         viewModel.seekTo(fraction)
                     },
-                    Modifier.fillMaxSize().lyricHeldWeight { if (held.active) held.weight(window) else null }.graphicsLayer {
+                    Modifier.fillMaxSize().lyricHeldWeight {
+                        if (held.active) held.weight(window) else held.slidingWeight(window)
+                    }.graphicsLayer {
                         translationY = if (held.active || (preparing && !old)) 0f else travelPx * (motion.offset.value + window.slot)
+                        if (!old) lyricTracePosition("MusicOne:track-window-y") { translationY }
                     }.drawWithContent {
                         if (old) {
                             // 退场只记录一次，后续位移直接复用图层。
@@ -222,6 +268,7 @@ internal fun PlayerSyncedLyrics(
                     },
                     active = active && !old && matchesPlayback && !windowPreparing && settled,
                     followPlayback = followPlayback && !old && matchesPlayback && !windowPreparing && settled && !held.active,
+                    verbatimProgressMs = wordClock,
                     onReady = if (!old && preparing) { { window.ready.complete(Unit); Unit } } else null,
                     exitAlignment = if (old) null else exitAlignment,
                     openingAlignment = if (old) null else openingAlignment,
@@ -230,14 +277,27 @@ internal fun PlayerSyncedLyrics(
                     revealTopLineBeforeEntrance = revealTopLineBeforeEntrance && !old && !preparing,
                     limitTransitionHistory = limitTransitionHistory && (!old || held.active) && !preparing,
                     heldPreparation = if (heldPreparing) held.preparation else null,
-                    freezeWindow = old && held.active,
+                    freezeWindow = old && (held.active || held.slidingWeight(window) != null),
                     topExtensionPx = topExtensionPx,
                     topBufferPx = topBufferPx,
                     exitProgress = exitProgress,
                     entranceProgress = entranceProgress,
-                    currentAnchorFraction = currentAnchorFraction,
+                    readingBounds = readingBounds,
+                    boundaryWindow = boundaryWindow?.let { bounds ->
+                        LyricBoundaryWindow(bounds.topBuffer,
+                            offset = { bounds.offset() + if (held.active || preparing && !old) 0f
+                                else travelPx * (motion.offset.value + window.slot) },
+                            velocity = { bounds.velocity() })
+                    },
+                    typography = typography,
                     seeking = windowSeeking,
+                    intermediateSeek = intermediateSeek && !old && matchesPlayback && !windowPreparing && settled && !held.active,
+                    lyricsGestureHeld = lyricsGestureHeld,
+                    closingLyricsDrag = closingLyricsDrag,
                     progressLyricSeek = if (!old && matchesPlayback) window.playback.progressSeek(progressLyricSeek.value) else null,
+                    intermediateCommit = if (!old && matchesPlayback) window.playback.intermediateCommit else null,
+                    intermediateCommitPending = !old && matchesPlayback && window.playback.intermediateCommitPending,
+                    onIntermediateSeekOwnership = { window.playback.intermediatePositionOwned = it },
                     onWindowLayout = if (!old && matchesPlayback && !held.active && onWindowLayout != null) {
                         { layout, protection -> onWindowLayout(layout,
                             if (preparing || !settled || outgoing.isNotEmpty()) LyricBlurProtection.HANDOFF else protection) }
@@ -245,6 +305,9 @@ internal fun PlayerSyncedLyrics(
                     onOpeningFront = if (!old && matchesPlayback && !held.active && !preparing) onOpeningFront else null,
                 )
             }
+        }
+        if (LocalPlayerPrewarming.current) {
+            LyricRenderWarmup(current?.presentation, current?.playback?.positionMs ?: 0L, typography)
         }
         if (current == null) LyricAnimationEffect(exitAlignment) { exitAlignment?.complete(Unit) }
         if (current == null) LyricAnimationEffect(openingAlignment) { openingAlignment?.complete(Unit) }

@@ -26,15 +26,17 @@ internal class LyricAutoRefocus {
         active = false
     }
 
-    suspend fun align(pane: LyricWindowPane, current: () -> Int, allowed: () -> Boolean): Int? = run {
+    suspend fun align(pane: LyricWindowPane, current: () -> Int,
+        targetOffset: () -> Float = { 0f }, requireVisible: Boolean = true,
+        allowed: () -> Boolean): Int? = run {
         pane.playbackStep.reset()
         var completed: Int? = null
         pane.listState.scroll {
             completed = settle({
                 val index = current()
-                if (!isLyricTargetTrulyVisible(pane.listState, index)) null else
+                if (requireVisible && !isLyricTargetTrulyVisible(pane.listState, index)) null else
                     pane.listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
-                        ?.let { LyricAutoRefocusTarget(index, lyricVisibleSeekTravel(it.offset)) }
+                        ?.let { LyricAutoRefocusTarget(index, lyricVisibleSeekTravel(it.offset) - targetOffset()) }
             }, { scrollBy(it) }, allowed)
         }
         completed?.takeIf { allowed() }?.also {

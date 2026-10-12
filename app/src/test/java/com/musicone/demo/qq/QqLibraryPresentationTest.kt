@@ -107,6 +107,21 @@ class QqLibraryPresentationTest {
         assertEquals(original.qqDirectoryId, presented.qqDirectoryId)
     }
 
+    @Test
+    fun clearingSettledFavoriteOverridesRestoresCloudTracksAndCount() {
+        val snapshot = QqFavoritePlaylistSnapshot()
+        val song = track("qq-song")
+        snapshot.record(playlist("qq-favorite", "我喜欢"))
+        assertEquals(listOf(song), snapshot.present(mapOf(song.id to (song to true)))?.tracks)
+        assertEquals(0, snapshot.present(emptyMap())?.count)
+        assertTrue(requireNotNull(snapshot.present(emptyMap())).tracks.isEmpty())
+        snapshot.record(playlist("qq-favorite", "我喜欢").copy(tracks = listOf(song), count = 1))
+        assertEquals(0, snapshot.present(mapOf(song.id to (song to false)))?.count)
+        assertEquals(listOf(song), snapshot.present(emptyMap())?.tracks)
+        snapshot.clear()
+        assertEquals(null, snapshot.present(emptyMap()))
+    }
+
     private fun playlist(id: String, title: String) = MusicPlaylist(
         id = id,
         source = MusicSource.QQ,

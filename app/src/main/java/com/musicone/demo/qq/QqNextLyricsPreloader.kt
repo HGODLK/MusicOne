@@ -25,10 +25,13 @@ internal class QqNextLyricsPreloader(
         currentCoroutineContext().ensureActive()
         val requestedSession = session()
         if (track.source != MusicSource.QQ || requestedSession.cacheNamespace() != namespace) return
-        if (readCached(track, namespace).isNotEmpty()) return
+        val cached = readCached(track, namespace)
+        if (hasReusableLyrics(track, cached) && !shouldUpgradeLyricCacheToVerbatim(track, cached)) return
         currentCoroutineContext().ensureActive()
         if (session().cacheNamespace() != namespace) return
-        val lyrics = track.lyrics.ifEmpty { fetch(track, requestedSession.credential) }
+        val lyrics = track.lyrics.takeIf {
+            hasReusableLyrics(track, it) && !shouldUpgradeLyricCacheToVerbatim(track, it)
+        } ?: fetch(track, requestedSession.credential)
         currentCoroutineContext().ensureActive()
         // 阻塞网络请求返回后再次核对账号，并始终用开始时的命名空间写入。
         if (lyrics.isNotEmpty() && session().cacheNamespace() == namespace) save(track, lyrics, namespace)

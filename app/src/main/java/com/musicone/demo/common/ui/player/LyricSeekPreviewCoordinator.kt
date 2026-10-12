@@ -45,7 +45,7 @@ internal fun LyricSeekPreviewTarget(
     lines: List<TimedLyric>,
     anchor: Dp,
     bottomPadding: Dp,
-    largeText: Boolean,
+    typography: LyricTypography,
 ) {
     val pane = controller.previewPane ?: return
     androidx.compose.runtime.key(pane.id) {
@@ -54,7 +54,7 @@ internal fun LyricSeekPreviewTarget(
             val item = pane.listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == pane.currentLine }
             controller.previewDrawn(pane, item?.index, item?.offset)
         }) {
-            LyricListView(pane, lines, anchor, bottomPadding, largeText,
+            LyricListView(pane, lines, anchor, bottomPadding, typography,
                 active = false, isSeeking = true, lyricSettleProgress = { 1f }, onLineClick = { _, _ -> })
         }
     }

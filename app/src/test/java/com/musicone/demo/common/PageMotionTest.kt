@@ -11,6 +11,50 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PageMotionTest {
+    @Test fun openingDragRetainsDistanceDuringPreparationAndCanSettleImmediately() = runBlocking {
+        val clock = BroadcastFrameClock()
+        val motion = PageMotion(CoroutineScope(coroutineContext + clock), false, 480, 360,
+            PlayerReturnAnimation, PlayerEnterAnimation, PlayerGestureSettlementAnimation)
+        motion.updateHost(Rect(0f, 0f, 1000f, 2000f))
+        assertTrue(motion.beginOpeningDrag())
+        motion.dragTo(.4f)
+        assertEquals(0f, motion.value)
+        assertEquals(.4f, motion.dragProgress)
+        motion.releaseDragWithVelocity(3f, maxVelocity = 6f)
+        motion.request(true)
+        motion.targets["cover"] = MotionAnchor(Rect(0f, 0f, 300f, 300f))
+        repeat(150) { yield(); clock.sendFrame(it * 16_000_000L) }
+        yield()
+        assertEquals(MotionPhase.SHOWN, motion.phase)
+        assertEquals(1f, motion.value)
+        coroutineContext.cancelChildren()
+    }
+
+    @Test fun cancelledOpeningPreparationDoesNotReappearAfterTargetLayout() = runBlocking {
+        val clock = BroadcastFrameClock()
+        val motion = PageMotion(CoroutineScope(coroutineContext + clock), false, 480, 360)
+        assertTrue(motion.beginOpeningDrag())
+        motion.dragTo(.2f)
+        motion.request(false, rebound = true)
+        yield()
+        assertEquals(MotionPhase.HIDDEN, motion.phase)
+        motion.targets["cover"] = MotionAnchor(Rect(0f, 0f, 300f, 300f))
+        repeat(10) { yield(); clock.sendFrame(it * 16_000_000L) }
+        assertEquals(MotionPhase.HIDDEN, motion.phase)
+        assertFalse(motion.wantsOpen)
+        coroutineContext.cancelChildren()
+    }
+
+    @Test fun miniPlayerReleaseDistinguishesFlingReversalAndCancellation() {
+        assertFalse(shouldOpenPlayer(.2f, 0f, true))
+        assertTrue(shouldOpenPlayer(.4f, 0f, true))
+        assertTrue(shouldOpenPlayer(.1f, -1500f, true))
+        assertTrue(shouldOpenPlayer(.01f, -1500f, true, -24f))
+        assertFalse(shouldOpenPlayer(.01f, -1500f, true, -4f))
+        assertFalse(shouldOpenPlayer(.6f, 1500f, true))
+        assertFalse(shouldOpenPlayer(.8f, -1500f, false))
+    }
+
     @Test fun playerReversalsPreserveVelocityAndCompleteOnlyLatestRequest() = runBlocking {
         val clock = BroadcastFrameClock()
         val motion = PageMotion(CoroutineScope(coroutineContext + clock), true, 320, 280,
@@ -170,5 +214,65 @@ class PageMotionTest {
         assertEquals(adaptiveInk, handoff.sourceInk("next", androidx.compose.ui.graphics.Color.Black))
         handoff.complete()
         assertFalse(handoff.displayedPlaying(false))
+    }
+
+    @Test fun playerGestureSettlementClosesSmoothlyWithoutEndJumping() = runBlocking {
+        listOf(16_666_667L, 8_333_333L).forEach { frameNanos ->
+            val clock = BroadcastFrameClock()
+            val motion = PageMotion(
+                CoroutineScope(coroutineContext + clock),
+                true,
+                480,
+                360,
+                PlayerReturnAnimation,
+                PlayerEnterAnimation,
+                PlayerGestureSettlementAnimation,
+            )
+            val host = Rect(0f, 0f, 1200f, 2000f)
+            val miniCover = Rect(24f, 1850f, 124f, 1950f)
+            val playerCover = Rect(100f, 200f, 1100f, 1200f)
+            motion.updateHost(host)
+            motion.sources["cover"] = MotionAnchor(miniCover)
+            motion.targets["cover"] = MotionAnchor(playerCover)
+
+            var hiddenCount = 0
+            motion.onHidden = { hiddenCount++ }
+
+            assertTrue(motion.beginDrag())
+            motion.dragTo(.65f)
+            motion.releaseDragWithVelocity(-.4f)
+            motion.request(false)
+
+            var timeNanos = 0L
+            val frames = mutableListOf<Rect>()
+            while (motion.phase != MotionPhase.HIDDEN && frames.size < 600) {
+                yield()
+                timeNanos += frameNanos
+                clock.sendFrame(timeNanos)
+                yield()
+                frames.add(motionRect(miniCover, playerCover, motion.value))
+            }
+
+            assertEquals(MotionPhase.HIDDEN, motion.phase)
+            assertEquals(1, hiddenCount)
+            assertTrue(frames.isNotEmpty())
+
+            fun residual(rect: Rect): Float = maxOf(
+                kotlin.math.abs(rect.left - miniCover.left),
+                kotlin.math.abs(rect.top - miniCover.top),
+                kotlin.math.abs(rect.right - miniCover.right),
+                kotlin.math.abs(rect.bottom - miniCover.bottom),
+            )
+
+            val residualFrames = frames.filter { residual(it) > 0.0001f }
+            assertTrue(residualFrames.isNotEmpty())
+            val lastResidualFrame = residualFrames.last()
+            val maxError = residual(lastResidualFrame)
+            assertTrue(
+                "Last residual frame error should be < 0.5px, but was $maxError px",
+                maxError < 0.5f,
+            )
+            coroutineContext.cancelChildren()
+        }
     }
 }

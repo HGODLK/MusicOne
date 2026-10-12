@@ -25,7 +25,7 @@ internal class BottomBarMeasurements {
 
 @Composable
 internal fun BottomPlayerBar(
-    viewModel: MusicOneViewModel,
+    viewModel: MusicPlaybackRuntime,
     playlistMotion: PageMotion,
     playerMotion: PageMotion,
     measurements: BottomBarMeasurements,
@@ -59,6 +59,13 @@ internal fun BottomPlayerBar(
         playerMotion.request(true)
         viewModel.setPlayerExpanded(true)
     }
+    val openGesture = Modifier.miniPlayerOpenGesture(playerMotion,
+        onStart = {
+            controlHandoff.begin(state.isPlaying)
+            viewModel.setPlayerExpanded(true)
+        },
+        onExpandedChange = viewModel::setPlayerExpanded,
+    )
     Column(modifier.navigationBarsPadding()) {
         Box(Modifier.onSizeChanged { measurements.miniHeight = with(density) { it.height.toDp() } }) {
             val track = state.currentTrack
@@ -74,7 +81,8 @@ internal fun BottomPlayerBar(
                             immersiveVisual,
                             onOpen = openPlayer, onToggle = viewModel::togglePlay,
                             onNext = viewModel::requestNext, onFavorite = { toggleFavorite(it) },
-                            previewSwipe = viewModel::previewMiniSwipe, commitSwipe = viewModel::commitMiniSwipe)
+                            previewSwipe = viewModel::previewMiniSwipe, commitSwipe = viewModel::commitMiniSwipe,
+                            openGesture = openGesture)
                     }
                 }
             } else {
@@ -84,7 +92,8 @@ internal fun BottomPlayerBar(
                         immersiveVisual,
                         onOpen = openPlayer, onToggle = viewModel::togglePlay,
                         onNext = viewModel::requestNext, onFavorite = { toggleFavorite(it) },
-                        previewSwipe = viewModel::previewMiniSwipe, commitSwipe = viewModel::commitMiniSwipe)
+                        previewSwipe = viewModel::previewMiniSwipe, commitSwipe = viewModel::commitMiniSwipe,
+                        openGesture = openGesture)
                 }
             }
         }

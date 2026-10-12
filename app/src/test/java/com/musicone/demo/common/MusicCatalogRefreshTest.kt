@@ -8,13 +8,13 @@ import org.junit.Test
 
 class MusicCatalogRefreshTest {
     @Test fun refreshRunsForEmptyForcedOrStaleRecommendations() {
-        assertTrue(recommendedTracksRefreshDue(false, false, 100L, 200L))
-        assertTrue(recommendedTracksRefreshDue(true, true, 100L, 200L))
-        assertTrue(recommendedTracksRefreshDue(false, true, 100L, 300_100L))
+        assertTrue(recommendedTracksRefreshDue(false, false, "2026-10-07", "2026-10-07"))
+        assertTrue(recommendedTracksRefreshDue(true, true, "2026-10-07", "2026-10-07"))
+        assertTrue(recommendedTracksRefreshDue(false, true, "2026-10-06", "2026-10-07"))
     }
 
     @Test fun recentRecommendationsAreReusedUntilRefreshIsDue() {
-        assertFalse(recommendedTracksRefreshDue(false, true, 100L, 300_099L))
+        assertFalse(recommendedTracksRefreshDue(false, true, "2026-10-07", "2026-10-07"))
     }
 
     @Test fun refreshMovesToNextPlatformRecommendationBatch() {

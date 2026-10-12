@@ -26,6 +26,7 @@ internal class QqRecentPlayViewModel(application: Application) : AndroidViewMode
     val state: StateFlow<QqRecentPlayUiState> = _state.asStateFlow()
     private var accountKey = ""
     private var loadJob: Job? = null
+    private val refreshGate = QqRecentPlayRefreshGate()
 
     init {
         viewModelScope.launch {
@@ -33,7 +34,21 @@ internal class QqRecentPlayViewModel(application: Application) : AndroidViewMode
         }
     }
 
+    fun setVisible(owner: Any, visible: Boolean) {
+        refreshGate.setVisible(owner, visible)
+        if (refreshGate.visible) {
+            ensureLoaded()
+        } else if (loadJob?.isActive == true) {
+            // 播放页遮住两个消费页面时取消读取，回到页面后仍补齐最新记录。
+            refreshGate.invalidate()
+            loadJob?.cancel()
+            _state.update { it.copy(loading = false) }
+        }
+    }
+
     fun ensureLoaded(force: Boolean = false) {
+        if (force) refreshGate.invalidate()
+        if (!refreshGate.visible) return
         val session = preferences.readSession(MusicSource.QQ)
         val key = session.account?.userId.orEmpty()
         if (key.isBlank()) {
@@ -42,7 +57,8 @@ internal class QqRecentPlayViewModel(application: Application) : AndroidViewMode
             _state.value = QqRecentPlayUiState(message = "登录后同步最近播放")
             return
         }
-        if (!force && key == accountKey && (_state.value.loading || _state.value.snapshot.songs.isNotEmpty())) return
+        if (!refreshGate.consumePending() && key == accountKey &&
+            (_state.value.loading || _state.value.snapshot.songs.isNotEmpty())) return
         accountKey = key
         loadJob?.cancel()
         loadJob = viewModelScope.launch {

@@ -73,4 +73,9 @@ private fun JSONObject.searchCollection(album: Boolean): MusicPlaylist? {
 internal fun JSONArray.searchObjects(): List<JSONObject> = (0 until length()).mapNotNull(::optJSONObject)
 internal fun JSONObject.searchText(vararg keys: String): String = keys.firstNotNullOfOrNull {
     optString(it).takeIf { value -> value.isNotBlank() && value != "null" }
-}?.let { decodeQqPlaylistDescription(it).replace(Regex("<[^>]*>"), "") }.orEmpty()
+}?.let {
+    val decoded = decodeQqPlaylistDescription(it)
+    if ('<' in decoded) decoded.replace(QQ_SEARCH_TEXT_TAG, "") else decoded
+}.orEmpty()
+
+private val QQ_SEARCH_TEXT_TAG = Regex("<[^>]*>")

@@ -36,9 +36,9 @@ internal class OfflineMusicStore(private val context: Context) {
         }, { full -> verify(key, full) })
     }
 
-    fun availableTrackIds(): Set<String> {
+    fun availableTrackIds(): Set<String> = playbackTrace("MusicOne:offline-index-scan") {
         val namespaces = MusicSource.entries.map { preferences.readSession(it).cacheNamespace() }.toSet()
-        return MusicDiskCache.get(context).audio.keys.asSequence()
+        MusicDiskCache.get(context).audio.keys.asSequence()
             .filter { it.substringBefore('|') in namespaces }
             .filter { offlineRecordQuality(it, record(it)) != null && verifiedComplete(it) }
             .map { it.substringAfter('|').substringBefore('|') }.toSet()

@@ -28,7 +28,7 @@ internal fun RowScope.MiniPlayerInformation(track: MusicTrack, favorite: Boolean
     val artwork by rememberPlayerArtwork(track)
     val outgoingArtwork by rememberPlayerArtwork(swipe.outgoing ?: track)
     val incomingArtwork by rememberPlayerArtwork(swipe.incoming ?: track)
-    Box(Modifier.size(48.dp).clickable(enabled = !swipe.active, onClick = onOpen)
+    Box(Modifier.size(MiniPlayerLayoutMetrics.artwork).clickable(enabled = !swipe.active, onClick = onOpen)
         .semantics { contentDescription = "打开播放页" }
         .motionAnchor(motion, "cover", false, corner = 16f, markSize = 21f, markX = 1f, markY = -1f)) {
         ReadyArtworkCrossfade(
@@ -64,7 +64,7 @@ internal fun RowScope.MiniPlayerInformation(track: MusicTrack, favorite: Boolean
                 MiniPlayerText(value.title, miniPlayerInkColor("title"), Modifier.miniPlayerInkRegion("title"))
             }
         }
-        Box(Modifier.fillMaxWidth().padding(top = 3.dp).motionAnchor(motion, "subtitle", false, textSizeSp = 12f)) {
+        Box(Modifier.fillMaxWidth().padding(top = MiniPlayerLayoutMetrics.textGap).motionAnchor(motion, "subtitle", false, textSizeSp = 12f)) {
             MiniTextTransition(track, swipe, duration) { value ->
                 MiniPlayerText(value.artists, miniPlayerInkColor("artist"), Modifier.miniPlayerInkRegion("artist"), artist = true)
             }

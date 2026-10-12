@@ -29,7 +29,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 @Composable
 internal fun ImmersivePlaybackControls(state: MusicOneUiState, track: MusicTrack, motion: PageMotion,
-    viewModel: MusicOneViewModel, tablet: Boolean, lyrics: Boolean, onLyrics: () -> Unit,
+    viewModel: MusicPlaybackRuntime, tablet: Boolean, lyrics: Boolean, onLyrics: () -> Unit,
     onQueue: () -> Unit, modifier: Modifier = Modifier,
     lyricsProgress: () -> Float = { if (lyrics) 1f else 0f }) {
     val qqFeedback = track.source == MusicSource.QQ
@@ -50,7 +50,7 @@ internal fun ImmersivePlaybackControls(state: MusicOneUiState, track: MusicTrack
                 modifier = Modifier.size(56.dp).playerDetailReveal(motion),
                 horizontalMotion = (-7).dp,
             ) {
-                Icon(Icons.Default.FastRewind, "上一首", Modifier.size(38.dp))
+                Icon(PlayerControlIcons.FastRewind, "上一首", Modifier.size(38.dp))
             }
             PlaybackControlButton(
                 qqFeedback = qqFeedback,
@@ -65,7 +65,7 @@ internal fun ImmersivePlaybackControls(state: MusicOneUiState, track: MusicTrack
                 modifier = Modifier.size(56.dp).playerDetailReveal(motion),
                 horizontalMotion = 7.dp,
             ) {
-                Icon(Icons.Default.FastForward, "下一首", Modifier.size(38.dp))
+                Icon(PlayerControlIcons.FastForward, "下一首", Modifier.size(38.dp))
             }
             PlaybackModeButton(
                 playerPlaybackMode(state.shuffle, state.repeatMode),
@@ -101,7 +101,7 @@ internal fun ImmersivePlaybackControls(state: MusicOneUiState, track: MusicTrack
 }
 
 @Composable
-private fun PlayerProgressTimeline(viewModel: MusicOneViewModel, modifier: Modifier) {
+private fun PlayerProgressTimeline(viewModel: MusicPlaybackRuntime, modifier: Modifier) {
     val ink = LocalContentColor.current
     val visible = LocalPlayerVisible.current
     val timeline by rememberPlayerTimelineSnapshot(viewModel)
@@ -139,11 +139,14 @@ private fun PlayerProgressTimeline(viewModel: MusicOneViewModel, modifier: Modif
             }
         }, "播放进度", onFinished = {
             val target = seeking ?: return@PlayerThinSlider
+            // 在任何挂起或预览清空之前封存目标，中间态歌词不能回读上一帧正式位置。
+            val commit = viewModel.seekPreview.prepareProgressCommit(timeline.trackId,
+                viewModel.playbackProgress.value.generation, (timeline.durationMs * target).toLong())
             if (userDragged) {
                 scope.launch {
                     // 拖动过程已经跟手，松手只需把权威进度接到同一像素，不能先跳回旧位置。
                     progressMotion.snapTo(target)
-                    viewModel.seekToForTrack(timeline.trackId, target)
+                    if (!viewModel.seekToForTrack(timeline.trackId, target, commit.revision)) return@launch
                     seeking = null
                     userDragged = false
                 }
@@ -158,9 +161,9 @@ private fun PlayerProgressTimeline(viewModel: MusicOneViewModel, modifier: Modif
                 )
                 tapSeekJob?.cancel()
                 tapSeekJob = scope.launch {
-                    // 歌词页未挂载时不阻塞操作；已挂载时先锁住旧图层再更新权威进度。
-                    withTimeoutOrNull(120L) { lyricRequest.animationPrepared.await() }
-                    viewModel.seekToForTrack(timeline.trackId, target)
+                    // 先完成目标歌词准备，避免新窗口构建与音频跳转解码同时竞争；未挂载时仍按原上限放行。
+                    withTimeoutOrNull(120L) { lyricRequest.targetReady.await() }
+                    if (!viewModel.seekToForTrack(timeline.trackId, target, commit.revision)) return@launch
                     seeking = null
                     userDragged = false
                     progressMotion.animateSeek(revision)

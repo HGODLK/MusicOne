@@ -60,19 +60,6 @@ class QqSimilarRecommendationTest {
     }
 
     @Test
-    fun playingAnotherTrackKeepsAnExistingRecommendationSession() {
-        val recommendation = QqSimilarRecommendation(
-            baseTrack = track(MusicSource.QQ, "10", id = "qq-base"),
-            title = "测试推荐",
-            songs = emptyList(),
-        )
-        val loadedState = QqSimilarRecommendationUiState(recommendations = listOf(recommendation))
-
-        assertFalse(shouldConfigureQqSimilarRecommendation(sessionChanged = false, state = loadedState))
-        assertTrue(shouldConfigureQqSimilarRecommendation(sessionChanged = true, state = loadedState))
-    }
-
-    @Test
     fun genericRemoteTitleUsesCurrentSeedSong() {
         assertEquals(
             "听「心拍数＃0822」也会喜欢",

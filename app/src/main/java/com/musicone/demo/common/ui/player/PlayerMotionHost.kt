@@ -23,7 +23,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @Composable
 internal fun PlayerMotionHost(
     motion: PageMotion,
-    viewModel: MusicOneViewModel,
+    viewModel: MusicPlaybackRuntime,
     controlHandoff: PlayerControlHandoff,
     retention: PlayerRetentionState,
     launchCovering: Boolean,
@@ -43,10 +43,13 @@ internal fun PlayerMotionHost(
     BackHandler(enabled = motion.mounted, onBack = dismiss)
     if (!retention.shouldMount(motion.mounted)) return
     val prewarming = launchCovering && retention.allowed && !motion.mounted
-    // 闲置期间冻结展示快照；重新进入时同步读取当前歌曲，不补放隐藏期间的变化。
+    // 隐藏时只同步歌曲和歌词变更以准备本地布局，不跟随播放进度持续刷新。
     var retainedState by remember { mutableStateOf(state) }
     val displayed = if (motion.mounted || prewarming) state else retainedState
-    SideEffect { if (motion.mounted || prewarming) retainedState = state }
+    SideEffect {
+        if (motion.mounted || prewarming || retainedState.currentTrack != state.currentTrack ||
+            retainedState.lyricLoadState != state.lyricLoadState) retainedState = state
+    }
     RetainedPlayerContent(motion.mounted, prewarming, retention) {
         PlayerMotionContent(motion, displayed, viewModel, controlHandoff, dismiss)
     }
@@ -54,8 +57,9 @@ internal fun PlayerMotionHost(
 
 @Composable
 private fun PlayerMotionContent(motion: PageMotion, state: MusicOneUiState,
-    viewModel: MusicOneViewModel, controlHandoff: PlayerControlHandoff, dismiss: () -> Unit) {
+    viewModel: MusicPlaybackRuntime, controlHandoff: PlayerControlHandoff, dismiss: () -> Unit) {
     val track = state.currentTrack ?: PlayerWarmupTrack
+    val visualTrack by rememberPlayerVisualTrack(track, viewModel.rapidTrackSwitch, viewModel.state)
     val prewarming = LocalPlayerPrewarming.current
     val regions = remember { PlayerTouchRegions() }
     val qualityMenu = remember { PlayerQualityMenuState() }
@@ -104,7 +108,7 @@ private fun PlayerMotionContent(motion: PageMotion, state: MusicOneUiState,
                 }
                 FlyingPlayerGlass(motion)
                 FlyingPlayerArtwork(motion, track)
-                FlyingPlayerControls(motion, track, displayedPlaying)
+                FlyingPlayerControls(motion, visualTrack, displayedPlaying)
                 FlyingMiniPlayerAccessories(motion, track.id in LocalMusicFavorites.current.state.ids)
             }
             PlayerQualityMenuOverlay(
@@ -122,7 +126,7 @@ private fun PlayerMotionContent(motion: PageMotion, state: MusicOneUiState,
 
 @Composable
 private fun PlayerVisualContent(state: MusicOneUiState, track: MusicTrack, motion: PageMotion,
-    viewModel: MusicOneViewModel, onDismiss: () -> Unit, contentActivated: Boolean) {
+    viewModel: MusicPlaybackRuntime, onDismiss: () -> Unit, contentActivated: Boolean) {
     val visualTrack by rememberPlayerVisualTrack(track, viewModel.rapidTrackSwitch, viewModel.state)
     PlayerAtmosphere(visualTrack, contentActivated)
     ExpandedPlayerContent(state, track, visualTrack, motion, viewModel, onDismiss, contentActivated)

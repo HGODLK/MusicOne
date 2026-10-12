@@ -43,7 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 internal fun QqHomeScreen(
     state: MusicOneUiState,
     catalog: MusicCatalogUiState,
-    viewModel: MusicOneViewModel,
+    viewModel: MusicPlaybackRuntime,
     sessionRevision: Long,
     bottomInset: Dp,
     actions: PlatformHomeActions,
@@ -52,6 +52,9 @@ internal fun QqHomeScreen(
     val similar by similarViewModel.state.collectAsStateWithLifecycle()
     val recentPlayViewModel: QqRecentPlayViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val recentPlay by recentPlayViewModel.state.collectAsStateWithLifecycle()
+    ObserveQqRecentPlayVisibility(recentPlayViewModel,
+        state.page == MusicOnePage.HOME && LocalRecommendationVisible.current &&
+            LocalPlayerMotion.current?.mounted != true)
     val feedViewModel: QqMusicFeedViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val feed by feedViewModel.content.collectAsStateWithLifecycle()
     val feedRefreshLoading by feedViewModel.refreshLoading.collectAsStateWithLifecycle()

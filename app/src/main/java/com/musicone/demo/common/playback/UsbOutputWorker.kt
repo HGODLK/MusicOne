@@ -17,9 +17,12 @@ internal class UsbOutputWorker<T>(
     private val write: (T) -> Unit,
     private val recycle: (T) -> Unit,
     private val initializeThread: () -> Unit = {},
+    private val bufferFrames: (T) -> Long = { 0L },
+    private val maxBufferedFrames: Long = Long.MAX_VALUE,
 ) {
     private val lock = Object()
     private val queue = ArrayDeque<T>()
+    private var bufferedFrames = 0L
     private var closed = false
     private var paused = false
     private var generation = 0L
@@ -35,16 +38,33 @@ internal class UsbOutputWorker<T>(
 
     fun start() = thread.start()
 
+    fun canAccept(frames: Long): Boolean = synchronized(lock) { accepts(frames) }
+
+    private fun accepts(frames: Long): Boolean = !closed && failure == null && generation == flushedGeneration &&
+        !endRequested && queue.size < 128 &&
+        (bufferedFrames == 0L || frames <= maxBufferedFrames - bufferedFrames)
+
     fun enqueue(value: T): Boolean = synchronized(lock) {
-        if (closed || failure != null || generation != flushedGeneration || endRequested || queue.size >= 128) false
+        val frames = bufferFrames(value)
+        require(frames >= 0)
+        if (!accepts(frames)) false
         else {
             queue.addLast(value)
+            bufferedFrames += frames
             lock.notifyAll()
             true
         }
     }
 
     fun queueSize(): Int = synchronized(lock) { queue.size }
+    fun bufferedFrames(): Long = synchronized(lock) { bufferedFrames }
+    private fun clearQueue() {
+        while (queue.isNotEmpty()) {
+            val value = queue.removeFirst()
+            bufferedFrames -= bufferFrames(value)
+            recycle(value)
+        }
+    }
     fun hasPendingData(): Boolean = synchronized(lock) {
         queue.isNotEmpty() || busy || nativePending || generation != flushedGeneration
     }
@@ -57,7 +77,7 @@ internal class UsbOutputWorker<T>(
     fun flush() = synchronized(lock) {
         check(!closed) { "USB 写线程已停止" }
         val requested = ++generation
-        while (queue.isNotEmpty()) recycle(queue.removeFirst())
+        clearQueue()
         endRequested = false
         ended = false
         failure = null
@@ -78,7 +98,7 @@ internal class UsbOutputWorker<T>(
             closed = true
             ++generation
             transport.interrupt()
-            while (queue.isNotEmpty()) recycle(queue.removeFirst())
+            clearQueue()
             lock.notifyAll()
         }
         thread.join(3_000)
@@ -123,7 +143,11 @@ internal class UsbOutputWorker<T>(
                 synchronized(lock) { if (current == generation) failure = error }
             } finally {
                 buffer?.let(recycle)
-                synchronized(lock) { busy = false; lock.notifyAll() }
+                synchronized(lock) {
+                    if (buffer != null) bufferedFrames -= bufferFrames(buffer)
+                    busy = false
+                    lock.notifyAll()
+                }
             }
             synchronized(lock) {
                 if (!closed && current == generation && nativePending && (paused || queue.isEmpty())) lock.wait(2)

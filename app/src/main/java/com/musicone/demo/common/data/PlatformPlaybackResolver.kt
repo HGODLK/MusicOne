@@ -47,7 +47,8 @@ internal class PlatformPlaybackResolver(
         preferredQuality: AudioQuality,
         onlineSettleDelayMs: Long = 0L,
     ): ResolvedPlayback {
-        val localLyrics = track.lyrics.ifEmpty { cachedLyrics.read(track) }
+        val localLyrics = if (hasReusableLyrics(track, track.lyrics)) track.lyrics
+            else cachedLyrics.read(track).ifEmpty { if (!offline.hasNetwork()) cachedLyrics.readFallback(track) else emptyList() }
         val readyTrack = track.copy(lyrics = localLyrics)
         // 完整缓存立即交付；在线取票等待切歌动作稳定，取消期间不产生已经来不及撤回的 HTTP 请求。
         offline.resolve(readyTrack, preferredQuality, allowOtherQuality = true)?.let { return it }
@@ -124,13 +125,25 @@ internal class PlatformPlaybackResolver(
     }
 
     suspend fun lyrics(track: MusicTrack): List<TimedLyric> {
-        if (track.lyrics.isNotEmpty()) {
+        if (hasReusableLyrics(track, track.lyrics) && !shouldUpgradeLyricCacheToVerbatim(track, track.lyrics)) {
             cachedLyrics.save(track, track.lyrics)
             return track.lyrics
         }
-        cachedLyrics.read(track).takeIf { it.isNotEmpty() }?.let { return it }
-        if (!offline.hasNetwork()) return emptyList()
-        return adapters[track.source]?.lyrics(track).orEmpty().also { cachedLyrics.save(track, it) }
+        val namespace = preferences.readSession(track.source).cacheNamespace()
+        val cached = cachedLyrics.read(track, namespace)
+        val needsUpgrade = shouldUpgradeLyricCacheToVerbatim(track, cached)
+        if (cached.isNotEmpty() && !needsUpgrade) return cached
+        val fallback = cached.ifEmpty { cachedLyrics.readFallback(track, namespace) }
+            .ifEmpty { track.lyrics.takeIf(::validLyricTimeline).orEmpty() }
+        if (!offline.hasNetwork()) return fallback
+        val fetched = fetchLyricsPreservingFallback(track, fallback) { adapters[track.source]?.lyrics(track).orEmpty() }
+        if (hasReusableLyrics(track, fetched)) {
+            if (preferences.readSession(track.source).cacheNamespace() == namespace) cachedLyrics.save(track, fetched, namespace)
+            lyricDiagnostic(track, "网络歌词就绪", fetched)
+            return fetched
+        }
+        lyricDiagnostic(track, "网络无结果，保留已有歌词", fallback)
+        return fallback
     }
 }
 

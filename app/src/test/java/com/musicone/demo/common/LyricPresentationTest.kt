@@ -3,6 +3,7 @@ package com.musicone.demo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
@@ -10,6 +11,42 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LyricPresentationTest {
+    @Test fun committedPreviewDoesNotReopenTheOldLyricsWhenPlaybackNotificationIsLate() = runBlocking {
+        val initial = MusicOneUiState().forTrackTransition(track("a"), playWhenReady = true)
+        val notifications = MutableStateFlow(initial)
+        var latest = initial
+        val playback = object : StateFlow<MusicOneUiState> by notifications {
+            override val value get() = latest
+        }
+        val preview = MutableStateFlow<RapidTrackSwitchPresentation?>(null)
+        val received = mutableListOf<LyricPresentationRequest>()
+        val job = launch { lyricPresentationRequests(playback, preview).collect { received += it } }
+        try {
+            repeat(10) { yield() }
+            val target = track("b")
+            preview.value = previewFor(target).copy(phase = RapidTrackSwitchPhase.SETTLING)
+            repeat(10) { yield() }
+            latest = initial.forTrackTransition(target, playWhenReady = true)
+            preview.value = null
+            repeat(10) { yield() }
+            assertEquals(listOf("a", "b"), received.map { it.trackId })
+            notifications.value = latest
+            repeat(10) { yield() }
+            assertEquals(2, received.size)
+        } finally { job.cancelAndJoin() }
+    }
+
+    @Test fun aNewGenerationNotificationResolvesTheLatestTrackBeforeThePageRequestCatchesUp() {
+        val previous = request(track("a"))
+        val committed = MusicOneUiState().forTrackTransition(track("b"), playWhenReady = true)
+        val live = currentLyricPresentationRequest(committed, null)!!
+        assertNotEquals(previous.trackId, live.trackId)
+        assertEquals("b", live.presentation?.id)
+        assertEquals(TrackTransitionDirection.NEXT, live.direction)
+        val browsing = currentLyricPresentationRequest(committed, previewFor(track("c")))!!
+        assertEquals("c", browsing.presentation?.id)
+    }
+
     @Test fun playbackMetadataDoesNotChangeLyricPresentation() {
         val original = track("a")
         val resolved = original.copy(previewUrl = "offline://cached", title = "补全标题",

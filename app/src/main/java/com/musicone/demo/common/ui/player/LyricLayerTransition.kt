@@ -8,13 +8,18 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.Snapshot
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 import kotlin.math.abs
 
 internal enum class LyricLayerTransitionState {
@@ -34,6 +39,7 @@ internal class LyricWindowPane(
     var currentLine by mutableIntStateOf(initialLine)
     val ready = CompletableDeferred<Unit>()
     var drawnFirstFrame = false
+    val transitionHistory = LyricTransitionHistory()
 }
 
 /**
@@ -140,9 +146,9 @@ internal class LyricLayerTransitionController(
         previewTarget = null
     }
 
-    fun updatePlaybackLine(line: Int, present: Boolean = true) {
+    fun updatePlaybackLine(line: Int, present: Boolean = true, presentDuringTransition: Boolean = false) {
         latestPlaybackLine = line
-        if (present && state == LyricLayerTransitionState.NORMAL && !previewActive) {
+        if (present && (state == LyricLayerTransitionState.NORMAL || presentDuringTransition) && !previewActive) {
             currentPane.currentLine = line
         }
     }
@@ -155,10 +161,15 @@ internal class LyricLayerTransitionController(
         onSourceIsolated: () -> Unit = {},
         onTargetReady: () -> Unit = {},
         onFinished: () -> Unit = {},
-    ) {
-        if (previewActive) return
+        purpose: LyricPlaybackMotionPurpose = LyricPlaybackMotionPurpose.SEEK,
+        prepareTarget: suspend (LyricWindowPane) -> Unit = {},
+        positionHeld: (() -> Boolean)? = null,
+        settleOnCancellation: Boolean = false,
+    ): Job? {
+        if (previewActive) return null
         val req = ++requestId
         animationJob?.cancel()
+        val preparation = beginLyricTracePhase("MusicOne:seek-prepare")
 
         // 1. 冻结实际来源窗口
         val source = currentPane
@@ -187,12 +198,19 @@ internal class LyricLayerTransitionController(
         // 3. 来源隔离完成：即可提交音频 seek，不需要等整个滑动动画结束
         onSourceIsolated()
 
-        animationJob = scope.launch {
+        // 此分支先进入收尾保护，保证首帧前取消也能恢复有效窗口。
+        animationJob = scope.launch(start = if (settleOnCancellation) CoroutineStart.UNDISPATCHED else CoroutineStart.DEFAULT) {
+            var completed = false
+            var motion: LyricTracePhase? = null
             try {
                 // 4. 等待本次目标窗口完成布局和绘制确认
                 target.ready.await()
+                prepareTarget(target)
+                if (positionHeld != null) snapshotFlow { positionHeld() }.first { !it }
                 if (requestId != req) return@launch
                 onTargetReady()
+                endLyricTracePhase(preparation)
+                motion = beginLyricTracePhase("MusicOne:seek-window")
 
                 // 5. 仍在准备状态时，先把动画位移设置为 travel
                 seekOffset.snapTo(travel)
@@ -203,10 +221,8 @@ internal class LyricLayerTransitionController(
                 }
 
                 // 7. 执行现有 seekOffset.animateTo(0f, ...)
-                seekOffset.animateTo(
-                    0f,
-                    lyricPlaybackMotionSpec(travel, LyricPlaybackMotionPurpose.SEEK),
-                )
+                if (positionHeld == null) seekOffset.animateTo(0f, lyricPlaybackMotionSpec(travel, purpose))
+                else runLyricHeldLayerTravel(seekOffset, travel, purpose, positionHeld)
 
                 // 8. 完成后由目标接管，再释放来源，主动补接最新播放句
                 if (requestId == req) {
@@ -217,12 +233,28 @@ internal class LyricLayerTransitionController(
                         currentPane.currentLine = latestPlaybackLine
                     }
                     seekOffset.snapTo(0f)
+                    completed = true
                     onFinished()
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } finally {
-                if (requestId == req && state != LyricLayerTransitionState.NORMAL) {
+                endLyricTracePhase(motion ?: preparation)
+                if (settleOnCancellation && !completed && requestId == req) {
+                    // 中间态寻焦中断必须留下可显示的窗口，不能遗留隐藏目标或屏外位移。
+                    withContext(NonCancellable) {
+                        seekOffset.snapTo(0f)
+                        if (requestId == req) Snapshot.withMutableSnapshot {
+                            if (state == LyricLayerTransitionState.PREPARING) {
+                                currentPane = source
+                            }
+                            currentPane.isFrozen = false
+                            state = LyricLayerTransitionState.NORMAL
+                            outgoingPane = null
+                            seekTravel = 0f
+                        }
+                    }
+                } else if (requestId == req && state != LyricLayerTransitionState.NORMAL) {
                     Snapshot.withMutableSnapshot {
                         state = LyricLayerTransitionState.NORMAL
                         outgoingPane = null
@@ -231,7 +263,10 @@ internal class LyricLayerTransitionController(
                     seekOffset.snapTo(0f)
                 }
             }
+        }.also { operation ->
+            operation.invokeOnCompletion { endLyricTracePhase(preparation) }
         }
+        return animationJob
     }
 
     fun cancel() {

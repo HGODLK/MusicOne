@@ -133,10 +133,10 @@ internal class MusicDiskCache private constructor(context: Context) {
     }
 
     private fun files() = auxiliary.listFiles()?.filter { it.isFile && !it.name.endsWith(".tmp") }.orEmpty()
-    private fun file(key: String): File {
+    private fun file(key: String): File = playbackTrace("MusicOne:cache-file-key") {
         val name = MessageDigest.getInstance("SHA-256").digest(key.toByteArray())
             .joinToString("") { "%02x".format(it) }
-        return File(auxiliary, name)
+        File(auxiliary, name)
     }
 
     @Synchronized fun read(key: String): ByteArray? = runCatching {
@@ -153,23 +153,29 @@ internal class MusicDiskCache private constructor(context: Context) {
         worker.launch { trim() }
     }
 
+    @Synchronized fun delete(key: String) {
+        runCatching { file(key).takeIf { it.exists() }?.delete() }
+    }
+
     private suspend fun trim() {
         trimLock.lock()
         try {
             if (limitGb == 0) return
-            val candidates = spans()
-            val diskFiles = files()
-            val remove = mutableMapOf<String, () -> Unit>()
-            val entries = candidates.map { span ->
-                val id = "audio:${span.key}:${span.position}"
-                remove[id] = { removeOrdinarySpan(span) }
-                CacheCandidate(id, span.length, span.lastTouchTimestamp, protected(span.key), span.key == activeKey)
-            } + diskFiles.map { file ->
-                val id = "file:${file.name}"
-                remove[id] = { file.delete(); Unit }
-                CacheCandidate(id, file.length(), file.lastModified())
+            playbackTrace("MusicOne:cache-trim") {
+                val candidates = spans()
+                val diskFiles = files()
+                val remove = mutableMapOf<String, () -> Unit>()
+                val entries = candidates.map { span ->
+                    val id = "audio:${span.key}:${span.position}"
+                    remove[id] = { removeOrdinarySpan(span) }
+                    CacheCandidate(id, span.length, span.lastTouchTimestamp, protected(span.key), span.key == activeKey)
+                } + diskFiles.map { file ->
+                    val id = "file:${file.name}"
+                    remove[id] = { file.delete(); Unit }
+                    CacheCandidate(id, file.length(), file.lastModified())
+                }
+                cacheEvictions(entries, limitGb * 1_073_741_824L).forEach { id -> runCatching { remove[id]?.invoke() } }
             }
-            cacheEvictions(entries, limitGb * 1_073_741_824L).forEach { id -> runCatching { remove[id]?.invoke() } }
         } finally { trimLock.unlock() }
     }
 

@@ -20,8 +20,11 @@ internal fun anchorFits(anchor: Rect, host: Rect): Boolean =
         anchor.left >= host.left - 1f && anchor.top >= host.top - 1f &&
         anchor.right <= host.right + 1f && anchor.bottom <= host.bottom + 1f
 
-internal fun shouldDismissPlayer(progress: Float, velocityY: Float, releasedNormally: Boolean): Boolean =
-    releasedNormally && (progress <= .65f || velocityY >= 900f && progress < .94f)
+internal fun shouldDismissPlayer(progress: Float, velocityY: Float, releasedNormally: Boolean,
+                                 distanceDp: Float = 24f, reverseDistanceDp: Float = 0f): Boolean =
+    playerGestureTarget(1f - progress, velocityY, distanceDp, false, releasedNormally,
+        threshold = .5f, reverseDistanceDp = reverseDistanceDp,
+        flingDistanceDp = 32f, flingVelocityDp = 650f)
 
 internal fun contentReveal(progress: Float): Float = ((progress - .22f) / .78f).coerceIn(0f, 1f)
 

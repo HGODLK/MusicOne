@@ -1,7 +1,11 @@
 package com.musicone.demo
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.horizontalDrag
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
@@ -45,7 +49,7 @@ internal class MiniPlayerSwipe(private val scope: CoroutineScope) {
         }
     }
 
-    fun finish(commit: Boolean, onCommit: (MusicTrack, Boolean) -> Unit) {
+    fun finish(commit: Boolean, onCommit: (MusicTrack, Boolean) -> Unit, initialVelocity: Float = 0f) {
         val target = incoming ?: return reset()
         settling = true
         if (commit) {
@@ -54,7 +58,8 @@ internal class MiniPlayerSwipe(private val scope: CoroutineScope) {
         }
         settleJob = scope.launch {
             val progress = Animatable(amount)
-            progress.animateTo(if (commit) 1f else 0f, musicMotion(200)) { amount = value }
+            val velocity = initialVelocity.coerceIn(0f, 3.5f)
+            progress.animateTo(if (commit) 1f else 0f, musicMotion(200), initialVelocity = velocity) { amount = value }
             if (commit) {
                 settleFinished = true
                 finishHandoffWhenReady()
@@ -128,24 +133,64 @@ internal fun Modifier.miniPlayerSwipe(
     preview: (Boolean) -> MusicTrack?, commit: (MusicTrack, Boolean) -> Unit,
 ): Modifier = pointerInput(track.id, enabled) {
     if (!enabled) return@pointerInput
-    var distance = 0f
-    val threshold = 80 * density
-    detectHorizontalDragGestures(
-        onDragStart = { if (!swipe.settling) { swipe.reset(); distance = 0f } },
-        onHorizontalDrag = { change, delta ->
-            change.consume()
-            if (!swipe.settling) {
-                distance += delta
-                val next = distance < 0
-                if (swipe.incoming == null || swipe.next != next) {
-                    swipe.incoming = preview(next)
-                    swipe.outgoing = track
-                    swipe.next = next
-                }
-                swipe.amount = (abs(distance) / threshold).coerceIn(0f, 1f)
+    val threshold = 48 * density
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        if (swipe.settling) return@awaitEachGesture
+        val tracker = VelocityTracker().apply { addPosition(down.uptimeMillis, down.position) }
+        val release = GestureReleaseVelocity(down.uptimeMillis, density)
+        var total = Offset.Zero
+        var distance = 0f
+        var dragging = false
+        fun move(delta: Float) {
+            distance += delta
+            val next = release.effectiveDistancePx < 0f
+            if (swipe.incoming == null || swipe.next != next) {
+                swipe.incoming = preview(next)
+                swipe.outgoing = track
+                swipe.next = next
             }
-        },
-        onDragEnd = { if (!swipe.settling) swipe.finish(abs(distance) >= threshold, commit) },
-        onDragCancel = { if (!swipe.settling) swipe.finish(false, commit) },
-    )
+            swipe.amount = (abs(distance) / threshold).coerceIn(0f, 1f)
+        }
+        try {
+            var start: androidx.compose.ui.input.pointer.PointerInputChange? = null
+            while (true) {
+                val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                if (!change.pressed || change.isConsumed || currentEvent.changes.count { it.pressed } > 1) break
+                val delta = change.position - change.previousPosition
+                total += delta
+                tracker.addPosition(change.uptimeMillis, change.position)
+                release.moved(change.uptimeMillis, delta.x)
+                when (verticalSlopIntent(total.y, total.x, viewConfiguration.touchSlop)) {
+                    -1 -> break
+                    1 -> {
+                        swipe.reset()
+                        dragging = true
+                        move(total.x - if (total.x > 0f) viewConfiguration.touchSlop else -viewConfiguration.touchSlop)
+                        change.consume()
+                        start = change
+                        break
+                    }
+                }
+            }
+            if (start != null) {
+                val completed = horizontalDrag(start.id) { change ->
+                    tracker.addPosition(change.uptimeMillis, change.position)
+                    val delta = change.position.x - change.previousPosition.x
+                    release.moved(change.uptimeMillis, delta)
+                    move(delta)
+                    change.consume()
+                }
+                val now = currentEvent.changes.firstOrNull { it.id == start.id }?.uptimeMillis ?: start.uptimeMillis
+                val velocityX = release.released(now, tracker.calculateVelocity().x, completed)
+                val fling = abs(release.effectiveDistancePx) / density >= 12f &&
+                    release.effectiveDistancePx * velocityX > 0f && abs(velocityX) / density >= 240f
+                val commitSwipe = completed && (abs(distance) >= threshold || fling)
+                swipe.finish(commitSwipe, commit, (abs(velocityX) / threshold).coerceIn(0f, 3.5f))
+                dragging = false
+            }
+        } finally {
+            if (dragging && !swipe.settling) swipe.finish(false, commit)
+        }
+    }
 }

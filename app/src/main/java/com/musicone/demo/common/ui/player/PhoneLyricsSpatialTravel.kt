@@ -17,26 +17,28 @@ internal class PhoneLyricsSpatialTravel {
     var softnessPx = 1f
         private set
 
-    fun record(layout: LazyListLayoutInfo, density: Density, protection: LyricBlurProtection) {
+    fun record(layout: LazyListLayoutInfo, density: Density, protection: LyricBlurProtection,
+        typography: LyricTypography = lyricTypographyForWidth(PlayerLayoutMode.COMPACT_SINGLE,
+            layout.viewportSize.width / density.density)) {
         blurProtection = protection
         if (!protection.allowWidening) return
+        val lyricDensity = lyricDisplayDensity(density)
         val rows = layout.visibleItemsInfo.filter {
             it.offset + it.size > layout.viewportStartOffset && it.offset < layout.viewportEndOffset
         }.take(2)
         val first = rows.firstOrNull() ?: return
-        val largeText = layout.viewportSize.width >= with(density) { 400.dp.toPx() }
-        fun shortHeight(translated: Boolean) = with(density) {
-            (if (largeText) 56.sp else MusicOneTextStyles.lyricActive.lineHeight).toPx() +
+        fun shortHeight(translated: Boolean) = with(lyricDensity) {
+            typography.activeLineSp.sp.toPx() +
                 10.dp.toPx() + if (translated) {
-                    (if (largeText) 20.sp else MusicOneTextStyles.lyricTranslation.lineHeight).toPx() + 2.dp.toPx()
+                    typography.translationLineSp.sp.toPx() + 2.dp.toPx()
                 } else 0f
         }
         val second = rows.getOrNull(1)
         recordHeight(
             phoneLyricsCompactHeight(first.size.toFloat(), second?.size?.toFloat(),
                 layout.mainAxisItemSpacing.toFloat(), shortHeight(first.contentType == true),
-                second?.let { shortHeight(it.contentType == true) }, density.density),
-            with(density) { 6.dp.toPx() },
+                second?.let { shortHeight(it.contentType == true) }, lyricDensity.density),
+            with(lyricDensity) { 6.dp.toPx() },
         )
     }
 
@@ -61,12 +63,16 @@ internal fun phoneLyricsCompactHeight(first: Float, second: Float?, spacing: Flo
 
 /** 页眉尚未让出空间时，完整歌词先在底部停留；接触处以连续速度接入原路径。 */
 internal fun phoneLyricsSpatialWindowOffset(travel: Float, lyrics: Float, header: Float,
+    compactHeight: Float, softness: Float): Float =
+    phoneLyricsSpatialWindowOffsetRaw(travel, lyrics, header, compactHeight, softness).roundToInt().toFloat()
+
+internal fun phoneLyricsSpatialWindowOffsetRaw(travel: Float, lyrics: Float, header: Float,
     compactHeight: Float, softness: Float): Float {
     val p = lyrics.coerceIn(0f, 1f)
     val h = header.coerceIn(0f, 1f)
     val original = travel * (1f - p)
-    if (compactHeight <= 0f) return original.roundToInt().toFloat()
+    if (compactHeight <= 0f) return original
     val ahead = ((p - h) * travel - (1f - h) * compactHeight.coerceAtMost(travel)).coerceAtLeast(0f)
     val correction = ahead * ahead / (ahead + softness.coerceAtLeast(1f))
-    return (original + correction).roundToInt().toFloat()
+    return original + correction
 }

@@ -8,6 +8,48 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class UsbOutputWorkerTest {
+    @Test fun frameBudgetIncludesDequeuedWriteAndSeekClearsOldAccounting() {
+        val transport = Transport()
+        val entered = CountDownLatch(1)
+        val releaseWrite = CountDownLatch(1)
+        val worker = UsbOutputWorker<Int>(transport, {
+            entered.countDown()
+            check(releaseWrite.await(2, TimeUnit.SECONDS))
+        }, {}, bufferFrames = { it.toLong() }, maxBufferedFrames = 100)
+        val executor = Executors.newSingleThreadExecutor()
+        worker.start()
+        try {
+            assertTrue(worker.enqueue(70))
+            assertTrue(entered.await(2, TimeUnit.SECONDS))
+            assertEquals(70L, worker.bufferedFrames())
+            assertFalse(worker.enqueue(31))
+            assertTrue(worker.enqueue(30))
+            assertEquals(100L, worker.bufferedFrames())
+            val flushing = executor.submit { worker.flush() }
+            assertTrue(transport.interrupted.await(2, TimeUnit.SECONDS))
+            assertEquals(70L, worker.bufferedFrames())
+            releaseWrite.countDown()
+            flushing.get(2, TimeUnit.SECONDS)
+            assertEquals(0L, worker.bufferedFrames())
+            assertTrue(worker.enqueue(100))
+        } finally { releaseWrite.countDown(); worker.stop(); executor.shutdownNow() }
+    }
+
+    @Test fun oneLargeDecoderBufferDoesNotDeadlockAnEmptyBudget() {
+        val transport = Transport()
+        val worker = UsbOutputWorker<Int>(transport, {}, {},
+            bufferFrames = { it.toLong() }, maxBufferedFrames = 100)
+        worker.pause()
+        worker.start()
+        try {
+            assertTrue(worker.enqueue(150))
+            assertFalse(worker.enqueue(1))
+            worker.flush()
+            assertEquals(0L, worker.bufferedFrames())
+            assertTrue(worker.enqueue(100))
+        } finally { worker.stop() }
+    }
+
     private class Transport : UsbOutputTransport {
         @Volatile override var completedFrames = 0L
         @Volatile var pending = false

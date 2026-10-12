@@ -27,10 +27,10 @@ internal class PlaylistPullState {
         rebound = Animatable(0f)
     }
 
-    fun returnToOrigin(motion: PageMotion) {
+    fun returnToOrigin(motion: PageMotion, initialVelocity: Float = 0f) {
         motion.request(true, rebound = true, settle = {
             if (ExperiencePreferences.options.reduceMotion) rebound.snapTo(1f)
-            else rebound.animateTo(1f, musicSpring(stiffness = 420f))
+            else rebound.animateTo(1f, musicSpring(stiffness = 420f), initialVelocity = initialVelocity.coerceIn(0f, 4f))
         })
     }
 
@@ -55,7 +55,7 @@ internal fun pulledPlaylistArtworkBounds(target: Rect, displacement: Offset, mot
 
 internal val LocalPlaylistPull = staticCompositionLocalOf<PlaylistPullState?> { null }
 
-// 在按下瞬间锁定顶部资格；从中途滑到顶部必须松手后重新下拉。
+// 在按下瞬间锁定顶部资格；列表惯性滑动到顶部时允许下一次下拉接管。
 internal fun Modifier.playlistPullGesture(
     scroll: LazyListState,
     motion: PageMotion?,
@@ -70,13 +70,11 @@ internal fun Modifier.playlistPullGesture(
     val startAllowed by rememberUpdatedState(canStart)
     val minimumProgress = if (LocalEntityFrame.current != null) 0f else .15f
     pointerInput(scroll, motion, pull) {
-        val activation = 32 * density
-        val dismissDistance = 128 * density
+        val activation = maxOf(12 * density, viewConfiguration.touchSlop)
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
             val eligible = startAllowed() && playlistPullStartEligible(
                 scrollAtTop = scroll.firstVisibleItemIndex == 0 && scroll.firstVisibleItemScrollOffset == 0,
-                scrollInProgress = scroll.isScrollInProgress,
                 motionPhase = motion.phase,
                 requireScrollAtTop = requireScrollAtTop,
             )
@@ -86,16 +84,22 @@ internal fun Modifier.playlistPullGesture(
             var rejected = false
             var releasedNormally = false
             var displacement = Offset.Zero
+            val release = GestureReleaseVelocity(down.uptimeMillis, density)
+            var releaseTime = down.uptimeMillis
             try {
                 do {
                     val event = awaitPointerEvent(PointerEventPass.Initial)
                     val change = event.changes.firstOrNull { it.id == down.id } ?: break
                     velocityTracker.addPosition(change.uptimeMillis, change.position)
                     if (event.changes.count { it.pressed } > 1) { rejected = true; break }
-                    displacement += change.position - change.previousPosition
+                    val delta = change.position - change.previousPosition
+                    releaseTime = change.uptimeMillis
+                    release.moved(change.uptimeMillis, delta.y)
+                    displacement += delta
                     if (!dragging && !rejected) {
-                        if (displacement.y < -viewConfiguration.touchSlop || abs(displacement.x) > activation) rejected = true
-                        if (!rejected && displacement.y > activation && displacement.y > abs(displacement.x) * 1.5f) {
+                        if (displacement.y < -activation && -displacement.y > abs(displacement.x) * 1.5f) rejected = true
+                        if (abs(displacement.x) > activation * 2f && abs(displacement.x) > abs(displacement.y) * 1.5f) rejected = true
+                        if (!rejected && displacement.y > activation && displacement.y >= abs(displacement.x) * .8f) {
                             dragging = motion.beginDrag()
                             if (dragging) pull.begin()
                         }
@@ -112,14 +116,18 @@ internal fun Modifier.playlistPullGesture(
                 if (dragging) {
                     pull.releaseProgress = motion.value
                     pull.released = true
-                    motion.releaseDragWithVelocity(
-                        playlistProgressVelocity(velocityTracker.calculateVelocity().y, size.height * .65f),
-                    )
-                    if (releasedNormally && !rejected && pull.displacement.y >= dismissDistance) {
+                    val rawVelocityY = velocityTracker.calculateVelocity().y
+                    val completed = releasedNormally && !rejected
+                    val velocityY = release.released(releaseTime, rawVelocityY, completed)
+                    val releaseVelocity = playlistProgressVelocity(
+                        release.settlingVelocity(releaseTime, rawVelocityY, completed), size.height * .65f)
+                    motion.releaseDragWithVelocity(releaseVelocity)
+                    if (completed && playlistPullShouldClose(pull.displacement.y / density,
+                            velocityY / density, release.effectiveDistancePx / density)) {
                         // 先让导航刷新返回锚点并发起关闭；回调未处理时再补上动画终点。
                         close()
                         if (motion.wantsOpen) motion.request(false)
-                    } else pull.returnToOrigin(motion)
+                    } else pull.returnToOrigin(motion, kotlin.math.abs(releaseVelocity))
                 }
             }
         }
@@ -129,14 +137,17 @@ internal fun Modifier.playlistPullGesture(
 
 internal fun playlistPullStartEligible(
     scrollAtTop: Boolean,
-    scrollInProgress: Boolean,
     motionPhase: MotionPhase,
     requireScrollAtTop: Boolean = true,
-): Boolean = (!requireScrollAtTop || scrollAtTop) && !scrollInProgress && motionPhase == MotionPhase.SHOWN
+): Boolean = (!requireScrollAtTop || scrollAtTop) && motionPhase == MotionPhase.SHOWN
 
 // 普通歌单为自由拖动封面预留归位进度；实体页沿固定路径可直接收回来源菜单。
 internal fun playlistPullProgress(distance: Float, travel: Float, minimumProgress: Float = .15f): Float =
     (1f - distance.coerceAtLeast(0f) / travel.coerceAtLeast(1f)).coerceIn(minimumProgress, 1f)
+
+internal fun playlistPullShouldClose(pulledDp: Float, velocityDp: Float, effectiveDistanceDp: Float): Boolean =
+    gestureTarget(pulledDp / 48f, velocityDp, effectiveDistanceDp, false, 1f,
+        dragDistanceDp = 60f, flingVelocityDp = 240f)
 
 internal fun playlistProgressVelocity(velocityY: Float, travel: Float): Float =
     (-velocityY / travel.coerceAtLeast(1f)).coerceIn(-1.6f, 1.6f)

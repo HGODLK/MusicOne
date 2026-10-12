@@ -14,7 +14,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.Dp
 
 @Composable
-internal fun EntityPageHost(navigation: EntityNavigation, state: MusicOneUiState, player: MusicOneViewModel,
+internal fun EntityPageHost(navigation: EntityNavigation, state: MusicOneUiState, player: MusicPlaybackRuntime,
     bottomInset: Dp, createdPlaylists: List<MusicPlaylist>, onChanged: (MusicPlaylist) -> Unit) {
     navigation.pages.forEachIndexed { index, frame -> key(frame.key) {
         val top = index == navigation.pages.lastIndex
@@ -73,7 +73,7 @@ internal fun EntityPageHost(navigation: EntityNavigation, state: MusicOneUiState
     } }
 }
 
-private fun playEntityTracks(player: MusicOneViewModel, tracks: List<MusicTrack>) {
+private fun playEntityTracks(player: MusicPlaybackRuntime, tracks: List<MusicTrack>) {
     if (tracks.isEmpty()) return
     val first = tracks.first()
     player.playPlaylist(MusicPlaylist("entity-playback", MusicSource.QQ, first.artists, "", "", tracks.size,

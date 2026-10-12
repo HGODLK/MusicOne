@@ -68,12 +68,17 @@ internal class LyricWindowMotion {
 
     suspend fun moveTo(slot: Float) {
         val target = -slot
-        offset.animateTo(target,
-            musicSpring(210f, visibilityThreshold = visibilityThreshold),
-            initialVelocity = lyricWindowSettleVelocity(velocity, target - offset.value)) {
-            this@LyricWindowMotion.velocity = this.velocity
+        val phase = beginLyricTracePhase("MusicOne:track-window")
+        try {
+            offset.animateTo(target,
+                musicSpring(210f, visibilityThreshold = visibilityThreshold),
+                initialVelocity = lyricWindowSettleVelocity(velocity, target - offset.value)) {
+                this@LyricWindowMotion.velocity = this.velocity
+            }
+            velocity = 0f
+        } finally {
+            endLyricTracePhase(phase)
         }
-        velocity = 0f
     }
 
     suspend fun show(slot: Float) {
@@ -90,10 +95,10 @@ internal class LyricWindowMotion {
 }
 
 /** 临近终点时限制制动距离，避免快切速度越过目标后又滚回来；正常中途续接仍保留速度。 */
-internal fun lyricWindowSettleVelocity(velocity: Float, distance: Float): Float {
+internal fun lyricWindowSettleVelocity(velocity: Float, distance: Float, stiffness: Float = 210f): Float {
     if (distance == 0f) return 0f
     if (velocity * distance <= 0f) return velocity
-    val limit = abs(distance) * sqrt(210f)
+    val limit = abs(distance) * sqrt(stiffness)
     return velocity.coerceIn(-limit, limit)
 }
 

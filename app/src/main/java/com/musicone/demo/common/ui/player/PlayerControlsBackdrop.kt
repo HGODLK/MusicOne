@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.layer.CompositingStrategy
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.unit.dp
@@ -34,7 +35,6 @@ internal fun Modifier.playerControlsBackdrop(
     focusProtection: (() -> LyricBlurProtection)? = null,
     topGlass: PlayerLyricsTopGlass? = null,
 ): Modifier {
-    if (ExperiencePreferences.options.disableBlur && topExtension <= 0 && topBuffer <= 0) return this
     val source = rememberGraphicsLayer()
     val blurred = rememberGraphicsLayer()
     val exitBlurred = rememberGraphicsLayer()
@@ -42,6 +42,7 @@ internal fun Modifier.playerControlsBackdrop(
     val paint = androidx.compose.runtime.remember { Paint() }
     val additivePaint = androidx.compose.runtime.remember { Paint().apply { blendMode = BlendMode.Plus } }
     val density = androidx.compose.ui.platform.LocalDensity.current
+    val rasterizeSource = Build.VERSION.SDK_INT >= 31 && !ExperiencePreferences.options.disableBlur
     // 底部模糊参数不变；顶部使用更轻的半径，效果对象按密度复用。
     val blurEffect = androidx.compose.runtime.remember(density) {
         BlurEffect(with(density) { 18.dp.toPx() }, with(density) { 18.dp.toPx() }, TileMode.Clamp)
@@ -50,6 +51,10 @@ internal fun Modifier.playerControlsBackdrop(
         BlurEffect(with(density) { 6.dp.toPx() }, with(density) { 6.dp.toPx() }, TileMode.Clamp)
     }
     androidx.compose.runtime.SideEffect {
+        // 模糊采样共用完整分辨率的栅格源；内容仍逐帧录制，不冻结歌词或窗口动画。
+        source.compositingStrategy = if (rasterizeSource) {
+            CompositingStrategy.Offscreen
+        } else CompositingStrategy.Auto
         blurred.renderEffect = blurEffect
         exitBlurred.renderEffect = blurEffect
         topBlurred.renderEffect = topBlurEffect
@@ -60,9 +65,6 @@ internal fun Modifier.playerControlsBackdrop(
         val topFadeHeight = playerLyricsTopFadeHeight(topExtension.toFloat())
         val topBlurEnd = topGlass?.clearStart?.coerceIn(0f, size.height)
             ?: playerLyricsTopBlurEnd(headerBottom, topFadeHeight, size.height)
-        if (!canBlur && topBlurEnd == 0f) {
-            return@drawWithCache onDrawWithContent { drawContent() }
-        }
         val controls = controlsHeight()
         val originalFadeHeight = PLAYER_CONTROLS_BLUR_FADE_HEIGHT.toPx()
         val fadeHeight = if (focusProtection == null) originalFadeHeight else PLAYER_CONTROLS_WIDENED_BLUR_HEIGHT.toPx()
@@ -87,7 +89,7 @@ internal fun Modifier.playerControlsBackdrop(
             p to Color.White,
             1f to Color.Transparent,
             startY = 0f, endY = (topBlurEnd - topBuffer).coerceAtLeast(1f))
-        // 有模糊时清晰层在页眉退让、仅在页眉下方互补接入；无模糊时清晰层正常顶端渐隐，不留空白。
+        // 无模糊时保留相同过渡区，模糊权重降级为半透明歌词，不直接撤掉遮罩。
         val topClearMask = if (canBlur) {
             Brush.verticalGradient(
                 0f to Color.Transparent,
@@ -97,13 +99,19 @@ internal fun Modifier.playerControlsBackdrop(
         } else {
             Brush.verticalGradient(
                 0f to Color.Transparent,
-                (p * .25f) to Color.White.copy(alpha = .06f),
-                (p * .55f) to Color.White.copy(alpha = .4f),
-                (p * .8f) to Color.White.copy(alpha = .78f),
-                p to Color.White,
+                (p * .25f) to Color.White.copy(alpha = .06f * LYRIC_BACKDROP_FALLBACK_ALPHA),
+                (p * .55f) to Color.White.copy(alpha = .4f * LYRIC_BACKDROP_FALLBACK_ALPHA),
+                (p * .8f) to Color.White.copy(alpha = .78f * LYRIC_BACKDROP_FALLBACK_ALPHA),
+                p to Color.White.copy(alpha = LYRIC_BACKDROP_FALLBACK_ALPHA),
                 1f to Color.White,
                 startY = 0f, endY = (topBlurEnd - topBuffer).coerceAtLeast(1f))
         }
+        // 只保留合成指令与实时子图层引用，不缓存歌词画面或新增整窗离屏纹理。
+        val composite = obtainGraphicsLayer()
+        var recordedStart = Float.NaN
+        var recordedEnd = Float.NaN
+        var recordedTop = Float.NaN
+        var recordedTopEnd = Float.NaN
         var sampleRecorded = false
         var exitSampleRecorded = false
         var topSampleRecorded = false
@@ -125,9 +133,6 @@ internal fun Modifier.playerControlsBackdrop(
                 topBlurred.record(size = topSampledSize) { drawLayer(source) }
                 topSampleRecorded = true
             }
-            if (!canBlur) {
-                clipRect(top = visibleTopEnd) { drawLayer(source) }
-            } else {
             // 动画进度只在绘制阶段读取，避免使 drawWithCache 每帧失效。
             val boundary = playerControlsBlurBoundary(
                 size.height,
@@ -140,63 +145,77 @@ internal fun Modifier.playerControlsBackdrop(
             val start = playerControlsBlurStart(boundary, originalFadeHeight, fadeHeight,
                 focusProtection?.invoke(), 8.dp.toPx())
             val end = boundary.coerceAtLeast(start + 1f)
-            val useExitSample = playerControlsNeedsExitBlur(start, cropTop.toFloat())
-            // 收起时歌词视口整体下移，必须让模糊采样同步覆盖固定控件边界上方的过渡带。
-            val clearEnd = start.coerceIn(0f, size.height)
-            val transitionEnd = maxOf(end, clearEnd + 1f).coerceIn(clearEnd, size.height)
-            val compositeBounds = Rect(0f, clearEnd, size.width, size.height)
-            val transitionBounds = Rect(0f, clearEnd, size.width, transitionEnd)
-            val clearMask = Brush.verticalGradient(
-                listOf(Color.White, Color.Transparent), startY = clearEnd, endY = transitionEnd,
-            )
-            val blurredMask = Brush.verticalGradient(
-                listOf(Color.Transparent, Color.White), startY = clearEnd, endY = transitionEnd,
-            )
-            // 显示列表引用实时源图层，几何不变时无需重新录制模糊采样指令。
-            // 首次在源内容录制后建立引用；源歌词仍逐次更新，不冻结滚动或切歌。
-            if (!sampleRecorded) {
-                blurred.record(size = sampledSize) {
-                    translate(top = -cropTop.toFloat()) { drawLayer(source) }
-                }
-                sampleRecorded = true
-            }
-            if (useExitSample && !exitSampleRecorded) {
-                // 完整采样只在歌词收起/反向回弹时建立；常态播放继续使用底部局部采样。
-                exitBlurred.record(size = fullSampledSize) { drawLayer(source) }
-                exitSampleRecorded = true
-            }
-            // 两个互补遮罩交接，避免清晰原文从模糊图层的透明像素中透出来。
-            clipRect(top = visibleTopEnd) { drawIntoCanvas { canvas ->
-                clipRect(bottom = clearEnd) { drawLayer(source) }
-                canvas.saveLayer(transitionBounds, paint)
-                clipRect(top = clearEnd, bottom = transitionEnd) { drawLayer(source) }
-                drawRect(clearMask, blendMode = BlendMode.DstIn)
-                canvas.restore()
-                canvas.saveLayer(compositeBounds, additivePaint)
-                if (useExitSample) {
-                    drawLayer(exitBlurred)
-                } else {
-                    translate(top = cropTop.toFloat()) { drawLayer(blurred) }
-                }
-                drawRect(blurredMask, blendMode = BlendMode.DstIn)
-                canvas.restore()
-            } }
-            }
-            if (localTopEnd > localStageTop && reveal > .001f) {
-                val topRegion = Rect(0f, localStageTop, size.width, localTopEnd)
-                drawIntoCanvas { canvas ->
-                    canvas.saveLayer(topRegion, paint)
-                    clipRect(top = localStageTop, bottom = localTopEnd) { drawLayer(source) }
-                    translate(top = localStageTop) { drawRect(topClearMask, blendMode = BlendMode.DstIn) }
-                    canvas.restore()
-                    if (canBlur) {
-                        canvas.saveLayer(topRegion, additivePaint)
-                        clipRect(top = localStageTop, bottom = localTopEnd) { drawLayer(topBlurred) }
-                        translate(top = localStageTop) { drawRect(topBlurMask, blendMode = BlendMode.DstIn) }
-                        canvas.restore()
+            // seek 时边界通常固定，只更新源歌词；开合、控件位移或焦点保护变化才重录遮罩。
+            if (start != recordedStart || end != recordedEnd ||
+                localStageTop != recordedTop || localTopEnd != recordedTopEnd) {
+                composite.record {
+                    if (!canBlur) {
+                        drawLyricBackdropOpacityFallback(source, visibleTopEnd, start, end, paint)
+                    } else {
+                        val useExitSample = playerControlsNeedsExitBlur(start, cropTop.toFloat())
+                        // 收起时歌词视口整体下移，必须让模糊采样同步覆盖固定控件边界上方的过渡带。
+                        val clearEnd = start.coerceIn(0f, size.height)
+                        val transitionEnd = maxOf(end, clearEnd + 1f).coerceIn(clearEnd, size.height)
+                        val compositeBounds = Rect(0f, clearEnd, size.width, size.height)
+                        val transitionBounds = Rect(0f, clearEnd, size.width, transitionEnd)
+                        val clearMask = Brush.verticalGradient(
+                            listOf(Color.White, Color.Transparent), startY = clearEnd, endY = transitionEnd,
+                        )
+                        val blurredMask = Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.White), startY = clearEnd, endY = transitionEnd,
+                        )
+                        // 显示列表引用实时源图层，几何不变时无需重新录制模糊采样指令。
+                        // 首次在源内容录制后建立引用；源歌词仍逐次更新，不冻结滚动或切歌。
+                        if (!sampleRecorded) {
+                            blurred.record(size = sampledSize) {
+                                translate(top = -cropTop.toFloat()) { drawLayer(source) }
+                            }
+                            sampleRecorded = true
+                        }
+                        if (useExitSample && !exitSampleRecorded) {
+                            // 完整采样只在歌词收起/反向回弹时建立；常态播放继续使用底部局部采样。
+                            exitBlurred.record(size = fullSampledSize) { drawLayer(source) }
+                            exitSampleRecorded = true
+                        }
+                        // 两个互补遮罩交接，避免清晰原文从模糊图层的透明像素中透出来。
+                        clipRect(top = visibleTopEnd) { drawIntoCanvas { canvas ->
+                            clipRect(bottom = clearEnd) { drawLayer(source) }
+                            canvas.saveLayer(transitionBounds, paint)
+                            clipRect(top = clearEnd, bottom = transitionEnd) { drawLayer(source) }
+                            drawRect(clearMask, blendMode = BlendMode.DstIn)
+                            canvas.restore()
+                            canvas.saveLayer(compositeBounds, additivePaint)
+                            if (useExitSample) {
+                                drawLayer(exitBlurred)
+                            } else {
+                                translate(top = cropTop.toFloat()) { drawLayer(blurred) }
+                            }
+                            drawRect(blurredMask, blendMode = BlendMode.DstIn)
+                            canvas.restore()
+                        } }
+                    }
+                    if (localTopEnd > localStageTop) {
+                        val topRegion = Rect(0f, localStageTop, size.width, localTopEnd)
+                        drawIntoCanvas { canvas ->
+                            canvas.saveLayer(topRegion, paint)
+                            clipRect(top = localStageTop, bottom = localTopEnd) { drawLayer(source) }
+                            translate(top = localStageTop) { drawRect(topClearMask, blendMode = BlendMode.DstIn) }
+                            canvas.restore()
+                            if (canBlur) {
+                                canvas.saveLayer(topRegion, additivePaint)
+                                clipRect(top = localStageTop, bottom = localTopEnd) { drawLayer(topBlurred) }
+                                translate(top = localStageTop) { drawRect(topBlurMask, blendMode = BlendMode.DstIn) }
+                                canvas.restore()
+                            }
+                        }
                     }
                 }
+                recordedStart = start
+                recordedEnd = end
+                recordedTop = localStageTop
+                recordedTopEnd = localTopEnd
             }
+            drawLayer(composite)
         }
     }
 }

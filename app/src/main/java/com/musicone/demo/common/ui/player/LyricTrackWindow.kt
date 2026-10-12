@@ -16,4 +16,10 @@ internal class LyricWindow(presentation: LyricPresentation, val slot: Float = 0f
     fun canReturnTo(target: LyricPresentation, progress: PlaybackProgressSnapshot, restarting: Boolean): Boolean =
         playback.canReturnTo(progress, restarting) &&
             presentation.source == target.source && presentation.id == target.id
+
+    // 同曲加载重试只换播放轮次，不生成一次跨曲入场；新窗口仍隔离旧轮次的 seek。
+    fun refreshPlaybackRound(target: LyricPresentation, progress: PlaybackProgressSnapshot): LyricWindow? =
+        if (presentation.source == target.source && presentation.id == target.id && progress.trackId == target.id) {
+            LyricWindow(target, slot).also { it.playback.update(progress) }
+        } else null
 }

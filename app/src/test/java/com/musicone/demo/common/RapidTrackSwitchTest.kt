@@ -6,6 +6,39 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class RapidTrackSwitchTest {
+    @Test fun backgroundDuringCacheLookupCommitsWithoutWaitingForCacheOrFrames() = runBlocking {
+        val lookup = CompletableDeferred<List<TimedLyric>>()
+        withFixture(cached = false, read = { lookup.await() }, waitSingle = true) {
+            switch.request(true)
+            yield()
+            assertTrue(commits.isEmpty())
+            switch.setPresentationActive(false)
+            awaitCommit()
+            assertEquals(listOf("b" to TrackTransitionDirection.NEXT), commits)
+            assertFalse(lookup.isCompleted)
+            lookup.complete(listOf(TimedLyric(0L, "迟到歌词")))
+            yield()
+            assertNull(switch.presentation.value)
+            assertEquals(1, commits.size)
+        }
+    }
+
+    @Test fun hiddenLyricsOwnerCannotBlockAutomaticHandoff() = runBlocking {
+        withFixture(waitSingle = true) {
+            switch.setPresentationActive(false)
+            switch.attachLyrics(owner)
+            assertFalse(switch.handoff(tracks[1], TrackTransitionDirection.NEXT))
+            switch.setPresentationActive(true)
+            switch.attachLyrics(owner)
+            assertTrue(switch.handoff(tracks[1], TrackTransitionDirection.NEXT))
+            val pending = awaitSettling()
+            switch.setPresentationActive(false)
+            awaitCommit()
+            switch.lyricsSettled(owner, pending.token)
+            assertEquals(1, commits.size)
+        }
+    }
+
     @Test fun visibleQqSingleClickWaitsForActualLyricsCompletion() = runBlocking {
         withFixture(waitSingle = true) {
             switch.request(true)

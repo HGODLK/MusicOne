@@ -7,13 +7,54 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PhoneLyricsGestureTest {
+    @Test fun releaseStartsImmediatelyAndTheStateNotificationDoesNotRestartIt() = runBlocking {
+        val clock = BroadcastFrameClock()
+        withContext(clock) {
+            val motion = PhoneLyricsMotion(false, this)
+            motion.dragTravelPx = 600f
+            motion.beginDrag()
+            motion.dragTo(.6f)
+            motion.settleDrag(true, -900f, releaseTimeNanos = 0L)
+            assertTrue(motion.settlingGesture(true))
+            assertEquals(.6f, motion.lyricsProgress, .001f)
+            yield()
+            clock.sendFrame(16_666_667L)
+            yield()
+            assertTrue(motion.lyricsProgress > .6f)
+            assertTrue(motion.settlingGesture(true))
+            motion.beginDrag()
+            assertFalse(motion.settlingGesture(true))
+            coroutineContext.cancelChildren()
+        }
+    }
+
+    @Test fun lyricsEndpointWinsOverTheOppositeVelocityFromLiftHook() {
+        assertTrue(lyricsDragTarget(.96f, 900f, -400f))
+        assertFalse(lyricsDragTarget(.04f, -900f, 400f, true))
+    }
+
+    @Test fun trackMetadataRemeasurementCannotChangeTheHeldHeaderPath() {
+        val motion = PhoneLyricsMotion(false)
+        motion.contactProgress = .6f
+        motion.beginDrag()
+        motion.dragTo(.7f)
+        val before = motion.headerProgress
+        motion.contactProgress = .3f
+        motion.dragTo(.7f)
+        assertEquals(before, motion.headerProgress, 0f)
+        motion.dragTo(.8f)
+        assertEquals(.5f, motion.headerProgress, .0001f)
+    }
+
     @Test fun reversingDragBeforeReleaseKeepsOriginalState() {
-        assertFalse(lyricsDragTarget(.03f, -1500f))
-        assertTrue(lyricsDragTarget(.97f, 1500f))
+        assertTrue(lyricsDragTarget(.03f, -1500f, -24f))
+        assertFalse(lyricsDragTarget(.03f, -1500f, -4f))
+        assertFalse(lyricsDragTarget(.97f, 1500f, 24f, true))
         assertFalse(lyricsDragTarget(.4f, 0f))
         assertTrue(lyricsDragTarget(.6f, 0f))
         assertTrue(lyricsDragTarget(.4f, -1200f))
-        assertFalse(lyricsDragTarget(.6f, 1200f))
+        assertTrue(lyricsDragTarget(.6f, 1200f))
+        assertFalse(lyricsDragTarget(.4f, 0f, -100f, reverseDistanceDp = 32f))
     }
 
     @Test fun openingAndClosingDragFollowSameGeometry() {
@@ -25,7 +66,7 @@ class PhoneLyricsGestureTest {
         assertEquals(.25f, lyricsDragHeaderProgress(.6f, .6f, .25f, .4f), .0001f)
     }
 
-    @Test fun draggedPositionIsRetainedUntilAlignmentAndSettlesAfterReversal() = runBlocking {
+    @Test fun draggedPositionSettlesImmediatelyWithoutWaitingForObsoleteAlignment() = runBlocking {
         val clock = BroadcastFrameClock()
         withContext(clock) {
             var time = 0L
@@ -42,11 +83,13 @@ class PhoneLyricsGestureTest {
             motion.dragTo(.9f)
             motion.dragTo(.45f)
             assertEquals(header, motion.headerProgress, .0001f)
-            motion.finishDrag()
+            motion.finishDrag(releaseTimeNanos = time)
             val aligned = CompletableDeferred<Unit>()
             val job = launch { motion.moveTo(false, aligned) }
-            frames(4)
             assertEquals(.45f, motion.lyricsProgress, .0001f)
+            frames(1)
+            assertTrue(motion.lyricsProgress < .45f)
+            assertTrue(motion.headerProgress < header)
             aligned.complete(Unit)
             frames(180)
             assertEquals(0f, motion.lyricsProgress, .0001f)

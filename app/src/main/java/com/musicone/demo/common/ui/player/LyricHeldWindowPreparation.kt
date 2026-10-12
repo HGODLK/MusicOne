@@ -18,11 +18,11 @@ internal class LyricHeldWindowPreparation {
     private var expectedOffset = 0f
 
     suspend fun position(list: LazyListState, current: Int, history: LyricTransitionHistory,
-        density: Density, progress: Float) {
+        density: Density, typography: LyricTypography, progress: Float) {
         if (line != current || travel == null) {
             list.scrollToItem(current)
             list.revealTopLineForEntrance()
-            list.prepareTransitionHistory(history, current, density)
+            list.prepareTransitionHistory(history, current, density, typography)
             val item = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == current } ?: return
             line = current
             origin = item.offset.toFloat()
@@ -47,9 +47,9 @@ internal fun lyricHeldWindowAligned(sameLine: Boolean, offset: Int?, expected: F
         abs(progress - preparedProgress) <= .0005f && abs(seekOffset) <= .5f
 
 internal suspend fun topLinePreparationLoop(request: LyricHeldWindowPreparation,
-    list: LazyListState, history: LyricTransitionHistory, density: Density,
+    list: LazyListState, history: LyricTransitionHistory, density: Density, typography: LyricTypography,
     current: () -> Int, progress: () -> Float) {
     snapshotFlow { current() to progress() }.collectLatest { (line, fraction) ->
-        request.position(list, line, history, density, fraction)
+        request.position(list, line, history, density, typography, fraction)
     }
 }

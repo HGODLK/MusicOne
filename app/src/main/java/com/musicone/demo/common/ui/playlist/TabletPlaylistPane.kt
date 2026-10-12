@@ -37,8 +37,9 @@ internal fun TabletPlaylistPane(
     val slots = rememberTabletPlaylistTextSlots(album)
     CompositionLocalProvider(LocalTabletPlaylistTextSlots provides slots) {
         if (wide) {
+            val coverBottomInset = stablePlaylistCoverBottomInset()
             TabletPlaylistInformation(
-                bottomInset, usePageBackground, slots, cover, introduction, actions, description, modifier,
+                coverBottomInset, usePageBackground, slots, cover, introduction, actions, description, modifier,
             )
         } else {
             val pageColor = PlaylistPageColor

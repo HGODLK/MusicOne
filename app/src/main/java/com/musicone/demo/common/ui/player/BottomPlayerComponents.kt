@@ -37,6 +37,7 @@ internal fun MiniPlayer(
     onFavorite: () -> Unit,
     previewSwipe: (Boolean) -> MusicTrack?,
     commitSwipe: (MusicTrack, Boolean) -> Unit,
+    openGesture: Modifier = Modifier,
 ) {
     val motion = LocalPlayerMotion.current
     val qqFeedback = track.source == MusicSource.QQ
@@ -44,6 +45,7 @@ internal fun MiniPlayer(
     androidx.compose.runtime.CompositionLocalProvider(LocalMiniPlayerImmersiveVisual provides immersiveVisual) {
     MiniPlayerInkProvider(backdropLayer, backdropBounds) { ink ->
     MiniPlayerSurface(backdropLayer, backdropBounds, immersiveVisual, Modifier
+        .then(openGesture)
         .miniPlayerSwipe(swipe, track, motion?.mounted != true, previewSwipe, commitSwipe)
         .onGloballyPositioned { ink.bounds = it.boundsInRoot() }
         .motionAnchor(motion, "surface", false)) {
@@ -85,7 +87,7 @@ private fun MiniPlayerSurface(
         backdropLayer = backdropLayer,
         backdropBounds = backdropBounds,
         modifier = Modifier.fillMaxWidth().widthIn(max = 1_280.dp)
-            .padding(horizontal = 12.dp, vertical = 8.dp).then(modifier),
+            .padding(horizontal = 12.dp, vertical = MiniPlayerLayoutMetrics.outerPadding).then(modifier),
         shape = RoundedCornerShape(19.dp),
         blurRadius = 18.dp,
         containerColor = immersiveVisual?.panelColor
@@ -99,7 +101,7 @@ private fun MiniPlayerSurface(
         ),
         backgroundSnapshot = LocalPlayerSurfaceTexture.current,
     ) {
-        Row(Modifier.padding(7.dp), verticalAlignment = Alignment.CenterVertically, content = content)
+        Row(Modifier.padding(MiniPlayerLayoutMetrics.innerPadding), verticalAlignment = Alignment.CenterVertically, content = content)
     }
     }
 }

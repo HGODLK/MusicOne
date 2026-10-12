@@ -30,6 +30,9 @@ internal fun DisplaySettings() {
         DisplaySetting("关闭未播放歌词模糊", "仅影响未播放歌词，不影响播放控件模糊", options.disableLyricBlur) {
             ExperiencePreferences.update(options.copy(disableLyricBlur = it))
         }
+        DisplaySetting("关闭逐字歌词明暗动态", "打开后关闭逐字明暗动态，歌词整行高亮", !options.verbatimLyricAnimation) {
+            ExperiencePreferences.update(options.copy(verbatimLyricAnimation = !it))
+        }
         DisplaySetting("减弱动态效果", "减少页面位移和持续流动效果", options.reduceMotion) {
             ExperiencePreferences.update(options.copy(reduceMotion = it))
         }

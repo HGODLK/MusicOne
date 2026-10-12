@@ -45,7 +45,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 internal fun PlatformHomeLayout(
     state: MusicOneUiState,
     catalog: MusicCatalogUiState,
-    viewModel: MusicOneViewModel,
+    viewModel: MusicPlaybackRuntime,
     bottomInset: Dp,
     onOpenRecommendation: (MusicPlaylist) -> Unit,
     onPlayRecommendation: (MusicPlaylist) -> Unit,

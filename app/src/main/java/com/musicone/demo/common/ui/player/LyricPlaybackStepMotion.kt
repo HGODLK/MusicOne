@@ -4,11 +4,16 @@ import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.snap
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.MotionDurationScale
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import kotlin.coroutines.coroutineContext
 import kotlin.math.abs
 
@@ -52,9 +57,23 @@ internal class LyricPlaybackStepMotion(
     private val scroll = LyricMotionValue(0f)
     private val rows = mutableMapOf<Int, LyricPlaybackRowMotion>()
     private val rowOwners = mutableMapOf<LyricPlaybackRowMotion, Int>()
+    private val wordObservers = mutableMapOf<LyricPlaybackRowMotion, () -> Long>()
     private val wakeups = Channel<Unit>(Channel.CONFLATED)
+    private var wordBindings by mutableIntStateOf(0)
     private var frameTimeNanos: Long? = null
     private var request: ScrollRequest? = null
+    private var positionHeld = false
+
+    fun holdPosition(held: Boolean) {
+        if (positionHeld == held) return
+        positionHeld = held
+        if (held) {
+            request?.finished?.complete(Unit)
+            request = null
+            scroll.snapTo(scrollPosition, scroll.velocity)
+        }
+        wake()
+    }
 
     fun row(index: Int): LyricPlaybackRowMotion = rows.getOrPut(index) {
         LyricPlaybackRowMotion(index, presentedIndex, scrollPosition).also { row ->
@@ -75,8 +94,24 @@ internal class LyricPlaybackStepMotion(
             return
         }
         rowOwners.remove(row)
+        if (wordObservers.remove(row) != null) wordBindings++
         // 来源与目标可能短暂共用同一行；最后一个组件退出后才停止驱动。
-        if (rows[index] === row) rows.remove(index)
+        if (rows[index] === row) {
+            rows.remove(index)
+        }
+    }
+
+    fun configureWords(index: Int, ranges: List<LyricHighlightRange>, progressMs: (() -> Long)?,
+                       enabled: Boolean, focused: Boolean, animate: Boolean, allowTail: Boolean = false) {
+        val row = row(index)
+        row.words.configure(ranges, progressMs, enabled, focused, animate, allowTail)
+        val clock = progressMs.takeIf { row.words.observesClock }
+        if (clock == null) {
+            if (wordObservers.remove(row) != null) wordBindings++
+        } else if (wordObservers.put(row, clock) !== clock) {
+            wordBindings++
+        }
+        if (row.words.running || row.words.finishingTail) wake()
     }
 
     fun emphasize(index: Int, current: Int, animate: Boolean, playback: Boolean) {
@@ -97,6 +132,17 @@ internal class LyricPlaybackStepMotion(
 
     fun offsetPx(index: Int): Float = rows[index]?.let { scrollPosition - it.position.value } ?: 0f
 
+    /** 可见 seek 接管只转换位置坐标，焦点立即更新，不清掉尚在运动的行位移。 */
+    fun takeOverSeek(target: Int) {
+        reset()
+        presentedIndex = target
+        rows.values.forEach {
+            it.emphasize(target, animate = false, playback = false)
+            it.advance(0L, finish = false, positionHeld = true)
+        }
+        wake()
+    }
+
     fun reset(presentedIndex: Int? = null) {
         presentedIndex?.let { this.presentedIndex = it }
         val previousScroll = scrollPosition
@@ -105,6 +151,7 @@ internal class LyricPlaybackStepMotion(
         request = null
         // 可见接管时只转换坐标，保留图层残量及相对速度；屏外准备才直接清零。
         rows.values.forEach { row ->
+            row.words.cancelTail()
             if (presentedIndex != null) {
                 row.position.snapTo(0f)
                 row.emphasize(presentedIndex, animate = false, playback = false)
@@ -139,19 +186,30 @@ internal class LyricPlaybackStepMotion(
         }
     }
 
-    suspend fun run() {
-        while (true) {
-            wakeups.receive()
-            while (request != null || rows.values.any { it.running }) {
-                val scale = coroutineContext[MotionDurationScale]?.scaleFactor ?: 1f
-                withFrameNanos { time ->
-                    val previous = frameTimeNanos ?: time
-                    val elapsed = (time - previous).coerceAtLeast(0L)
-                    frameTimeNanos = maxOf(previous, time)
-                    advance(if (scale > 0f) (elapsed / scale).toLong() else 0L, scale == 0f)
+    suspend fun run() = coroutineScope {
+        // 每个歌词窗口统一订阅词时钟，行内及每个词都不创建额外帧协程。
+        val wordUpdates = launch {
+            snapshotFlow {
+                // 重绑后的数值可能与旧时钟相同，绑定版本也必须触发唤醒。
+                wordBindings to wordObservers.keys.mapNotNull { it.words.observedPosition() }
+            }.collect { wake() }
+        }
+        try {
+            while (true) {
+                wakeups.receive()
+                while (request != null || rows.values.any { it.running(positionHeld) }) {
+                    val scale = coroutineContext[MotionDurationScale]?.scaleFactor ?: 1f
+                    withFrameNanos { time ->
+                        val previous = frameTimeNanos ?: time
+                        val elapsed = (time - previous).coerceAtLeast(0L)
+                        frameTimeNanos = maxOf(previous, time)
+                        advance(if (scale > 0f) (elapsed / scale).toLong() else 0L, scale == 0f)
+                    }
                 }
+                frameTimeNanos = null
             }
-            frameTimeNanos = null
+        } finally {
+            wordUpdates.cancel()
         }
     }
 
@@ -171,7 +229,10 @@ internal class LyricPlaybackStepMotion(
                 }
             }
         }
-        rows.values.forEach { it.advance(elapsed, finish) }
+        rows.values.forEach { row ->
+            row.advance(elapsed, finish, positionHeld)
+            if (!row.words.observesClock && wordObservers.remove(row) != null) wordBindings++
+        }
         if (operation != null && !scroll.running && rows.values.none { it.position.running }) {
             request = null
             operation.finished.complete(Unit)
@@ -189,24 +250,38 @@ internal class LyricPlaybackStepMotion(
 }
 
 internal class LyricPlaybackRowMotion(val index: Int, current: Int, initialPosition: Float) {
+    val words = LyricWordLightMotion()
     val position = LyricMotionValue(initialPosition)
     val focus = LyricMotionValue(if (index == current) 1f else 0f)
+    val played = LyricMotionValue(if (index <= current) 1f else 0f)
     val opacity = LyricMotionValue(lyricRowOpacity(index, current))
     val blur = LyricMotionValue(lyricBlurDp(index, current))
-    val running get() = position.running || focus.running || opacity.running || blur.running
+    private var opacityTarget = lyricRowOpacity(index, current)
+    private var opacitySpec: FiniteAnimationSpec<Float> = snap()
+    val running get() = position.running || focus.running || played.running || opacity.running || blur.running || words.running
+    fun running(positionHeld: Boolean) = (!positionHeld && position.running) ||
+        focus.running || played.running || opacity.running || blur.running || words.running
 
     fun emphasize(current: Int, animate: Boolean, playback: Boolean) {
         focus.retarget(if (index == current) 1f else 0f,
             if (!animate) snap() else if (playback) musicSpring(200f, .001f) else musicMotion(240))
-        opacity.retarget(lyricRowOpacity(index, current),
-            if (!animate) snap() else if (playback) musicSpring(200f, .001f) else musicMotion(320))
+        // 已播放状态单独保留，焦点移往下一句时上一句不会再次缩小。
+        played.retarget(if (index <= current) 1f else 0f,
+            if (!animate) snap() else if (playback) musicSpring(200f, .001f) else musicMotion(240))
+        opacityTarget = lyricRowOpacity(index, current)
+        opacitySpec = if (!animate) snap() else if (playback) musicSpring(200f, .001f) else musicMotion(320)
+        if (!playback) words.cancelTail()
+        opacity.retarget(if (words.finishingTail) maxOf(.72f, opacityTarget) else opacityTarget, opacitySpec)
         blur.retarget(lyricBlurDp(index, current),
             if (!animate) snap() else if (playback) musicSpring(185f, .01f) else musicMotion(350))
     }
 
-    fun advance(elapsed: Long, finish: Boolean) {
-        position.advance(elapsed, finish)
+    fun advance(elapsed: Long, finish: Boolean, positionHeld: Boolean = false) {
+        if (!positionHeld) position.advance(elapsed, finish)
         focus.advance(elapsed, finish)
+        played.advance(elapsed, finish)
+        if (words.running || words.finishingTail) words.advance(elapsed / 1_000_000_000f, finish)
+        opacity.retarget(if (words.finishingTail) maxOf(.72f, opacityTarget) else opacityTarget, opacitySpec)
         opacity.advance(elapsed, finish)
         blur.advance(elapsed, finish)
     }

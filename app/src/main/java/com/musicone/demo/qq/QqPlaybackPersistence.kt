@@ -31,7 +31,9 @@ internal class QqPlaybackPersistence(context: Context) {
     private val lifetime = SupervisorJob()
     private val writer = QqPlaybackWriter(CoroutineScope(lifetime + Dispatchers.IO)) { state, position ->
         try {
-            state.toQqPlaybackSnapshot(position)?.let(store::save)
+            playbackTrace("MusicOne:playback-save") {
+                state.toQqPlaybackSnapshot(position)?.let(store::save)
+            }
         } catch (_: Exception) {
             Log.w("MusicPlayback", "保存播放进度失败")
         }

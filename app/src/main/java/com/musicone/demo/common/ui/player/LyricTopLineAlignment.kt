@@ -34,6 +34,13 @@ internal class LyricTopLineAlignment {
         pending = true
     }
 
+    fun acceptSeekAlignment() {
+        // 中间态 seek 已在同一位置驱动中完成，不再补播旧的首开锚点。
+        preparationRevision++
+        preparedAnchor = null
+        pending = false
+    }
+
     suspend fun align(list: LazyListState, current: () -> Int, progress: () -> Float) {
         val anchor = preparedAnchor
         val revision = preparationRevision
@@ -111,12 +118,13 @@ internal fun rememberLyricTopLineAlignment(
     exitAlignment: CompletableDeferred<Unit>?,
     current: Int,
     progress: () -> Float,
+    positionOwned: Boolean = false,
 ): LyricTopLineAlignment {
     val alignment = remember(list) { LyricTopLineAlignment() }
     val latestCurrent by rememberUpdatedState(current)
     val latestProgress by rememberUpdatedState(progress)
-    LyricAnimationEffect(alignment, enabled, active, prepareWhileHidden, openingAlignment, exitAlignment) {
-        if (enabled && active && !prepareWhileHidden && exitAlignment == null) {
+    LyricAnimationEffect(alignment, enabled, active, prepareWhileHidden, openingAlignment, exitAlignment, positionOwned) {
+        if (enabled && active && !prepareWhileHidden && exitAlignment == null && !positionOwned) {
             openingAlignment?.await()
             while (true) {
                 snapshotFlow { alignment.pending || latestProgress() < 1f }.first { it }

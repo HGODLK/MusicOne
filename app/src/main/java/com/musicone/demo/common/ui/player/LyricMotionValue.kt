@@ -18,11 +18,12 @@ internal class LyricMotionValue(initialValue: Float) {
     private var playTimeNanos = 0L
     val running: Boolean get() = animation != null
 
-    fun retarget(target: Float, spec: FiniteAnimationSpec<Float>) {
-        if (this.target == target && this.spec == spec) return
+    fun retarget(target: Float, spec: FiniteAnimationSpec<Float>, initialVelocity: Float = velocity) {
+        if (this.target == target && this.spec == spec && initialVelocity == velocity) return
         this.target = target
         this.spec = spec
         playTimeNanos = 0L
+        velocity = initialVelocity
         animation = if (value == target && velocity == 0f) null else TargetBasedAnimation(
             animationSpec = spec,
             typeConverter = Float.VectorConverter,

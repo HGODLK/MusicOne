@@ -22,7 +22,7 @@ internal data class LyricOpeningContext(val first: Int, val compactLayout: LazyL
     val focusOffsetPx: Float = 0f)
 
 internal suspend fun LazyListState.prepareOpeningContext(history: LyricTransitionHistory,
-    current: Int, density: Density, drawingTopPx: Int) {
+    current: Int, density: Density, drawingTopPx: Int, typography: LyricTypography? = null) {
     val target = snapshotFlow { layoutInfo }.first {
         it.viewportSize.height > 0 && it.visibleItemsInfo.any { row -> row.index == current }
     }
@@ -31,7 +31,7 @@ internal suspend fun LazyListState.prepareOpeningContext(history: LyricTransitio
     val focusDistance = requireNotNull(target.visibleItemsInfo.firstOrNull { it.index == current }).offset -
         requireNotNull(target.visibleItemsInfo.firstOrNull { it.index == first }).offset
     revealTopLineForEntrance()
-    prepareTransitionHistory(history, current, density)
+    prepareTransitionHistory(history, current, density, typography)
     val compact = layoutInfo
     history.prepareOpening(LyricOpeningContext(first, compact))
     scrollToItem(first, (-layoutInfo.viewportStartOffset).coerceAtLeast(0))

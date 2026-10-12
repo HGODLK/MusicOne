@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.dp
 
 /** 播放页拥有独立的关联详情栈，返回详情时回到原菜单，不收起播放器。 */
 @Composable
-internal fun PlayerRelatedMenuHost(state: MusicOneUiState, model: MusicOneViewModel,
+internal fun PlayerRelatedMenuHost(state: MusicOneUiState, model: MusicPlaybackRuntime,
     content: @Composable (Boolean) -> Unit) {
     val navigation = rememberEntityNavigation()
     val scope = rememberCoroutineScope()

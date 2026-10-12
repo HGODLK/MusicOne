@@ -9,13 +9,21 @@ import org.junit.Test
 
 class PlaylistPullGestureTest {
     @Test fun phonePullRequiresTheListToBeAtTheTop() {
-        assertFalse(playlistPullStartEligible(false, false, MotionPhase.SHOWN))
-        assertTrue(playlistPullStartEligible(true, false, MotionPhase.SHOWN))
+        assertFalse(playlistPullStartEligible(false, MotionPhase.SHOWN))
+        assertTrue(playlistPullStartEligible(true, MotionPhase.SHOWN))
     }
 
     @Test fun tabletCoverPullDoesNotRequireTheTrackListToBeAtTheTop() {
-        assertTrue(playlistPullStartEligible(false, false, MotionPhase.SHOWN, requireScrollAtTop = false))
-        assertFalse(playlistPullStartEligible(false, true, MotionPhase.SHOWN, requireScrollAtTop = false))
+        assertTrue(playlistPullStartEligible(false, MotionPhase.SHOWN, requireScrollAtTop = false))
+        assertFalse(playlistPullStartEligible(false, MotionPhase.MOVING, requireScrollAtTop = false))
+    }
+
+    @Test fun shortFastPullAndFullPullCloseWhileTinyMotionStays() {
+        assertTrue(playlistPullShouldClose(4f, 250f, 16f))
+        assertTrue(playlistPullShouldClose(48f, 0f, 60f))
+        assertTrue(playlistPullShouldClose(48f, -500f, 60f))
+        assertFalse(playlistPullShouldClose(4f, 0f, 16f))
+        assertFalse(playlistPullShouldClose(4f, 500f, 6f))
     }
 
     @Test fun offscreenCoverRemainsMountedAndReturnsContinuouslyAfterRelease() = checkOffscreenReturn(false)

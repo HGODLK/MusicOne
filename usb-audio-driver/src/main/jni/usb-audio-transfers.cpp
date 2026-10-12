@@ -8,6 +8,7 @@
 #include <sys/ioctl.h>
 #include <time.h>
 #include <unistd.h>
+#include <poll.h>
 
 static int64_t monotonicMs() {
     timespec now{};
@@ -61,10 +62,12 @@ static int reapOne(UsbAudioContext *ctx, bool cancelling) {
             if (packet.status != 0 || packet.actual_length != packet.length) success = false;
             if (packet.status == 0) bytes += packet.actual_length;
         }
+        const int64_t submitted = ctx->transfers.bytes[i] / ctx->bytesPerFrame;
         if (!ctx->transfers.complete(i, success ? bytes : 0, ctx->bytesPerFrame, cancelling)) {
             ctx->failed = true;
             return -1;
         }
+        ctx->pendingAudioFrames.fetch_sub(submitted);
         ctx->completedFrames.store(ctx->transfers.completedFrames);
         if (!cancelling && !success) ctx->failed = true;
         return 1;
@@ -81,12 +84,25 @@ bool pollUsbTransfers(UsbAudioContext *ctx) {
     return !ctx->failed;
 }
 
+// usbfs 在有完成请求时报告 POLLOUT；单次等待 5ms 后重新检查停止和 seek 信号。
+static bool waitForCompletion(UsbAudioContext *ctx) {
+    pollfd descriptor{ctx->fd, POLLOUT, 0};
+    const int result = poll(&descriptor, 1, 5);
+    if (result < 0 && errno != EINTR) { ctx->failed = true; return false; }
+    if (result > 0 && (descriptor.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+        ctx->failed = true;
+        return false;
+    }
+    return true;
+}
+
 static bool waitForSlot(UsbAudioContext *ctx) {
     const int64_t deadline = monotonicMs() + 500;
     while (ctx->running.load() && !ctx->failed && ctx->transfers.freeSlot() < 0) {
-        if (reapOne(ctx, false) < 0) return false;
+        const int reaped = reapOne(ctx, false);
+        if (reaped < 0) return false;
         if (monotonicMs() >= deadline) { ctx->failed = true; return false; }
-        usleep(125);
+        if (reaped == 0 && !waitForCompletion(ctx)) return false;
     }
     return ctx->running.load() && !ctx->failed;
 }
@@ -107,6 +123,7 @@ static bool submitAudio(UsbAudioContext *ctx, const uint8_t *data, const int *si
     for (int i = 0; i < packets; ++i) urb->iso_frame_desc[i].length = sizes[i];
     if (ioctl(ctx->fd, USBDEVFS_SUBMITURB, urb) < 0) { ctx->failed = true; return false; }
     ctx->transfers.submitted(index, length, ctx->bytesPerFrame);
+    ctx->pendingAudioFrames.fetch_add(length / ctx->bytesPerFrame);
     return true;
 }
 
@@ -158,9 +175,10 @@ bool finishUsbTransfers(UsbAudioContext *ctx) {
     }
     const int64_t deadline = monotonicMs() + 1000;
     while (ctx->running.load() && !ctx->failed && ctx->transfers.pending > 0) {
-        if (reapOne(ctx, false) < 0) break;
+        const int reaped = reapOne(ctx, false);
+        if (reaped < 0) break;
         if (monotonicMs() >= deadline) { ctx->failed = true; break; }
-        usleep(125);
+        if (reaped == 0 && !waitForCompletion(ctx)) break;
     }
     return ctx->running.load() && !ctx->failed && ctx->transfers.pending == 0;
 }
@@ -173,8 +191,9 @@ bool cancelUsbTransfers(UsbAudioContext *ctx) {
     }
     const int64_t deadline = monotonicMs() + 1000;
     while (ctx->feedbackInFlight || ctx->transfers.pending > 0) {
-        if (reapOne(ctx, true) < 0 || monotonicMs() >= deadline) return false;
-        usleep(125);
+        const int reaped = reapOne(ctx, true);
+        if (reaped < 0 || monotonicMs() >= deadline) return false;
+        if (reaped == 0 && !waitForCompletion(ctx)) return false;
     }
     return true;
 }

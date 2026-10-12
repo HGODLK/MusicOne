@@ -9,7 +9,7 @@ import org.junit.Test
 
 class QqNextLyricsPreloaderTest {
     private val track = MusicTrack("qq-next", MusicSource.QQ, "下一首", "歌手", "", 180_000, 0, 0, "", "")
-    private val lyrics = listOf(TimedLyric(1_000, "原文", "翻译"))
+    private val lyrics = listOf(TimedLyric(1_000, "原文", "翻译", listOf(LyricWord(1_000, 1_500, "原文")))).confirmedByCurrentQqParser()
 
     @Test fun fetchedLyricsAndTranslationAreReusedWithoutAnotherRequest() = runBlocking {
         val fixture = Fixture()
@@ -38,6 +38,14 @@ class QqNextLyricsPreloaderTest {
         assertEquals(0, fixture.reads)
         assertEquals(0, fixture.fetches)
         assertEquals(0, fixture.writes)
+    }
+
+    @Test fun unverifiedEmbeddedLyricsCannotPromoteTheOldCache() = runBlocking {
+        val fixture = Fixture()
+        val legacy = lyrics.map { it.copy(parserVersion = 0) }
+        fixture.loader.preload(track.copy(lyrics = legacy), "QQ:100")
+        assertEquals(1, fixture.fetches)
+        assertEquals(lyrics, fixture.cache["QQ:100"])
     }
 
     @Test fun accountChangeDuringCacheReadPreventsNetworkRequest() = runBlocking {

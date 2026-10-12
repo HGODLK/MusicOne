@@ -2,7 +2,10 @@ package com.musicone.demo
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -39,9 +42,15 @@ internal class RapidTrackSwitch(
     private var token = 0L
     private var lastDirectInputMs: Long? = null
     private val lyricSettlements = MutableStateFlow<Map<Any, Long?>>(emptyMap())
+    private val presentationActive = MutableStateFlow(true)
+
+    fun setPresentationActive(active: Boolean) {
+        presentationActive.value = active
+        if (!active) lyricSettlements.value = emptyMap()
+    }
 
     fun attachLyrics(owner: Any) {
-        lyricSettlements.update { it + (owner to null) }
+        if (presentationActive.value) lyricSettlements.update { it + (owner to null) }
     }
 
     fun detachLyrics(owner: Any) {
@@ -105,8 +114,21 @@ internal class RapidTrackSwitch(
             }
         }
         settleJob = scope.launch {
-            if (continuous) delay(RAPID_TRACK_SETTLE_DELAY_MS)
-            cacheJob?.join()
+            if (continuous && presentationActive.value) {
+                withTimeoutOrNull(RAPID_TRACK_SETTLE_DELAY_MS) { presentationActive.first { !it } }
+            }
+            // 缓存只服务可见歌词；退到后台后不等待磁盘或帧时钟，直接提交最终目标。
+            val lookup = cacheJob
+            if (lookup != null && lyricSettlements.value.isNotEmpty()) coroutineScope {
+                val hidden = async { lyricSettlements.first { it.isEmpty() } }
+                try {
+                    select<Unit> {
+                        lookup.onJoin { }
+                        hidden.onAwait { }
+                    }
+                } finally { hidden.cancel() }
+            }
+            if (lyricSettlements.value.isEmpty()) lookup?.cancel()
             val final = mutablePresentation.value?.takeIf { it.token == requestToken } ?: return@launch
             val settled = final.copy(phase = RapidTrackSwitchPhase.SETTLING)
             mutablePresentation.value = settled

@@ -7,9 +7,6 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
@@ -69,7 +66,7 @@ internal fun PlaybackStateIcon(
 ) {
     if (!qqFeedback) {
         Icon(
-            if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+            if (isPlaying) PlayerControlIcons.Pause else PlayerControlIcons.Play,
             if (isPlaying) "暂停" else "播放",
             modifier,
         )
@@ -84,7 +81,7 @@ internal fun PlaybackStateIcon(
         label = "QQ 播放状态切换",
     ) { playing ->
         Icon(
-            if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+            if (playing) PlayerControlIcons.Pause else PlayerControlIcons.Play,
             if (playing) "暂停" else "播放",
             modifier,
         )

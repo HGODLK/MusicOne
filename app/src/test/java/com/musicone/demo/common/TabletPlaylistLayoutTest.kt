@@ -8,6 +8,54 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TabletPlaylistLayoutTest {
+    @Test fun animatedBottomBarCannotResizeLandscapeCoverAtAnyFontScale() {
+        for (fontScale in listOf(1f, 1.5f, 2f)) {
+            val reserved = miniPlayerReservedHeightPx(48, (20 * fontScale).toInt(),
+                (16 * fontScale).toInt(), 3, 7, 8)
+            val initial = tabletPlaylistGeometry(630, 760 - reserved, 100, 72, 114, 12)
+            val actualInsetLayouts = mutableSetOf<TabletPlaylistGeometry>()
+            // 底栏从未显示、部分出现到完整显示，列表遮挡预算改变，左栏预算始终来自最终行高。
+            for (animatedHeight in listOf(0, 15, 39, 78, reserved)) {
+                actualInsetLayouts += tabletPlaylistGeometry(630, 760 - animatedHeight, 100, 72, 114, 12)
+                assertEquals(initial, tabletPlaylistGeometry(630, 760 - reserved, 100, 72, 114, 12))
+            }
+            assertTrue(actualInsetLayouts.size > 1)
+        }
+        assertEquals(78, miniPlayerReservedHeightPx(48, 20, 16, 3, 7, 8))
+        assertEquals(105, miniPlayerReservedHeightPx(48, 40, 32, 3, 7, 8))
+    }
+
+    @Test fun lateTargetResizesSharedCoverBeforeTheRealCoverIsShown() = runBlocking {
+        val clock = BroadcastFrameClock()
+        val scope = CoroutineScope(coroutineContext + clock)
+        val motion = PageMotion(scope, false, 320, 280)
+        RecommendationNavigation(mutableStateOf(null), motion, PlaylistCardTransition(scope))
+        motion.updateHost(Rect(0f, 0f, 1200f, 1100f))
+        val first = MotionAnchor(Rect(24f, 12f, 554f, 542f), corner = 8f)
+        val latest = MotionAnchor(Rect(24f, 12f, 494f, 482f), corner = 12f)
+        motion.sources["cover"] = MotionAnchor(Rect(20f, 20f, 180f, 180f))
+        motion.targets["cover"] = first
+        var time = 0L
+        suspend fun frames(count: Int) {
+            repeat(count) { yield(); time += 16_666_667L; clock.sendFrame(time); yield() }
+        }
+        motion.request(true)
+        frames(10)
+        assertEquals(first, motion.targetSnapshot["cover"])
+        motion.targets["cover"] = latest
+        frames(15)
+        assertEquals(1f, motion.value, .0001f)
+        assertEquals(MotionPhase.MOVING, motion.phase)
+        frames(3)
+        assertNotEquals(first, motion.targetSnapshot["cover"])
+        frames(120)
+        assertEquals(MotionPhase.SHOWN, motion.phase)
+        assertEquals(latest, motion.targetSnapshot["cover"])
+        assertEquals(latest, interpolatePlaylistCoverAnchor(first, latest, 1f))
+        assertEquals(first, interpolatePlaylistCoverAnchor(first, latest, 0f))
+        coroutineContext.cancelChildren()
+    }
+
     @Test fun delayedDetailsKeepTheFirstLandingAndCachedLandingIdentical() = runBlocking {
         val clock = BroadcastFrameClock()
         val scope = CoroutineScope(coroutineContext + clock)

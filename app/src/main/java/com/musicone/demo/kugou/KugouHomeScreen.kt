@@ -30,7 +30,7 @@ import java.util.Calendar
 internal fun KugouHomeScreen(
     state: MusicOneUiState,
     catalog: MusicCatalogUiState,
-    viewModel: MusicOneViewModel,
+    viewModel: MusicPlaybackRuntime,
     bottomInset: Dp,
     actions: PlatformHomeActions,
 ) {

@@ -18,13 +18,14 @@ internal class LyricShortSeek {
     private var job: Job? = null
 
     fun start(scope: CoroutineScope, pane: LyricWindowPane, target: Int,
+        targetOffset: Int = 0,
         onFirstFrame: () -> Unit = {}): Job = launchScroll(scope, {
         pane.playbackStep.reset()
         val item = pane.listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == target }
         if (item == null) {
-            pane.listState.animateScrollToItem(target)
+            pane.listState.animateScrollToItem(target, -targetOffset)
         } else {
-            val travel = lyricVisibleSeekTravel(item.offset)
+            val travel = lyricVisibleSeekTravel(item.offset) - targetOffset
             pane.listState.animateScrollBy(travel, lyricPlaybackMotionSpec(travel, LyricPlaybackMotionPurpose.SEEK))
         }
         pane.playbackStep.consume(target, enabled = true)
@@ -36,6 +37,7 @@ internal class LyricShortSeek {
         job?.cancel()
         active = true
         var published = false
+        val phase = beginLyricTracePhase("MusicOne:seek-short")
         return scope.launch {
             coroutineScope {
                 launch { scroll() }
@@ -46,6 +48,7 @@ internal class LyricShortSeek {
         }.also { operation ->
             job = operation
             operation.invokeOnCompletion {
+                endLyricTracePhase(phase)
                 // 连续点击也可能在协程启动前取消，仍须释放旧请求的就绪等待。
                 if (!published) onFirstFrame()
                 if (revision == request) active = false

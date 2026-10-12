@@ -11,6 +11,8 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 
 internal val LocalPlayerVisible = staticCompositionLocalOf { true }
 internal val LocalPlayerPrewarming = staticCompositionLocalOf { false }
@@ -38,10 +40,12 @@ internal fun RetainedPlayerContent(
     SideEffect { owner.update(parent.currentState, collecting) }
     val scope = rememberCoroutineScope()
     val drawReported = remember { booleanArrayOf(false) }
+    val lyricWarmup = remember { LyricRenderWarmupState() }
     CompositionLocalProvider(
         LocalLifecycleOwner provides owner,
         LocalPlayerVisible provides visible,
         LocalPlayerPrewarming provides prewarming,
+        LocalLyricRenderWarmup provides lyricWarmup,
     ) {
         Layout(
             content = content,
@@ -53,7 +57,10 @@ internal fun RetainedPlayerContent(
                         scope.launch {
                             // 至少提交完整绘制，再让启动遮罩退出。
                             repeat(2) { withFrameNanos { } }
-                            retention.markWarmed()
+                            if (lyricWarmup.requested) withTimeoutOrNull(450L) {
+                                snapshotFlow { lyricWarmup.ready }.first { it }
+                            }
+                            if (!lyricWarmup.requested || lyricWarmup.ready) retention.markWarmed()
                         }
                     }
                 },

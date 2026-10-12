@@ -92,6 +92,8 @@ internal fun rememberLyricPresentationRequest(
     return requests.collectAsStateWithLifecycle(
         initialValue = rapidSwitch.presentation.value?.lyricRequest()
             ?: lyricPresentationRequest(track, loadState, direction),
+        // 常驻隐藏页只收集去重后的歌词元数据，真实进度和逐字时钟仍按可见生命周期暂停。
+        minActiveState = androidx.lifecycle.Lifecycle.State.CREATED,
     )
 }
 

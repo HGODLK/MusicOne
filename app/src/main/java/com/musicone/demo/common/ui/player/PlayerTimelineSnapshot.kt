@@ -46,7 +46,7 @@ internal fun playerTimelineSnapshots(
 }.distinctUntilChanged()
 
 @Composable
-internal fun rememberPlayerTimelineSnapshot(viewModel: MusicOneViewModel): State<PlayerTimelineSnapshot> =
+internal fun rememberPlayerTimelineSnapshot(viewModel: MusicPlaybackRuntime): State<PlayerTimelineSnapshot> =
     remember(viewModel) {
         playerTimelineSnapshots(viewModel.state, viewModel.playbackProgress,
             viewModel.playbackActivity, viewModel.rapidTrackSwitch.presentation)

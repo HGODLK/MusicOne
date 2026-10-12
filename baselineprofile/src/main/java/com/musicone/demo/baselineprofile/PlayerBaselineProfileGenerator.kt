@@ -33,8 +33,9 @@ class PlayerBaselineProfileGenerator {
             device.waitForIdle()
             markDevice()
             if (isManualCapture()) {
-                mark("播放器人工采集窗口", true, "等待模拟器实机操作")
-                SystemClock.sleep(180_000)
+                val sleepMs = InstrumentationRegistry.getArguments().getString("manual_sleep_ms")?.toLongOrNull() ?: 180_000L
+                mark("播放器人工采集窗口", true, "等待模拟器实机操作 (${sleepMs}ms)")
+                SystemClock.sleep(sleepMs)
                 return@collect
             }
             if (!waitForHome()) {

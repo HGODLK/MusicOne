@@ -2,9 +2,6 @@ package com.musicone.demo
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.basicMarquee
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -62,6 +59,8 @@ internal fun FlyingPlayerControls(motion: PageMotion, track: MusicTrack, playing
     val playColor = handoff?.sourceInk("play", Color.Black) ?: Color.Black
     val playerInk = playerForegroundColor()
     val playerSecondary = playerInk.copy(alpha = .62f)
+    val titleGeometry = playerTextGeometry(motion, "title", track)
+    val subtitleGeometry = playerTextGeometry(motion, "subtitle", track)
     // 两端分别使用真实尺寸，避免对源字号再次套用目标容器的缩放。
     for (target in listOf(false, true)) {
         val titleSize = playerControlTextSize(
@@ -74,7 +73,7 @@ internal fun FlyingPlayerControls(motion: PageMotion, track: MusicTrack, playing
             else motion.sourceSnapshot["subtitle"] ?: motion.sources["subtitle"],
             if (target) MusicOneTextStyles.playerArtist.fontSize.value else MusicOneTextStyles.miniPlayerArtist.fontSize.value,
         )
-        FlyingControl(motion, "title", target) {
+        FlyingControl(motion, "title", target, geometry = titleGeometry) {
             if (target && motion.targetContentHandoff) {
                 PlayerTextHandoffSnapshot("title")
             } else if (!target) {
@@ -95,7 +94,7 @@ internal fun FlyingPlayerControls(motion: PageMotion, track: MusicTrack, playing
                 )
             }
         }
-        FlyingControl(motion, "subtitle", target) {
+        FlyingControl(motion, "subtitle", target, geometry = subtitleGeometry) {
             if (target && motion.targetContentHandoff) {
                 PlayerTextHandoffSnapshot("subtitle")
             } else if (!target) {
@@ -113,7 +112,7 @@ internal fun FlyingPlayerControls(motion: PageMotion, track: MusicTrack, playing
             }
         }
         FlyingControl(motion, "play", target, Alignment.Center) {
-            Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, null,
+            Icon(if (playing) PlayerControlIcons.Pause else PlayerControlIcons.Play, null,
                 tint = playerInk, modifier = Modifier.size((if (target) 54 else 21).dp)
                     .playerTint(playColor, playerInk, motion))
         }
@@ -134,10 +133,11 @@ private fun Modifier.playerTint(from: Color, to: Color, motion: PageMotion): Mod
 
 @Composable
 private fun FlyingControl(motion: PageMotion, key: String, target: Boolean,
-    alignment: Alignment = Alignment.CenterStart, content: @Composable BoxScope.() -> Unit) {
+    alignment: Alignment = Alignment.CenterStart, geometry: PlayerTextGeometry? = null,
+    content: @Composable BoxScope.() -> Unit) {
     // 准备阶段先挂载飞行控件，真正开始移动时只切换绘制，避免源控件先隐藏一帧。
-    val source = motion.sourceSnapshot[key] ?: motion.sources[key] ?: return
-    val destination = motion.targetSnapshot[key] ?: motion.targets[key] ?: return
+    val source = geometry?.source ?: motion.sourceSnapshot[key] ?: motion.sources[key] ?: return
+    val destination = geometry?.target ?: motion.targetSnapshot[key] ?: motion.targets[key] ?: return
     val endpoint = if (target) destination else source
     val density = LocalDensity.current
     val contentScale = endpoint.contentScale.coerceAtLeast(.01f)
@@ -147,8 +147,8 @@ private fun FlyingControl(motion: PageMotion, key: String, target: Boolean,
         IntOffset((endpoint.bounds.left - motion.hostBounds.left).roundToInt(),
             (endpoint.bounds.top - motion.hostBounds.top).roundToInt())
     }.size(with(density) { width.toDp() }, with(density) { height.toDp() }).graphicsLayer {
-        val activeSource = motion.sourceSnapshot[key]
-        val activeDestination = motion.targetSnapshot[key]
+        val activeSource = if (motion.sourceSnapshot[key] != null) geometry?.source ?: motion.sourceSnapshot[key] else null
+        val activeDestination = if (motion.targetSnapshot[key] != null) geometry?.target ?: motion.targetSnapshot[key] else null
         if (!motion.moving || activeSource == null || activeDestination == null) {
             alpha = 0f
         } else {

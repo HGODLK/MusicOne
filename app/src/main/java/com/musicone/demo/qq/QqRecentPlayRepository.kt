@@ -2,6 +2,8 @@ package com.musicone.demo
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
@@ -19,13 +21,19 @@ internal class QqRecentPlayRepository(context: Context) {
         val modules = qqRecentPlayRequest()
         val body = JSONObject().put("comm", qqPlaybackComm(session.credential))
         modules.keys().forEach { key -> body.put(key, modules.getJSONObject(key)) }
-        val response = JSONObject(PlatformHttp.postJson(
+        val responseText = PlatformHttp.postJson(
             "https://u.y.qq.com/cgi-bin/musicu.fcg",
             body.toString(),
             session.credential,
             mapOf("Referer" to "https://y.qq.com/", "User-Agent" to "QQMusic 14090008(android 14)"),
-        ).text)
-        val parsed = parseQqRecentPlay(response, session.account?.hasVipAccess == true)
+        ).text
+        // 同步网络返回时页面可能已隐藏，取消后不再进入批量 JSON 解析。
+        currentCoroutineContext().ensureActive()
+        val response = playbackTrace("MusicOne:recent-json") { JSONObject(responseText) }
+        currentCoroutineContext().ensureActive()
+        val parsed = playbackTrace("MusicOne:recent-parse") {
+            parseQqRecentPlay(response, session.account?.hasVipAccess == true)
+        }
         parsed.copy(songs = artworkAliases.remember(QqTrackAccessResolver().resolve(parsed.songs, session.credential).map(artworkAliases::apply)))
     }
 

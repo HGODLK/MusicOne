@@ -12,6 +12,7 @@ internal data class ExperienceOptions(
     val reduceMotion: Boolean = false,
     val disableCardColors: Boolean = false,
     val alwaysDark: Boolean = false,
+    val verbatimLyricAnimation: Boolean = true,
     val uiAnimationFrameRate: AnimationFrameRate = AnimationFrameRate.DISPLAY,
     val lyricAnimationFrameRate: AnimationFrameRate = AnimationFrameRate.DISPLAY,
 )
@@ -32,6 +33,8 @@ internal object ExperiencePreferences {
             reduceMotion = store.getBoolean("reduce_motion", false),
             disableCardColors = store.getBoolean("disable_card_colors", false),
             alwaysDark = store.getBoolean("always_dark", false),
+            // 保存键继续表示实际启用状态，界面反向开关不会翻转已有选择。
+            verbatimLyricAnimation = store.getBoolean("verbatim_lyric_animation", true),
             uiAnimationFrameRate = AnimationFrameRate.fromStored(store.getInt("ui_animation_fps", 0)),
             lyricAnimationFrameRate = AnimationFrameRate.fromStored(store.getInt("lyric_animation_fps", 0)),
         )
@@ -44,6 +47,7 @@ internal object ExperiencePreferences {
             ?.putBoolean("reduce_motion", value.reduceMotion)
             ?.putBoolean("disable_card_colors", value.disableCardColors)
             ?.putBoolean("always_dark", value.alwaysDark)
+            ?.putBoolean("verbatim_lyric_animation", value.verbatimLyricAnimation)
             ?.putInt("ui_animation_fps", value.uiAnimationFrameRate.fps)
             ?.putInt("lyric_animation_fps", value.lyricAnimationFrameRate.fps)?.apply()
     }

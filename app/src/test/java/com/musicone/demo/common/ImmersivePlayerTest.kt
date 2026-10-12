@@ -16,12 +16,6 @@ class ImmersivePlayerTest {
         assertEquals(PlayerPlaybackMode.SHUFFLE, playerPlaybackMode(true, RepeatMode.ALL))
     }
 
-    @Test fun playedAndCurrentLyricsRemainSharpWhileFutureLyricsBlur() {
-        assertEquals(0f, lyricBlurDp(2, 3))
-        assertEquals(0f, lyricBlurDp(3, 3))
-        assertTrue(lyricBlurDp(4, 3) > 0f)
-        assertEquals(0f, lyricBlurDp(4, 4))
-    }
     @Test fun lyricSelectionUsesTimestampBoundaries() {
         val lines = listOf(TimedLyric(0, "第一句"), TimedLyric(20_000, "第二句"), TimedLyric(240_000, "第三句"))
         assertEquals(0, activeLyric(lines, 19_999))
@@ -60,6 +54,9 @@ class ImmersivePlayerTest {
         assertTrue(playerControlsShouldHide(.36f, 0f))
         assertTrue(playerControlsShouldHide(.1f, 901f))
         assertFalse(playerControlsShouldHide(.8f, -901f))
+        assertFalse(playerControlsShouldHide(.5f, 0f, fromHidden = true))
+        assertTrue(playerControlsShouldHide(.9f, 0f, fromHidden = true))
+        assertFalse(playerControlsShouldHide(.95f, -350f, fromHidden = true))
         assertEquals(120f, playerControlsTranslation(.5f, 240f), .0001f)
     }
 
@@ -72,6 +69,12 @@ class ImmersivePlayerTest {
         assertEquals(LyricScrollMode.SNAP, lyricScrollMode(true, 10, 30))
         assertEquals(LyricScrollMode.ANIMATE, lyricScrollMode(false, 10, 12))
         assertEquals(LyricScrollMode.CHANGE_WINDOW, lyricScrollMode(false, 10, 13))
+    }
+
+    @Test fun onlyUpcomingLyricsReceiveTheirOwnBlur() {
+        assertEquals(0f, lyricBlurDp(3, 5), .0001f)
+        assertEquals(0f, lyricBlurDp(5, 5), .0001f)
+        assertEquals(2f, lyricBlurDp(6, 5), .0001f)
     }
 
     @Test fun visibleLyricSeekUsesThePaddedReadingAnchor() {
@@ -220,6 +223,53 @@ class ImmersivePlayerTest {
         assertTrue(isCurrentPlaybackRequest(4, 4, "qq-song", "qq-song"))
         assertFalse(isCurrentPlaybackRequest(3, 4, "qq-song", "qq-song"))
         assertFalse(isCurrentPlaybackRequest(4, 4, "qq-old", "qq-song"))
+    }
+
+    @Test fun qqQrcParserHandlesUnescapedQuotesWithoutTruncation() {
+        val qrcXml = "<Lyric_1 Type=\"1\" LyricContent=\"[0,1000]开始(0,500)前奏(500,500)&#10;[22305,3200]\"你在哪里 往何处去\"(22305,1600)歌词(23905,1600)&#10;[26000,2000]第三句(26000,2000)&#10;[29000,1500]尾声(29000,1500)\"/>"
+        val parsed = parseQqQrc(qrcXml)
+
+        assertEquals(4, parsed.size)
+        assertEquals(listOf(0L, 22_305L, 26_000L, 29_000L), parsed.map { it.timeMs })
+        assertEquals("\"你在哪里 往何处去\"歌词", parsed[1].text)
+        assertEquals(2, parsed[1].words.size)
+        assertEquals(22_305L, parsed[1].words[0].startMs)
+        assertEquals(23_905L, parsed[1].words[0].endMs)
+        assertEquals("\"你在哪里 往何处去\"", parsed[1].words[0].text)
+    }
+
+    @Test fun qqTranslationPlaceholderDoubleSlashIsFilteredOut() {
+        val original = listOf(TimedLyric(1_000L, "Hello"), TimedLyric(2_000L, "World"))
+        val transWithPlaceholders = listOf(TimedLyric(1_000L, "你好"), TimedLyric(2_000L, "//"))
+        val merged = mergeLyricTranslation(original, transWithPlaceholders)
+
+        assertEquals("你好", merged[0].translation)
+        assertNull(merged[1].translation)
+    }
+
+    @Test fun lyricCacheVersionRejectsLegacyEvenWhenEveryCreditHasWords() {
+        val track = testTrack("qq-long-song").copy(durationMs = 210_800L)
+        // 对应真实旧结果的结构：二十五行署名与一句正文全部带时间片。
+        val truncated = (0..25).map { index ->
+            TimedLyric(index * 600L, "Line $index", words = listOf(LyricWord(index * 600L, index * 600L + 500L, "Line $index")))
+        }
+        assertEquals(26, truncated.count { it.words.isNotEmpty() })
+        assertFalse(hasReusableLyrics(track, truncated))
+        // 少行与长间奏本身不是损坏，经过当前解析器确认即可复用。
+        assertTrue(hasReusableLyrics(track, truncated.take(2).confirmedByCurrentQqParser()))
+    }
+
+    @Test fun shouldUpgradeLyricCacheToVerbatimTriggersWhenVerbatimEnabledAndMissingWords() {
+        val track = testTrack("qq-long-song")
+        val lrcOnlyLyrics = (0..50).map { TimedLyric(it * 1000L, "Line $it") }
+        val qrcLyrics = (0..50).map { TimedLyric(it * 1000L, "Line $it", words = listOf(LyricWord(it * 1000L, it * 1000L + 500L, "Line $it"))) }
+
+        ExperiencePreferences.update(ExperiencePreferences.options.copy(verbatimLyricAnimation = true))
+        assertTrue(shouldUpgradeLyricCacheToVerbatim(track, lrcOnlyLyrics))
+        assertFalse(shouldUpgradeLyricCacheToVerbatim(track, qrcLyrics))
+
+        ExperiencePreferences.update(ExperiencePreferences.options.copy(verbatimLyricAnimation = false))
+        assertFalse(shouldUpgradeLyricCacheToVerbatim(track, lrcOnlyLyrics))
     }
 
     private fun testTrack(id: String) = MusicTrack(

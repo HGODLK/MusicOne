@@ -23,7 +23,7 @@ internal fun BalancedTabletPlayer(
     track: MusicTrack,
     visualTrack: MusicTrack,
     motion: PageMotion,
-    viewModel: MusicOneViewModel,
+    viewModel: MusicPlaybackRuntime,
     contentActivated: Boolean,
     onQueue: () -> Unit,
 ) {
@@ -84,7 +84,7 @@ private fun TabletLyricsEntrance(
     track: MusicTrack,
     loadState: LyricLoadState,
     trackTransitionDirection: TrackTransitionDirection,
-    viewModel: MusicOneViewModel,
+    viewModel: MusicPlaybackRuntime,
     motion: PageMotion,
 ) {
     val prewarming = LocalPlayerPrewarming.current
@@ -103,7 +103,6 @@ private fun TabletLyricsEntrance(
             loadState,
             viewModel,
             Modifier.fillMaxSize().playerDetailReveal(motion),
-            currentAnchorFraction = .22f,
             trackTransitionDirection = trackTransitionDirection,
             active = active,
             followPlayback = active,

@@ -11,7 +11,7 @@ internal val LocalMyPageVisible = compositionLocalOf { false }
 
 /** 音频目标和浏览预览都在封面准备阶段同步；页面仅接入入口。 */
 @Composable
-internal fun MusicLibrarySynchronization(viewModel: MusicOneViewModel, favorites: MusicFavoriteViewModel,
+internal fun MusicLibrarySynchronization(viewModel: MusicPlaybackRuntime, favorites: MusicFavoriteViewModel,
     source: MusicSource, sessionRevision: Long, myVisible: Boolean,
     refreshLibrary: () -> Unit, cards: PlaylistCardTransition, rootVisible: Boolean) {
     LaunchedEffect(viewModel, source, sessionRevision) {

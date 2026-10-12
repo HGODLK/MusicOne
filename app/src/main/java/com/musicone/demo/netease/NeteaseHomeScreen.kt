@@ -7,7 +7,7 @@ import androidx.compose.ui.unit.Dp
 internal fun NeteaseHomeScreen(
     state: MusicOneUiState,
     catalog: MusicCatalogUiState,
-    viewModel: MusicOneViewModel,
+    viewModel: MusicPlaybackRuntime,
     bottomInset: Dp,
     actions: PlatformHomeActions,
 ) {

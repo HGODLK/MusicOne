@@ -13,19 +13,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
 
 internal enum class SystemPlaybackCommand { PREVIOUS, NEXT }
-
-internal object SystemPlaybackCommands {
-    private val mutableCommands = MutableSharedFlow<SystemPlaybackCommand>(extraBufferCapacity = 8)
-    val commands = mutableCommands.asSharedFlow()
-
-    fun send(command: SystemPlaybackCommand) {
-        mutableCommands.tryEmit(command)
-    }
-}
 
 @androidx.annotation.OptIn(UnstableApi::class)
 class MusicPlaybackService : MediaSessionService() {
@@ -34,6 +23,7 @@ class MusicPlaybackService : MediaSessionService() {
     private var usbAudioCoordinator: UsbAudioServiceCoordinator? = null
     private var detailsLoader: PlaybackDetailsLoader? = null
     private var routingProvider: RoutingAudioTrackProvider? = null
+    private var runtime: MusicPlaybackRuntime? = null
     private val timerHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val timerTick = object : Runnable {
         override fun run() {
@@ -68,6 +58,8 @@ class MusicPlaybackService : MediaSessionService() {
             setHandleAudioBecomingNoisy(true)
         }
         exoPlayer = player
+        val playback = MusicPlaybackRuntimeOwner.acquire(application, this)
+        runtime = playback
         detailsLoader = PlaybackDetailsLoader(this, player).also(player::addListener)
         usbAudioCoordinator = renderersFactory.usbAudioSink?.let { sink ->
             UsbAudioServiceCoordinator(this, player, sink).also { it.start() }
@@ -95,10 +87,10 @@ class MusicPlaybackService : MediaSessionService() {
                 )
                 .build()
 
-            override fun seekToPrevious() = SystemPlaybackCommands.send(SystemPlaybackCommand.PREVIOUS)
-            override fun seekToPreviousMediaItem() = SystemPlaybackCommands.send(SystemPlaybackCommand.PREVIOUS)
-            override fun seekToNext() = SystemPlaybackCommands.send(SystemPlaybackCommand.NEXT)
-            override fun seekToNextMediaItem() = SystemPlaybackCommands.send(SystemPlaybackCommand.NEXT)
+            override fun seekToPrevious() = playback.systemCommand(SystemPlaybackCommand.PREVIOUS)
+            override fun seekToPreviousMediaItem() = playback.systemCommand(SystemPlaybackCommand.PREVIOUS)
+            override fun seekToNext() = playback.systemCommand(SystemPlaybackCommand.NEXT)
+            override fun seekToNextMediaItem() = playback.systemCommand(SystemPlaybackCommand.NEXT)
         }
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
         val sessionBuilder = MediaSession.Builder(this, sessionPlayer)
@@ -113,11 +105,15 @@ class MusicPlaybackService : MediaSessionService() {
             )
         }
         mediaSession = sessionBuilder.build()
+        playback.attachPlayer(player)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
 
     override fun onDestroy() {
+        exoPlayer?.let { runtime?.detachPlayer(it) }
+        MusicPlaybackRuntimeOwner.release(this)
+        runtime = null
         detailsLoader?.release()
         timerHandler.removeCallbacks(timerTick)
         usbAudioCoordinator?.release()

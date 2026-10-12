@@ -102,6 +102,19 @@ class PlaybackTaskOwnershipTest {
         assertEquals("补全标题", result.queue.single().title)
     }
 
+    @Test fun resolvedSourceCannotOverwritePauseOrResumeRequestedDuringLoading() {
+        val song = track("final")
+        for (playing in listOf(false, true)) {
+            val state = MusicOneUiState(currentTrack = song, queue = listOf(song), isPlaying = playing)
+            val event = PlaybackTrackEvent.Ready(PlaybackRequestKey(song.id, 2L),
+                ResolvedPlayback(song, source()), AudioQuality.LOSSLESS, AudioQuality.LOSSLESS,
+                0L, playWhenReady = !playing)
+            val result = state.withResolvedPlayback(event)
+            assertEquals(playing, result.isPlaying)
+            assertEquals("final", result.currentTrack?.id)
+        }
+    }
+
     @Test fun radioExitRejectsLateInitialQueue() = runBlocking {
         val ready = CompletableDeferred<List<MusicTrack>>()
         val entered = CompletableDeferred<Unit>()

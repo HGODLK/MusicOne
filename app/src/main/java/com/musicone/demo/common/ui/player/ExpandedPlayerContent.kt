@@ -12,7 +12,7 @@ import androidx.compose.ui.composed
 
 @Composable
 internal fun ExpandedPlayerContent(state: MusicOneUiState, track: MusicTrack, visualTrack: MusicTrack, motion: PageMotion,
-    viewModel: MusicOneViewModel, onDismiss: () -> Unit, contentActivated: Boolean) {
+    viewModel: MusicPlaybackRuntime, onDismiss: () -> Unit, contentActivated: Boolean) {
     var lyrics by remember { mutableStateOf(false) }
     var queue by rememberSaveable { mutableStateOf(false) }
     val controls = rememberPlayerControlsVisibilityState()

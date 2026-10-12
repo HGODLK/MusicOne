@@ -11,7 +11,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.verticalDrag
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -72,11 +71,12 @@ internal class PlayerControlsVisibilityState(
         hidden = false
     }
 
-    fun settle(velocityY: Float = 0f) {
+    fun settle(velocityY: Float = 0f, density: Float = 1f, distanceDp: Float = 24f, releasedNormally: Boolean = true) {
         animationVelocity = (velocityY / dragTravelPx).coerceIn(-3f, 3f)
         val fromHidden = dragStartedHidden
         dragStartedHidden = false
-        animateTo(if (playerControlsShouldHide(progress, velocityY, fromHidden)) 1f else 0f)
+        val hide = if (releasedNormally) playerControlsShouldHide(progress, velocityY / density, fromHidden, distanceDp) else fromHidden
+        animateTo(if (hide) 1f else 0f)
     }
 
     fun show() = animateTo(0f)
@@ -88,10 +88,14 @@ internal class PlayerControlsVisibilityState(
     private fun animateTo(target: Float) {
         animationJob?.cancel()
         animationJob = scope.launch {
+            val delta = target - progress
+            // 初速度方向与目标相反时消除逆向冲量，避免固定时长曲线起步停顿。
+            val clampedVelocity = if (delta > 0f) animationVelocity.coerceAtLeast(0f)
+                else if (delta < 0f) animationVelocity.coerceAtMost(0f) else 0f
             animate(
                 initialValue = progress,
                 targetValue = target,
-                initialVelocity = animationVelocity,
+                initialVelocity = clampedVelocity,
                 animationSpec = musicMotion(240),
             ) { value, velocity ->
                 progress = value.coerceIn(0f, 1f)
@@ -125,9 +129,10 @@ internal fun Modifier.playerControlsDrag(
         // 底部歌词和队列按钮留给点击处理，轻微手抖不能触发整组控件下滑。
         if (reserveBottomButtons && down.position.y >= size.height - 58.dp.toPx()) return@awaitEachGesture
         val tracker = VelocityTracker().apply { addPosition(down.uptimeMillis, down.position) }
+        val release = GestureReleaseVelocity(down.uptimeMillis, density)
         var dragging = false
         try {
-            val start = awaitVerticalTouchSlopOrCancellation(down.id) { change, over ->
+            val start = awaitTrackedVerticalSlop(down, tracker, release) { change, over ->
                 state.beginDrag()
                 dragging = true
                 state.dragBy(over, size.height.toFloat())
@@ -136,14 +141,19 @@ internal fun Modifier.playerControlsDrag(
             if (start != null && dragging) {
                 val completed = verticalDrag(start.id) { change ->
                     tracker.addPosition(change.uptimeMillis, change.position)
-                    state.dragBy(change.position.y - change.previousPosition.y, size.height.toFloat())
+                    val deltaY = change.position.y - change.previousPosition.y
+                    release.moved(change.uptimeMillis, deltaY)
+                    state.dragBy(deltaY, size.height.toFloat())
                     change.consume()
                 }
-                state.settle(if (completed) tracker.calculateVelocity().y else 0f)
+                val rawVelocityY = tracker.calculateVelocity().y
+                val now = currentEvent.changes.firstOrNull { it.id == start.id }?.uptimeMillis ?: start.uptimeMillis
+                val velocityY = release.released(now, rawVelocityY, completed)
+                state.settle(velocityY, density, release.effectiveDistancePx / density, completed)
                 dragging = false
             }
         } finally {
-            if (dragging) state.settle()
+            if (dragging) state.settle(releasedNormally = false)
         }
     }
 }
@@ -211,12 +221,12 @@ internal fun PlayerControlsRestoreHandle(
     }
 }
 
-internal fun playerControlsShouldHide(progress: Float, velocityY: Float, fromHidden: Boolean = false): Boolean =
-    if (fromHidden) {
-        velocityY > 900f || (velocityY >= -300f && progress > .82f)
-    } else {
-        velocityY > 900f || (velocityY >= -900f && progress >= .36f)
-    }
+internal fun playerControlsShouldHide(progress: Float, velocityY: Float, fromHidden: Boolean = false,
+                                     distanceDp: Float = 16f): Boolean =
+    if (kotlin.math.abs(distanceDp) < 12f) fromHidden else
+        gestureTarget(progress, velocityY, distanceDp, fromHidden,
+            threshold = if (fromHidden) .82f else .36f,
+            dragDistanceDp = 24f, flingVelocityDp = 240f)
 
 internal fun playerControlsTranslation(progress: Float, heightPx: Float): Float =
     progress.coerceIn(0f, 1f) * heightPx.coerceAtLeast(0f)

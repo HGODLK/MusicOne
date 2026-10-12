@@ -8,11 +8,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class MotionGeometryTest {
-    @Test fun dismissalStartsOnlyInUpperHalfOutsideLyrics() {
+    @Test fun dismissalStartsAcrossTheUpperPageOutsideLyricsAndBottomControls() {
         val tabletLyrics = Rect(550f, 40f, 1000f, 800f)
         assertTrue(canStartPlayerDismiss(Offset(250f, 300f), 800f, tabletLyrics))
         assertFalse(canStartPlayerDismiss(Offset(700f, 300f), 800f, tabletLyrics))
-        assertFalse(canStartPlayerDismiss(Offset(250f, 500f), 800f, tabletLyrics))
+        assertTrue(canStartPlayerDismiss(Offset(250f, 500f), 800f, tabletLyrics))
+        assertFalse(canStartPlayerDismiss(Offset(250f, 700f), 800f, tabletLyrics))
         val phoneLyrics = Rect(26f, 140f, 374f, 650f)
         assertTrue(canStartPlayerDismiss(Offset(100f, 100f), 800f, phoneLyrics))
         assertFalse(canStartPlayerDismiss(Offset(100f, 200f), 800f, phoneLyrics))
@@ -126,11 +127,32 @@ class MotionGeometryTest {
     }
 
     @Test fun playerDismissUsesFinalPositionAndReleaseDirection() {
-        assertTrue(shouldDismissPlayer(.64f, 0f, true))
-        assertTrue(shouldDismissPlayer(.8f, 1_000f, true))
-        assertFalse(shouldDismissPlayer(.97f, 1_000f, true))
+        // 慢拖必须下拉过半屏（展开度 <= 0.5f 即下拉进度 >= 0.5f）才关闭
+        assertFalse(shouldDismissPlayer(.64f, 0f, true))
+        assertTrue(shouldDismissPlayer(.45f, 0f, true))
+        // 短划必须满足 32dp 与 650dp/s
+        assertTrue(shouldDismissPlayer(.8f, 1_000f, true, 32f))
+        assertTrue(shouldDismissPlayer(.97f, 1_000f, true, 32f))
+        assertFalse(shouldDismissPlayer(.97f, 1_000f, true, 4f))
         assertFalse(shouldDismissPlayer(.9f, -1_000f, true))
         assertFalse(shouldDismissPlayer(.4f, 1_000f, false))
+    }
+
+    @Test fun completedPlayerDismissKeepsItsEndpointEvenWhenTheInputIsCancelled() {
+        assertTrue(shouldDismissPlayer(.04f, -900f, true, 400f))
+        assertTrue(shouldDismissPlayer(0f, 0f, true, 0f))
+        assertTrue(shouldDismissPlayer(.04f, 900f, false, 400f))
+    }
+
+    @Test fun lyricsHeaderAndListUseRootCoordinatesWhenReservingTheirGestures() {
+        val regions = PlayerTouchRegions().apply {
+            lyricsGestureBounds = Rect(0f, 70f, 400f, 170f)
+            lyricsBounds = Rect(0f, 170f, 400f, 800f)
+        }
+        val origin = androidx.compose.ui.geometry.Offset(0f, 20f)
+        assertTrue(canStartPlayerDismiss(androidx.compose.ui.geometry.Offset(200f, 30f), 800f, regions, origin))
+        assertFalse(canStartPlayerDismiss(androidx.compose.ui.geometry.Offset(200f, 60f), 800f, regions, origin))
+        assertFalse(canStartPlayerDismiss(androidx.compose.ui.geometry.Offset(200f, 160f), 800f, regions, origin))
     }
 
     @Test fun qualityMenuExpandsFromTheActualTouchPoint() {

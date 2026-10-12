@@ -28,7 +28,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
-fun MusicOneApp(viewModel: MusicOneViewModel = viewModel()) {
+fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>().playback) {
+    PlaybackPresentationLifecycle(viewModel)
     val pageBackground = androidx.compose.material3.MaterialTheme.colorScheme.background
     ExperiencePreferences.initialize(androidx.compose.ui.platform.LocalContext.current)
     val navigation by rememberAppPlaybackNavigation(viewModel.state)
@@ -65,7 +66,8 @@ fun MusicOneApp(viewModel: MusicOneViewModel = viewModel()) {
     LaunchedEffect(platformState.selectedSource, platformState.account?.userId) { entityNavigation.clear() }
     val barMeasurements = remember { BottomBarMeasurements() }
     val playerMotion = rememberPageMotion(navigation.playerExpanded,
-        enterAnimation = PlayerEnterAnimation, exitAnimation = PlayerReturnAnimation)
+        enterAnimation = PlayerEnterAnimation, exitAnimation = PlayerReturnAnimation,
+        dragAnimation = PlayerGestureSettlementAnimation, immediateGestureHandoff = true)
     val state by rememberPagePlaybackState(viewModel.state, playerMotion)
     val playerControlHandoff = rememberPlayerControlHandoff()
     val homeLaunch = rememberHomeLaunchState()

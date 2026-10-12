@@ -1,7 +1,6 @@
 package com.musicone.demo
 
 import androidx.compose.foundation.lazy.LazyListLayoutInfo
-import androidx.compose.ui.unit.dp
 
 internal data class LyricBlurProtection(val focusBottom: Float?, val allowWidening: Boolean) {
     companion object {
@@ -9,7 +8,6 @@ internal data class LyricBlurProtection(val focusBottom: Float?, val allowWideni
         val HANDOFF = LyricBlurProtection(null, false)
     }
 }
-
 internal fun lyricBlurProtection(layout: LazyListLayoutInfo, focus: Int, offset: Float,
     stable: Boolean): LyricBlurProtection {
     if (!stable) return LyricBlurProtection.HANDOFF
@@ -27,5 +25,3 @@ internal fun playerControlsBlurStart(boundary: Float, originalHeight: Float, wid
     val widened = boundary - widenedHeight
     return protection.focusBottom?.let { minOf(original, maxOf(widened, it + focusGap)) } ?: widened
 }
-
-internal val PLAYER_LYRICS_READING_ANCHOR = 52.dp

@@ -205,6 +205,17 @@ class MusicTrackAccessTest {
         assertEquals("M500song-midsong-mid.mp3", qqPlaybackFilename("M500", "mp3", "song-mid", ""))
     }
 
+    @Test fun qqPlaybackFilenamesStrictlyUsesMediaMidWhenAvailable() {
+        val filenames = qqPlaybackFilenames("M500", "mp3", "song-mid", "media-mid")
+        assertEquals(listOf("M500media-mid.mp3", "M500media-midmedia-mid.mp3"), filenames)
+        assertFalse(filenames.any { it.contains("song-mid") })
+    }
+
+    @Test fun qqPlaybackFilenamesFallsBackToSongMidWhenMediaMidIsMissing() {
+        val filenames = qqPlaybackFilenames("M500", "mp3", "song-mid", "")
+        assertEquals(listOf("M500song-midsong-mid.mp3", "M500song-mid.mp3"), filenames)
+    }
+
     @Test fun qqQualityBatchKeepsOnlyFullPlaybackUrls() {
         assertEquals(
             listOf(AudioQuality.STANDARD, AudioQuality.LOSSLESS),

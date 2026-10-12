@@ -98,7 +98,6 @@ internal class MusicOneUsbAudioSink(
         val worker = streamingThread
         if (activeStream != null && worker != null) {
             throwDirectWriteError()
-            if (worker.queueSize() >= MAX_QUEUED_BUFFERS) return false
             if (directPositionNeedsStart) {
                 directStartMediaTimeUs = presentationTimeUs.coerceAtLeast(0L)
                 directPositionNeedsStart = false
@@ -324,7 +323,7 @@ internal class MusicOneUsbAudioSink(
         stream = candidate
         directInterfaceId = streamProfile.interfaceId
         UsbExclusiveVolumeKeys.activeGain = systemMediaVolume
-        streamingThread = DirectUsbStreamingThread(candidate) {
+        streamingThread = DirectUsbStreamingThread(candidate, format.sampleRate, format.channelCount) {
             (pendingVolume * systemMediaVolume.current()).coerceIn(0f, 1f)
         }.also {
             if (!playbackStarted) it.pause()
@@ -420,7 +419,6 @@ internal class MusicOneUsbAudioSink(
 
     private companion object {
         const val TAG = "MusicOneUsbAudio"
-        const val MAX_QUEUED_BUFFERS = 16
         val SUPPORTED_PCM_ENCODINGS = setOf(
             C.ENCODING_PCM_16BIT,
             C.ENCODING_PCM_24BIT,

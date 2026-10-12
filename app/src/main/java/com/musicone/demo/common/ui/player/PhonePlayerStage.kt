@@ -32,7 +32,7 @@ import kotlin.math.roundToInt
 @Composable
 internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualTrack: MusicTrack, motion: PageMotion,
     lyrics: Boolean, controlsBottomInset: Dp, controlsHeightPx: () -> Float,
-    controlsHiddenProgress: () -> Float, viewModel: MusicOneViewModel,
+    controlsHiddenProgress: () -> Float, viewModel: MusicPlaybackRuntime,
     contentActivated: Boolean,
     onLyricsDismiss: () -> Unit, contentHorizontalPadding: Dp, modifier: Modifier,
     onLyricsMotion: (PhoneLyricsMotion) -> Unit = {}) {
@@ -47,20 +47,36 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
     val topWindowInset = WindowInsets.statusBars.getTop(density)
     val lyricHeader = phoneLyricsHeaderHeight(spec.lyricCoverSize.value).dp
     val lyricTopExtension = with(density) { (lyricHeader + PHONE_PLAYER_TOP_PADDING).roundToPx() } + topWindowInset
+    val topGlass = with(density) { phoneLyricsTopGlass(lyricHeader.toPx(),
+        lyricTopExtension.toFloat(), 10.dp.toPx() + spec.lyricCoverSize.toPx(),
+        PHONE_LYRICS_TOP_GLASS_LIMIT.toPx(), 8.dp.toPx()) }
+    val readingBounds = LyricReadingBounds(topGlass.clearStart,
+        navigationExtension + controlsHeightPx() + with(density) { PLAYER_CONTROLS_WIDENED_BLUR_HEIGHT.toPx() })
     val lyricExitAlignment = remember(lyrics) {
         if (lyrics) null else CompletableDeferred<Unit>()
     }
     val lyricsMotion = rememberPhoneLyricsMotion(lyrics, lyricExitAlignment)
+    val latestPrewarming by rememberUpdatedState(prewarming)
+    val boundaryWindow = remember(lyricsMotion, lyricTopExtension) {
+        LyricBoundaryWindow(lyricTopExtension.toFloat(),
+            offset = { if (latestPrewarming) 0f else lyricsMotion.windowOffsetPx },
+            velocity = { if (latestPrewarming) 0f else lyricsMotion.windowVelocityPxPerSecond })
+    }
     lyricsMotion.expectOpeningTrack(track.source, track.id)
     val recordOpeningFront = remember(lyricsMotion, track.source, track.id) {
         { front: PhoneLyricsOpeningFront -> lyricsMotion.recordOpeningFront(track.source, track.id, front) }
     }
-    val recordWindowLayout = remember(lyricsMotion, density) {
+    val recordWindowLayout = remember(lyricsMotion, density, spec.mode) {
         { layout: androidx.compose.foundation.lazy.LazyListLayoutInfo, protection: LyricBlurProtection ->
-            lyricsMotion.spatialTravel.record(layout, density, protection) }
+            lyricsMotion.spatialTravel.record(layout, density, protection,
+                lyricTypographyForWidth(spec.mode, layout.viewportSize.width / density.density)) }
     }
     SideEffect { onLyricsMotion(lyricsMotion) }
     val touchRegion = remember { PhoneLyricsTouchRegion() }
+    val playerTouchRegions = LocalPlayerTouchRegions.current
+    DisposableEffect(playerTouchRegions) {
+        onDispose { playerTouchRegions?.lyricsGestureBounds = Rect.Zero }
+    }
     val textMarquee = playerTextMarqueeEnabled(motion.phase, motion.targetContentHandoff)
     val playingScale = rememberPlayerCoverScale(state.isPlaying, motion)
     val artworkCorner = phoneArtworkCorner(lyricsMotion.headerProgress)
@@ -70,12 +86,16 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
         onDispose { listOf("cover", "title", "subtitle").forEach { motion.targets.remove(it) } }
     }
     fun shared(key: String, text: Boolean = false) = if (text) {
-        Modifier.playerTextHandoffCapture(motion, key)
+        Modifier.playerTextHandoffCapture(motion, key, visualTrack)
     } else Modifier.graphicsLayer {
         alpha = if (motion.moving && motion.sourceSnapshot[key] != null && motion.targetSnapshot[key] != null) 0f else 1f
     }
     // 同一份封面、文字、爱心和歌词始终保留，只在放置阶段改变位置与图层缩放。
-    Layout(modifier = modifier.onGloballyPositioned { origin = it.positionInRoot() }
+    Layout(modifier = modifier.onGloballyPositioned {
+        origin = it.positionInRoot()
+        playerTouchRegions?.lyricsGestureBounds = if (lyrics || lyricsMotion.lyricsProgress > .0005f)
+            touchRegion.closing.translate(origin) else Rect.Zero
+    }
         .phoneLyricsGesture(lyricsMotion, touchRegion, contentActivated && motion.phase == MotionPhase.SHOWN,
             lyrics, { target -> if (target != lyrics) onLyricsDismiss() }), content = {
         PlayerArtwork(visualTrack, motion,
@@ -105,13 +125,12 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
                     topBuffer = lyricTopExtension,
                     windowMotionOffset = { if (prewarming) 0f else lyricsMotion.windowOffsetPx },
                     focusProtection = { lyricsMotion.spatialTravel.blurProtection },
-                    topGlass = with(density) { phoneLyricsTopGlass(lyricHeader.toPx(),
-                        lyricTopExtension.toFloat(), 10.dp.toPx() + spec.lyricCoverSize.toPx(),
-                        PLAYER_LYRICS_READING_ANCHOR.toPx(), 8.dp.toPx()) },
+                    topGlass = topGlass,
                 ).padding(horizontal = contentHorizontalPadding)
                     .then(if (lyrics) Modifier else Modifier.clearAndSetSemantics { }),
                 active = playerVisible && (lyrics || lyricsMotion.lyricsProgress > .0005f),
                 followPlayback = playerVisible && lyrics && !lyricsMotion.dragging && lyricsMotion.lyricsProgress == 1f && lyricsMotion.headerProgress == 1f,
+                animateTrackChange = playerVisible && !lyricsMotion.dragging,
                 // 手势展开时尚未提交 lyrics，不能被关闭态的旧对齐请求挡住。
                 exitAlignment = if (lyricsMotion.dragging && !lyrics) null else lyricExitAlignment,
                 openingAlignment = lyricsMotion.openingAlignment,
@@ -120,8 +139,14 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
                 limitTransitionHistory = true,
                 topExtensionPx = lyricTopExtension,
                 topBufferPx = lyricTopExtension,
+                readingBounds = readingBounds,
+                boundaryWindow = boundaryWindow,
                 exitProgress = { 1f - lyricsMotion.lyricsProgress },
                 entranceProgress = { lyricsMotion.entranceProgress },
+                intermediateSeek = !((lyricsMotion.lyricsProgress == 0f && lyricsMotion.headerProgress == 0f) ||
+                    (lyricsMotion.lyricsProgress == 1f && lyricsMotion.headerProgress == 1f)),
+                lyricsGestureHeld = lyricsMotion.dragging,
+                closingLyricsDrag = lyricsMotion.draggingTowardClose,
                 heldTrackChange = lyricsMotion.dragging &&
                     lyricsMotion.entranceProgress > 0f && lyricsMotion.entranceProgress < 1f,
                 trackTransitionDirection = state.trackTransitionDirection,
@@ -175,11 +200,15 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
             val side = motionLerp(coverSide * playingScale.value, compactSide, p)
             val coverX = motionLerp(contentInset + (contentWidth - side) / 2f, contentInset.toFloat(), p)
             val coverY = motionLerp((coverContentHeight - infoHeight - side) / 2f, 10.dp.toPx(), p)
-            touchRegion.cover = Rect(coverX, coverY, coverX + side, coverY + side)
             val titleX = motionLerp(contentInset.toFloat(), textX, p)
             val titleY = motionLerp((coverContentHeight - infoHeight + 8.dp.roundToPx()).toFloat(), 15.dp.toPx(), p)
             val textScale = motionLerp(1f, .9f, p)
             val artistY = titleY + title.height * textScale
+            // 封面页的留白也可上滑；整个歌词页眉可下划收起，正文继续交给列表滚动。
+            touchRegion.opening = Rect(0f, 0f, width.toFloat(), coverContentHeight.toFloat())
+            touchRegion.closing = Rect(0f, 0f, width.toFloat(), header.toFloat())
+            playerTouchRegions?.lyricsGestureBounds = if (lyrics || lyricsMotion.lyricsProgress > .0005f)
+                touchRegion.closing.translate(origin) else Rect.Zero
             fun anchor(key: String, x: Float, y: Float, w: Float, h: Float, corner: Float = 0f, mark: Float = 0f,
                 contentScale: Float = 1f, textSizeSp: Float = 0f) {
                 motion.targets[key] = MotionAnchor(

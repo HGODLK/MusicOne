@@ -17,7 +17,7 @@ class QqFeedAppendPreparationTest {
         assertFalse(QqMusicFeedState(message = "加载失败").toContent().initialLoading)
     }
 
-    @Test fun laterSongShelvesStayAboveMusicFlowAndKeepExistingObjects() {
+    @Test fun differentSongShelvesStaySeparateAndKeepExistingFlowObjects() {
         val firstShelf = shelf("first")
         val oldSong = song("old")
         val old = listOf(firstShelf, oldSong)
@@ -28,6 +28,7 @@ class QqFeedAppendPreparationTest {
 
         assertEquals(listOf(firstShelf, newShelf, oldSong, newSong), result)
         assertSame(firstShelf, result[0])
+        assertSame(newShelf, result[1])
         assertSame(oldSong, result[2])
     }
 
@@ -42,6 +43,7 @@ class QqFeedAppendPreparationTest {
         }
 
         assertEquals(shelves + songs, displayed)
+        assertEquals(3, displayed.count { it is QqMusicFeedCard.SongShelf })
         (shelves + songs).forEachIndexed { index, card -> assertSame(card, displayed[index]) }
     }
 

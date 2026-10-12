@@ -5,6 +5,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 
 internal sealed interface PlaybackTrackEvent {
     val key: PlaybackRequestKey
@@ -25,6 +27,7 @@ internal class PlaybackTrackLoader(
     private val isCurrent: (PlaybackRequestKey) -> Boolean,
     private val isPlaying: () -> Boolean,
     private val publish: (PlaybackTrackEvent) -> Unit,
+    private val wakeGuard: PlaybackResolutionWakeGuard? = null,
 ) {
     private var resolution: Job? = null
     private var metadata: Job? = null
@@ -39,10 +42,16 @@ internal class PlaybackTrackLoader(
         val request = sequence
         fun current() = request == sequence && isCurrent(key)
         resolution = scope.launch {
+            val started = System.nanoTime()
+            PlaybackPipelineDiagnostics.stage("解析开始", key.generation)
+            val releaseWake = wakeGuard?.acquire()
             try {
-                val playback = takePreloaded(track, effective) ?: resolve(track, effective,
-                    if (track.source == MusicSource.QQ && !lyricsHandedOff) QQ_ONLINE_PLAYBACK_SETTLE_DELAY_MS else 0L)
+                val playback = withTimeout(30_000L) {
+                    takePreloaded(track, effective) ?: resolve(track, effective,
+                        if (track.source == MusicSource.QQ && !lyricsHandedOff) QQ_ONLINE_PLAYBACK_SETTLE_DELAY_MS else 0L)
+                }
                 if (!current()) return@launch
+                PlaybackPipelineDiagnostics.stage("解析完成", key.generation, (System.nanoTime() - started) / 1_000_000)
                 publish(PlaybackTrackEvent.Ready(key, playback, preferred, effective, positionMs, playWhenReady))
                 if (!current()) return@launch
                 metadata = scope.launch {
@@ -53,11 +62,17 @@ internal class PlaybackTrackLoader(
                     catch (_: Exception) { return@launch }
                     if (current()) publish(PlaybackTrackEvent.Metadata(key, playback.track, enriched))
                 }
+            } catch (timeout: TimeoutCancellationException) {
+                if (current()) {
+                    PlaybackPipelineDiagnostics.stage("解析超时", key.generation)
+                    publish(PlaybackTrackEvent.Failed(key, "音源加载超时，请重试"))
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
+                PlaybackPipelineDiagnostics.stage("解析失败", key.generation, (System.nanoTime() - started) / 1_000_000)
                 if (current()) publish(PlaybackTrackEvent.Failed(key, error.asUserMessage()))
-            }
+            } finally { releaseWake?.invoke() }
         }
     }
 }

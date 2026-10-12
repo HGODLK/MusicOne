@@ -29,6 +29,15 @@ class PlayerNavigationInsetsTest {
                     for (extension in listOf(48, 96, 144)) {
                         assertEquals(original, playerControlsBlurBoundary(height + extension,
                             extension, reveal, 208f, hidden), .001f)
+                        for (topExtension in listOf(120, 240)) {
+                            val local = playerControlsBlurBoundary(height + extension + topExtension,
+                                extension, reveal, 208f, hidden)
+                            val stageHeight = height.toInt() + 100
+                            val windowTop = phoneLyricsWindowTop(stageHeight, 100, topExtension,
+                                reveal, prewarming = false)
+                            assertEquals(stageHeight - 208f + playerControlsTranslation(hidden, 208f),
+                                windowTop + local, 1f)
+                        }
                     }
                 }
             }
@@ -40,5 +49,22 @@ class PlayerNavigationInsetsTest {
         assertFalse(playerControlsNeedsExitBlur(250f, 250f))
         assertTrue(playerControlsNeedsExitBlur(249f, 250f))
         assertTrue(playerControlsNeedsExitBlur(-40f, 250f))
+    }
+
+    @Test fun topBlurExtendsPastHeaderBottomWithConsistentTransitionWidth() {
+        assertEquals(0f, playerLyricsTopFadeHeight(0f), 0f)
+        assertEquals(0f, playerLyricsTopBlurEnd(0f, 0f, 1000f), 0f)
+
+        for (headerBottom in listOf(120f, 160f, 220f)) {
+            val fadeHeight = playerLyricsTopFadeHeight(headerBottom)
+            assertEquals(headerBottom * .45f, fadeHeight, .001f)
+            val blurEnd = playerLyricsTopBlurEnd(headerBottom, fadeHeight, 1000f)
+            assertTrue(blurEnd > headerBottom)
+            assertEquals(headerBottom + fadeHeight, blurEnd, .001f)
+
+            // 高度超限时截断在 drawingHeight
+            val clampedBlurEnd = playerLyricsTopBlurEnd(headerBottom, fadeHeight, headerBottom + 10f)
+            assertEquals(headerBottom + 10f, clampedBlurEnd, .001f)
+        }
     }
 }

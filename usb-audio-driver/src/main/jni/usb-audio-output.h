@@ -92,6 +92,7 @@ struct UsbAudioContext {
 
     UsbTransferState<USB_AUDIO_NUM_URBS> transfers;
     std::atomic<int64_t> completedFrames{0};
+    std::atomic<int64_t> pendingAudioFrames{0};
     bool failed = false;
 
     /** Whether ring buffers have been allocated. */

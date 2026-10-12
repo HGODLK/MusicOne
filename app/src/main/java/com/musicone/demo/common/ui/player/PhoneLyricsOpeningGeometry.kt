@@ -38,12 +38,11 @@ internal fun phoneLyricsOpeningGeometry(stage: PhoneLyricsOpeningStage,
 /** 复用行图层的缩放和位移计算，不把列表 offset 误当舞台坐标。 */
 internal fun phoneLyricsOpeningFront(layout: LazyListLayoutInfo, context: LyricOpeningContext,
     current: Int, playback: LyricPlaybackStepMotion, density: Density,
-    baseSize: Float, settle: Float): PhoneLyricsOpeningFront? {
+    typography: LyricTypography, settle: Float): PhoneLyricsOpeningFront? {
     val first = layout.visibleItemsInfo.firstOrNull { it.index == context.first } ?: return null
     val row = playback.row(first.index)
-    val largeText = layout.viewportSize.width >= with(density) { 400.dp.toPx() }
-    val upcoming = if (largeText) 40f else MusicOneTextStyles.lyricUpcoming.fontSize.value
-    val emphasis = upcoming / baseSize + (1f - upcoming / baseSize) * row.focus.value
+    val emphasis = typography.upcomingSp / typography.activeSp +
+        (1f - typography.upcomingSp / typography.activeSp) * row.focus.value
     val scale = emphasis * if (first.index == current) .94f + .06f * settle.coerceIn(0f, 1f) else 1f
     val padding = with(density) { 5.dp.toPx() }
     val height = (first.size - 2f * padding).coerceAtLeast(0f)

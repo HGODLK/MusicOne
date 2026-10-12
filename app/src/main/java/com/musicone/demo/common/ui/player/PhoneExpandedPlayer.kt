@@ -24,7 +24,7 @@ internal fun PhoneExpandedPlayer(
     visualTrack: MusicTrack,
     motion: PageMotion,
     lyrics: Boolean,
-    viewModel: MusicOneViewModel,
+    viewModel: MusicPlaybackRuntime,
     controls: PlayerControlsVisibilityState,
     contentActivated: Boolean,
     onLyrics: () -> Unit,

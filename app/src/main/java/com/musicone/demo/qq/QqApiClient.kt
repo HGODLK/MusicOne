@@ -239,25 +239,33 @@ internal class QqApiClient {
                     .put("platform", 0)
                     .put("needNew", 1)
                     .put("crypt", 0)
-                    .put("qrc", 0)
+                    .put("qrc", 1)
                     .put("roma", 0)
                     .put("trans", 1)))
         runCatching {
             postMusicU(body, cookie, origin = origin).optJSONObject("lyric")?.optJSONObject("data")
         }.onFailure { error ->
+            lyricDiagnostic(track, "QRC请求失败", detail = "异常=${error::class.java.simpleName}")
             // 后台歌词遇到验证直接结束，不能弹窗或继续尝试备用接口。
             if (error is CancellationException ||
                 origin == QqRequestOrigin.PRELOAD && error is PlatformSecurityVerificationRequired) throw error
         }.getOrNull()?.let { data ->
-            val original = parseLrc(decodeQqLyric(data.optString("lyric")))
+            val lyricRaw = data.optString("lyric").ifBlank { data.optString("qrc") }
+            val decodedLyric = decodeQqLyric(lyricRaw)
+            val original = parseQqQrc(decodedLyric).ifEmpty { parseLrc(decodedLyric) }.confirmedByCurrentQqParser()
             if (original.isNotEmpty()) {
                 val translated = parseLrc(decodeQqLyric(data.optString("trans")))
-                return mergeLyricTranslation(original, translated)
+                val lyrics = mergeLyricTranslation(original, translated)
+                lyricDiagnostic(track, if (lyrics.any { it.words.isNotEmpty() }) "QRC解析完成" else "LRC解析完成", lyrics)
+                return lyrics
             }
         }
         val url = "$LYRIC_API?songmid=${track.qqPlaybackMid().urlEncoded()}&format=json&nobase64=1"
         val fallback = JSONObject(PlatformHttp.get(url, cookie, qqHeaders("https://y.qq.com/portal/player.html")).text.qqJsonText())
-        return parseLrc(decodeQqLyric(fallback.optString("lyric")))
+        val decodedFallback = decodeQqLyric(fallback.optString("lyric"))
+        val lyrics = parseQqQrc(decodedFallback).ifEmpty { parseLrc(decodedFallback) }.confirmedByCurrentQqParser()
+        lyricDiagnostic(track, "备用歌词接口", lyrics)
+        return lyrics
     }
 
     fun likedTrackIds(cookie: String, userId: String): Set<String> {
@@ -523,16 +531,31 @@ internal fun qqPlaybackFilenames(
     songMid: String,
     mediaMid: String,
 ): List<String> = buildList {
-    val effectiveMediaMid = mediaMid.ifBlank { songMid }
-    add(qqPlaybackFilename(prefix, extension, songMid, effectiveMediaMid))
-    add("$prefix$effectiveMediaMid$effectiveMediaMid.$extension")
-    add("$prefix$songMid.$extension")
-    add("$prefix$songMid$songMid.$extension")
+    if (mediaMid.isNotBlank()) {
+        // 遵循官方 SongUrlFactory 规范：有 mediaMid 时严格以 mediaMid 为准，绝不混入 songMid，避免串台到历史脏数据
+        add("$prefix$mediaMid.$extension")
+        add("$prefix$mediaMid$mediaMid.$extension")
+    } else if (songMid.isNotBlank()) {
+        // 仅在缺少 mediaMid 时回退到 songMid 双写与单写
+        add("$prefix$songMid$songMid.$extension")
+        add("$prefix$songMid.$extension")
+    }
 }.distinct()
 
-private fun decodeQqLyric(raw: String): String = if (raw.contains('[')) raw else runCatching {
-    String(Base64.decode(raw, Base64.DEFAULT), Charsets.UTF_8)
-}.getOrDefault(raw)
+private fun decodeQqLyric(raw: String): String {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return ""
+    if (trimmed.contains('[') || trimmed.contains("<Lyric_1")) return trimmed
+    // 若为十六进制密文（QQ 音乐开启 qrc 返回 3DES 加密 HEX），使用专用解密器还原
+    if (trimmed.length >= 32 && trimmed.length % 16 == 0 && trimmed.all { (it in '0'..'9') || (it in 'a'..'f') || (it in 'A'..'F') }) {
+        val decrypted = decryptQqQrcHex(trimmed)
+        if (decrypted.isNotBlank()) return decrypted
+    }
+    return runCatching {
+        String(Base64.decode(trimmed, Base64.DEFAULT), Charsets.UTF_8)
+    }.getOrDefault(trimmed)
+}
+
 
 private fun JSONObject.qqPlaybackPurls(expectedQuality: AudioQuality? = null): List<String> {
     val data = this

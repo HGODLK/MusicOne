@@ -12,6 +12,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PhoneLyricsMotionTest {
+    @Test fun closedLyricsWindowStartsBelowTheStageWithoutMovingItsExpandedAnchor() {
+        assertEquals(940f, phoneLyricsWindowTravel(900, 100, 140), .0001f)
+        assertEquals(900, phoneLyricsWindowTop(900, 100, 140, 0f, prewarming = false))
+        assertEquals(430, phoneLyricsWindowTop(900, 100, 140, .5f, prewarming = false))
+        assertEquals(-40, phoneLyricsWindowTop(900, 100, 140, 1f, prewarming = false))
+        assertEquals(-40, phoneLyricsWindowTop(900, 100, 140, 0f, prewarming = true))
+    }
+
     @Test fun reopeningPreparesBeforeMovingButReversalDoesNotRequestAlignment() = runBlocking {
         val clock = BroadcastFrameClock()
         withContext(clock) {
@@ -143,7 +151,8 @@ class PhoneLyricsMotionTest {
             val position = motion.lyrics.value
             abandonedClose.complete(Unit)
             frames(4)
-            assertEquals(position, motion.lyrics.value, .0001f)
+            // 中途反向不等候隐藏态的旧对齐对象，当前位置直接接续。
+            assertTrue(motion.lyrics.value > position)
             reopening.complete(Unit)
             frames(180)
             assertEquals(1f, motion.lyrics.value, .0001f)

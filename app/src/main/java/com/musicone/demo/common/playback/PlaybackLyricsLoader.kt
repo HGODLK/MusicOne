@@ -32,12 +32,18 @@ internal class PlaybackLyricsLoader(
         fun emit(state: LyricLoadState, lyrics: List<TimedLyric>? = null) {
             if (request == sequence && isCurrent(key)) publish(PlaybackLyricsUpdate(key, state, lyrics))
         }
-        if (track.lyrics.isNotEmpty()) {
+        val wantsVerbatim = track.source == MusicSource.QQ && ExperiencePreferences.options.verbatimLyricAnimation
+        val needsUpgrade = wantsVerbatim && track.lyrics.isNotEmpty() && track.lyrics.none { it.words.isNotEmpty() }
+        if (hasReusableLyrics(track, track.lyrics) && !needsUpgrade) {
             emit(LyricLoadState.READY)
             return
         }
+        if (track.lyrics.isNotEmpty()) {
+            emit(LyricLoadState.READY, track.lyrics)
+        }
         job = scope.launch {
-            emit(LyricLoadState.LOADING)
+            lyricDiagnostic(track, "开始加载", track.lyrics, "代次=${key.generation}，序号=$request")
+            if (track.lyrics.isEmpty()) emit(LyricLoadState.LOADING)
             val lyrics = try {
                 withTimeoutOrNull(PLAYBACK_LYRICS_TIMEOUT_MS) {
                     if (startDelayMs > 0L) delay(startDelayMs)
@@ -45,8 +51,12 @@ internal class PlaybackLyricsLoader(
                 }.orEmpty()
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) { emptyList() }
-            emit(if (lyrics.isEmpty()) LyricLoadState.UNAVAILABLE else LyricLoadState.READY, lyrics)
+            } catch (error: Exception) {
+                lyricDiagnostic(track, "加载失败", detail = "异常=${error::class.java.simpleName}")
+                emptyList()
+            }
+            lyricDiagnostic(track, "加载结束", lyrics, "代次=${key.generation}，序号=$request")
+            emit(if (lyrics.isEmpty() && track.lyrics.isEmpty()) LyricLoadState.UNAVAILABLE else LyricLoadState.READY, lyrics.ifEmpty { track.lyrics })
         }
     }
 }
