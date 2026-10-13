@@ -71,8 +71,9 @@ internal fun RecommendationScreen(
             val informationScroll = rememberLazyListState()
             val tracksScroll = rememberLazyListState()
             val pull = LocalPlaylistPull.current
-            val revealShape = remember(motion, pull) {
-                if (motion != null && pull != null) PlaylistRevealShape(motion, pull) else null
+            val entityPage = LocalEntityFrame.current != null
+            val revealShape = remember(motion, pull, entityPage) {
+                if (!entityPage && motion != null && pull != null) PlaylistRevealShape(motion, pull) else null
             }
             val gestureModifier = Modifier.playlistPullGesture(
                 if (wide) tracksScroll else informationScroll,
@@ -82,7 +83,8 @@ internal fun RecommendationScreen(
                 requireScrollAtTop = !wide,
             )
             val pageMotionModifier = Modifier.fillMaxSize().graphicsLayer {
-                alpha = playlistContentAlpha(motion?.value ?: 1f)
+                // 关联详情已由实体表面统一收拢，不能再叠加普通歌单的整页淡出。
+                alpha = if (entityPage) 1f else playlistContentAlpha(motion?.value ?: 1f)
                 if (revealShape != null) {
                     shape = revealShape
                     clip = true

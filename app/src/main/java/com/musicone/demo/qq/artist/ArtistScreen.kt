@@ -135,6 +135,8 @@ internal fun ArtistScreen(singer: QqSearchSinger, player: MusicOneUiState, botto
                 LocalPlaylistPull.current,
                 onBack,
                 canStart = { wide || collapsed <= 0f },
+                requireScrollAtTop = !wide,
+                canStartAt = { position, size -> artistPullRegionAllowed(wide, position.x, size.width) },
             )
             val contentMounted = activation?.mounted != false
             val body: @Composable () -> Unit = {

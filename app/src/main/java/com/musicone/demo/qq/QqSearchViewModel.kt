@@ -36,6 +36,7 @@ internal class QqSearchViewModel(application: Application) : AndroidViewModel(ap
     val state = _state.asStateFlow()
     private var suggestionJob: Job? = null
     private val jobs = mutableMapOf<QqSearchTab, Job>()
+    val loadingGate = QqSearchLoadingGate()
     private var sessionRevision: Long? = null
 
     fun configure(revision: Long) {
@@ -49,21 +50,35 @@ internal class QqSearchViewModel(application: Application) : AndroidViewModel(ap
     }
 
     fun deactivate() {
+        loadingGate.pause()
         suggestionJob?.cancel()
         jobs.values.forEach { it.cancel() }
         jobs.clear()
         _state.update { QqSearchState(history = it.history, revision = it.revision + 1) }
     }
 
-    fun open() { _state.update { it.copy(opened = true) }; setQuery(_state.value.query) }
+    fun open() {
+        if (!_state.value.opened) loadingGate.pause()
+        _state.update { it.copy(opened = true) }
+        setQuery(_state.value.query)
+    }
     fun close() {
+        loadingGate.pause()
         suggestionJob?.cancel()
-        _state.update { it.withSearchMenuClosed() }
+        // 关闭后不保留等待门控的请求；再次搜索同词也能重新启动未完成的分类。
+        jobs.values.forEach { it.cancel() }
+        jobs.clear()
+        _state.update { it.withSearchMenuClosed().copy(
+            pages = it.pages.mapValues { (_, page) -> page.copy(loading = false) }) }
     }
     fun back() {
         when {
             _state.value.singer != null -> _state.update { it.copy(singer = null) }
-            _state.value.full -> { _state.update { it.copy(full = false) }; setQuery(_state.value.query) }
+            _state.value.full -> {
+                loadingGate.pause()
+                _state.update { it.copy(full = false) }
+                setQuery(_state.value.query)
+            }
             else -> close()
         }
     }
@@ -83,10 +98,15 @@ internal class QqSearchViewModel(application: Application) : AndroidViewModel(ap
         suggestionJob = viewModelScope.launch {
             delay(250)
             try {
+                loadingGate.awaitReady()
+                if (!_state.value.opened || _state.value.full || _state.value.query != query) return@launch
                 val suggestions = repository.suggest(query)
-                _state.update { if (it.query == query) it.copy(suggestions = suggestions, suggesting = false) else it }
+                loadingGate.awaitReady()
+                _state.update { if (it.opened && !it.full && it.query == query)
+                    it.copy(suggestions = suggestions, suggesting = false) else it }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
+                loadingGate.awaitReady()
                 _state.update { if (it.query == query) it.copy(suggesting = false, suggestionError = error.asUserMessage()) else it }
             }
         }
@@ -94,6 +114,7 @@ internal class QqSearchViewModel(application: Application) : AndroidViewModel(ap
     fun submit(query: String = _state.value.query) {
         val word = query.trim()
         if (word.isEmpty()) return
+        if (!_state.value.full) loadingGate.pause()
         suggestionJob?.cancel()
         val history = updatedSearchHistory(_state.value.history, word)
         preferences.edit().putString("history", JSONArray(history).toString()).apply()
@@ -111,14 +132,18 @@ internal class QqSearchViewModel(application: Application) : AndroidViewModel(ap
         if (more && !old.hasMore || !more && !retry && old.page > 0) return
         val page = if (more) old.page + 1 else 1
         jobs[tab] = viewModelScope.launch {
+            loadingGate.awaitReady()
+            if (!_state.value.full || _state.value.revision != snapshot.revision) return@launch
             _state.update { it.copy(pages = it.pages + (tab to old.copy(loading = true, error = null))) }
             try {
                 val result = repository.search(snapshot.submitted, tab, page)
+                loadingGate.awaitReady()
                 if (_state.value.revision == snapshot.revision) _state.update {
                     it.copy(pages = it.pages + (tab to if (more) old.append(result) else result))
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) {
+                loadingGate.awaitReady()
                 if (_state.value.revision == snapshot.revision) _state.update {
                     it.copy(pages = it.pages + (tab to old.copy(loading = false, error = error.asUserMessage())))
                 }

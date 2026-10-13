@@ -43,7 +43,10 @@ internal fun RemoteArtwork(
     maxSide: Int = 768,
 ) {
     val bitmap by rememberArtworkBitmap(imageUrl, maxSide = maxSide)
-    ArtworkBitmapOrPlaceholder(bitmap, start, end, mark, modifier, markSize, shape, markAlignment)
+    if (LocalArtworkEntrancePolicy.current.fadeArtwork) {
+        CrossfadingArtworkBitmapOrPlaceholder(bitmap, bitmap == null, start, end, mark,
+            modifier, markSize, shape, markAlignment)
+    } else ArtworkBitmapOrPlaceholder(bitmap, start, end, mark, modifier, markSize, shape, markAlignment)
 }
 
 @Composable

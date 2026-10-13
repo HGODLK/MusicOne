@@ -130,11 +130,15 @@ internal fun rememberArtworkBitmap(
     maxSide: Int = 768,
 ): State<Bitmap?> {
     val context = LocalContext.current.applicationContext
+    val loadingAllowed = LocalArtworkEntrancePolicy.current.loadingAllowed
     return produceState(
         initialValue = ArtworkRepository.peek(imageUrl, maxSide),
         key1 = imageUrl.normalizedArtworkUrl(),
         key2 = refreshKey to maxSide,
+        key3 = loadingAllowed,
     ) {
+        // 已在内存中的图片直接显示；磁盘读取、下载和解码等待局部入场结束。
+        if (!loadingAllowed) return@produceState
         // 先准备磁盘缓存，避免冷启动时背景图因初始化竞态重新走网络。
         withContext(Dispatchers.IO) { MusicDiskCache.get(context) }
         value = ArtworkRepository.load(imageUrl, forceRefresh = refreshKey != null, maxSide = maxSide)

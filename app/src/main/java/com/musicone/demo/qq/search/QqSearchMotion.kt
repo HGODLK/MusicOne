@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import kotlinx.coroutines.CancellationException
@@ -29,6 +30,9 @@ internal class QqSearchMotion {
     var backdropSnapshot by mutableStateOf<ImageBitmap?>(null)
     var snapshotUnavailable by mutableStateOf(false)
     var frozenMenuSize: Pair<Dp, Dp>? = null
+    var inputLayer by mutableStateOf<GraphicsLayer?>(null)
+    var inputBounds by mutableStateOf(Rect.Zero)
+    var inputVisibility: () -> Float = { 1f }
     val mounted get() = menu.value > 0f || full.value > 0f
 }
 

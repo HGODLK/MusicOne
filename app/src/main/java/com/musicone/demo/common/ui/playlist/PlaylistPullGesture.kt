@@ -12,6 +12,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.unit.IntSize
 import kotlin.math.abs
 
 internal class PlaylistPullState {
@@ -63,22 +64,27 @@ internal fun Modifier.playlistPullGesture(
     onClose: () -> Unit,
     canStart: () -> Boolean = { true },
     requireScrollAtTop: Boolean = true,
+    canStartAt: (Offset, IntSize) -> Boolean = { _, _ -> true },
 ): Modifier {
     if (motion == null || pull == null) return this
     return composed {
     val close by rememberUpdatedState(onClose)
     val startAllowed by rememberUpdatedState(canStart)
-    val minimumProgress = if (LocalEntityFrame.current != null) 0f else .15f
-    pointerInput(scroll, motion, pull) {
+    val regionAllowed by rememberUpdatedState(canStartAt)
+    val entityPage = LocalEntityFrame.current != null
+    val minimumProgress = if (entityPage) 0f else .15f
+    pointerInput(scroll, motion, pull, entityPage, requireScrollAtTop) {
         val activation = maxOf(12 * density, viewConfiguration.touchSlop)
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-            val eligible = startAllowed() && playlistPullStartEligible(
+            val eligible = startAllowed() && regionAllowed(down.position, size) && playlistPullStartEligible(
                 scrollAtTop = scroll.firstVisibleItemIndex == 0 && scroll.firstVisibleItemScrollOffset == 0,
                 motionPhase = motion.phase,
                 requireScrollAtTop = requireScrollAtTop,
             )
             if (!eligible) return@awaitEachGesture
+            // 菜单返回按整页行程推进，不能随手势挂载的封面尺寸改变响应。
+            val travel = playlistPullTravel(size.height.toFloat(), motion.hostBounds.height, entityPage)
             val velocityTracker = VelocityTracker().apply { addPosition(down.uptimeMillis, down.position) }
             var dragging = false
             var rejected = false
@@ -108,7 +114,7 @@ internal fun Modifier.playlistPullGesture(
                         change.consume()
                         pull.displacement = Offset(displacement.x, displacement.y - activation)
                         val downwardDistance = pull.displacement.y.coerceAtLeast(0f)
-                        motion.dragTo(playlistPullProgress(downwardDistance, size.height * .65f, minimumProgress))
+                        motion.dragTo(playlistPullProgress(downwardDistance, travel, minimumProgress))
                     }
                     if (event.changes.none { it.pressed }) releasedNormally = true
                 } while (event.changes.any { it.pressed })
@@ -120,7 +126,7 @@ internal fun Modifier.playlistPullGesture(
                     val completed = releasedNormally && !rejected
                     val velocityY = release.released(releaseTime, rawVelocityY, completed)
                     val releaseVelocity = playlistProgressVelocity(
-                        release.settlingVelocity(releaseTime, rawVelocityY, completed), size.height * .65f)
+                        release.settlingVelocity(releaseTime, rawVelocityY, completed), travel)
                     motion.releaseDragWithVelocity(releaseVelocity)
                     if (completed && playlistPullShouldClose(pull.displacement.y / density,
                             velocityY / density, release.effectiveDistancePx / density)) {

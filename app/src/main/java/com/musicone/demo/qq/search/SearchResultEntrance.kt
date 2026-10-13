@@ -19,5 +19,8 @@ internal fun SearchResultEntrance(content: @Composable () -> Unit) {
     Box(Modifier.graphicsLayer {
         alpha = progress.value
         translationY = 16.dp.toPx() * (1f - progress.value)
-    }) { content() }
+    }) {
+        CompositionLocalProvider(LocalArtworkEntrancePolicy provides
+            ArtworkEntrancePolicy(loadingAllowed = shown, fadeArtwork = true), content = content)
+    }
 }

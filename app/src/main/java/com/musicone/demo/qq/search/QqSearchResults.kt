@@ -94,6 +94,8 @@ internal fun QqSearchResults(
                 }
             }
         }
+        RetainedQqSearchInput(motion, state.full,
+            blocked || entities?.pages?.isNotEmpty() == true || state.singer != null)
     }
     }
     }
@@ -185,7 +187,8 @@ private fun SearchEntityRow(
         else transition.open(id, artwork, {}, onClick)
     }.semantics { contentDescription = "打开$type：$title" }
         .padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        ArtworkBitmapOrPlaceholder(artwork, playlist?.artworkStart ?: 0xFF7BAA9B, playlist?.artworkEnd ?: 0xFF374A43,
+        CrossfadingArtworkBitmapOrPlaceholder(artwork, artwork == null,
+            playlist?.artworkStart ?: 0xFF7BAA9B, playlist?.artworkEnd ?: 0xFF374A43,
             title.take(1), Modifier.size(64.dp).then(if (playlist != null)
                 Modifier.motionAnchor(motion, id, false, corner = 12f, markSize = 24f, markX = 0f, markY = 0f)
                 else Modifier.entityArtworkAnchor("search:$id", 32f)),

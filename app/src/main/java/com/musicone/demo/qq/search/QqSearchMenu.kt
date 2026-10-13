@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.flow.first
 
 /** 与歌单浮动搜索共用玻璃组件，位于背景采样树之外。 */
 @Composable
@@ -50,10 +51,13 @@ internal fun QqSearchMenu(
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = remember { FocusRequester() }
+    QqSearchLoadingGuard(state, motion, model, obscured)
     BackHandler(state.opened && !obscured && state.singer == null &&
         LocalEntityNavigation.current?.rootMenu?.expanded != true) { model.back() }
     LaunchedEffect(state.opened, state.full, obscured) {
         if (state.opened && !state.full && !obscured) {
+            snapshotFlow { motion.menu.value == 1f && !motion.menu.isRunning &&
+                motion.full.value == 0f && !motion.fullMoving }.first { it }
             withFrameNanos { }
             focus.requestFocus()
             keyboard?.show()
@@ -98,7 +102,7 @@ internal fun QqSearchMenu(
                     }
                 })
             }
-            if (!obscured && visibility > .001f) CompositionLocalProvider(LocalContentColor provides textColor) {
+            CompositionLocalProvider(LocalContentColor provides textColor) {
                 Column(Modifier.layout { measurable, constraints ->
                     // 全屏转场只使用进入前的固定布局；进度不进入测量阶段。
                     val fixed = if (state.full || motion.fullMoving) motion.frozenMenuSize else
@@ -121,9 +125,10 @@ internal fun QqSearchMenu(
                 }) {
                     val unifiedBack = LocalUnifiedBack.current
                     // 输入行始终按视口测量，文字只做绘制位移，端点不改变光标滚动宽度。
-                    Row(Modifier.wrapContentSize(Alignment.TopStart, unbounded = true).requiredWidth(viewportWidth).height(56.dp),
+                    Row(Modifier.wrapContentSize(Alignment.TopStart, unbounded = true).requiredWidth(viewportWidth).height(56.dp)
+                        .retainQqSearchInput(motion, state.full, obscured) { visibility },
                         verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = model::back, enabled = !state.full,
+                        IconButton(onClick = model::back, enabled = !state.full && !obscured,
                             modifier = Modifier.size(48.dp).graphicsLayer {
                                 alpha = if (unifiedBack) 1f - motion.full.value else 1f
                             }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "返回", tint = textColor) }
@@ -137,6 +142,7 @@ internal fun QqSearchMenu(
                             }
                             .semantics { contentDescription = "搜索歌曲、歌手、专辑或歌单" },
                             textStyle = MaterialTheme.typography.bodyLarge.copy(color = textColor), singleLine = true,
+                            enabled = !obscured,
                             cursorBrush = SolidColor(QqMusicThemeColor), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                             keyboardActions = KeyboardActions(onSearch = { model.submit(); keyboard?.hide() }),
                             decorationBox = { field -> Box {
@@ -159,7 +165,7 @@ internal fun QqSearchMenu(
                     }
                 }
             }
-            if (!obscured && state.query.isNotEmpty()) IconButton(onClick = { model.setQuery("") },
+            if (state.query.isNotEmpty()) IconButton(onClick = { model.setQuery("") }, enabled = !obscured,
                 modifier = Modifier.align(Alignment.TopEnd).size(48.dp).graphicsLayer {
                     val frame = geometry()
                     translationX = -frame.right.toPx() - 48.dp.toPx()
