@@ -4,6 +4,7 @@ import androidx.compose.ui.draw.CacheDrawScope
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Paint
@@ -15,8 +16,10 @@ import androidx.compose.ui.graphics.layer.CompositingStrategy
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.Density
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -27,6 +30,7 @@ private class LyricWordRenderPart(
     val path: Path,
     val bounds: Rect,
     val baseline: Float,
+    val textRange: TextRange,
 )
 
 private class LyricWordRenderNode(val rangeIndex: Int, val layer: GraphicsLayer)
@@ -90,6 +94,8 @@ internal class LyricWordRenderScene private constructor(
             ranges: List<LyricHighlightRange>,
             bitmap: ImageBitmap,
             overhang: Float,
+            color: Color,
+            isolateInk: Boolean,
         ): LyricWordRenderScene? = with(scope) {
             if (layout.layoutInput.text.isEmpty()) return@with null
             val paint = Paint().apply { filterQuality = FilterQuality.High }
@@ -103,19 +109,29 @@ internal class LyricWordRenderScene private constructor(
                 // 没有词级变换时直接重放完整正文，避免每个词都裁剪并采样同一张纹理。
                 drawIntoCanvas { it.drawImage(bitmap, origin, paint) }
             }
-            // 只有逐字明暗或缩放的行才创建词段节点；字形、基线和纹理仍完全共用。
+            // 只有逐字明暗或缩放的行才创建词段节点，保留实际排版的基线和缩放原点。
             val prepareDynamic = {
                 // 静止行不生成词段路径；首次进入动态时才准备，并随节点一并保留。
                 val (coverage, parts) = lyricWordRenderParts(layout, ranges)
                 val base = obtainGraphicsLayer()
+                val uncovered = if (isolateInk) lyricInkUncoveredRanges(layout.layoutInput.text.length,
+                    parts.map { it.textRange }) else emptyList()
+                val baseInk = if (uncovered.isNotEmpty()) lyricTextRaster(layout,
+                    IntRect(-overhang.toInt(), -overhang.toInt(), bitmap.width - overhang.toInt(),
+                        bitmap.height - overhang.toInt()), color, uncovered) else null
                 base.record(recordingDensity, recordingDirection, textSize) {
-                    drawClippedLyricRaster(bitmap, origin, paint, coverage, ClipOp.Difference)
+                    if (!isolateInk) drawClippedLyricRaster(bitmap, origin, paint, coverage, ClipOp.Difference)
+                    else if (baseInk != null) drawIntoCanvas { it.drawImage(baseInk, origin, paint) }
                 }
                 val nodes = parts.map { part ->
-                    val left = floor(part.bounds.left).toInt()
-                    val top = floor(part.bounds.top).toInt()
-                    val width = (ceil(part.bounds.right).toInt() - left).coerceAtLeast(1)
-                    val height = (ceil(part.bounds.bottom).toInt() - top).coerceAtLeast(1)
+                    val rasterBounds = if (isolateInk) part.bounds.inflate(overhang) else part.bounds
+                    val left = floor(rasterBounds.left).toInt()
+                    val top = floor(rasterBounds.top).toInt()
+                    val width = (ceil(rasterBounds.right).toInt() - left).coerceAtLeast(1)
+                    val height = (ceil(rasterBounds.bottom).toInt() - top).coerceAtLeast(1)
+                    // 隐藏邻字后保留完整词段笔画，外伸钩部不再被选区裁剪或重复绘制。
+                    val wordInk = if (isolateInk) lyricTextRaster(layout,
+                        IntRect(left, top, left + width, top + height), color, listOf(part.textRange)) else null
                     val word = obtainGraphicsLayer().apply {
                         topLeft = IntOffset(left, top)
                         pivotOffset = Offset(part.bounds.center.x.roundToInt().toFloat() - left,
@@ -124,7 +140,8 @@ internal class LyricWordRenderScene private constructor(
                         compositingStrategy = CompositingStrategy.ModulateAlpha
                     }
                     word.record(recordingDensity, recordingDirection, IntSize(width, height)) {
-                        translate(left = -left.toFloat(), top = -top.toFloat()) {
+                        if (wordInk != null) drawIntoCanvas { it.drawImage(wordInk, Offset.Zero, paint) }
+                        else translate(left = -left.toFloat(), top = -top.toFloat()) {
                             drawClippedLyricRaster(bitmap, origin, paint, part.path)
                         }
                     }
@@ -159,7 +176,7 @@ private fun lyricWordRenderParts(layout: TextLayoutResult,
                     val bounds = path.getBounds()
                     if (bounds.isEmpty) null else {
                         coverage.addPath(path)
-                        LyricWordRenderPart(index, path, bounds, layout.getLineBaseline(line))
+                        LyricWordRenderPart(index, path, bounds, layout.getLineBaseline(line), TextRange(partStart, partEnd))
                     }
                 }
             }
