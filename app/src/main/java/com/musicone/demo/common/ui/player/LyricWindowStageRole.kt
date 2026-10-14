@@ -19,3 +19,8 @@ internal fun lyricWindowStageRole(paneId: Long, currentId: Long, outgoingId: Lon
     outgoingId -> LyricWindowStageRole.OUTGOING
     else -> LyricWindowStageRole.DETACHED
 }
+
+/** 外层变换和行内边界读取同一窗口身份，避免重组滞后一帧时错用目标坐标。 */
+internal fun LyricLayerTransitionController.paneTranslation(pane: LyricWindowPane): Float =
+    lyricWindowStageRole(pane.id, currentPane.id, outgoingPane?.id).translation(
+        state == LyricLayerTransitionState.PREPARING, seekOffset.value, seekTravel)

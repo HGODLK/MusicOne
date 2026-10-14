@@ -41,7 +41,7 @@ internal fun Modifier.lyricWindowStage(
             // 独立歌词时钟可能先于 UI 重组发布新目标，旧节点此时仍须按最新身份绘制。
             val role = lyricWindowStageRole(pane.id, controller.currentPane.id, controller.outgoingPane?.id)
             val preparing = controller.state == LyricLayerTransitionState.PREPARING
-            translationY = role.translation(preparing, controller.seekOffset.value, controller.seekTravel)
+            translationY = controller.paneTranslation(pane)
             alpha = role.alpha(preparing, controller.seekOffset.value, controller.seekTravel)
             if (role == LyricWindowStageRole.CURRENT) lyricTracePosition("MusicOne:seek-window-y") { translationY }
         }

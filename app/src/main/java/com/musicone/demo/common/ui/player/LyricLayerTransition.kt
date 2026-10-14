@@ -172,7 +172,8 @@ internal class LyricLayerTransitionController(
         val preparation = beginLyricTracePhase("MusicOne:seek-prepare")
 
         // 1. 冻结实际来源窗口
-        val source = currentPane
+        // 连续寻焦替换隐藏目标时，保留仍在屏幕上的来源，不能把未入场目标当成旧页。
+        val source = if (state == LyricLayerTransitionState.PREPARING) outgoingPane ?: currentPane else currentPane
         source.isFrozen = true
 
         // 2. 创建独立目标窗口，使用独立的列表状态与行内动效对象
@@ -186,10 +187,9 @@ internal class LyricLayerTransitionController(
         )
 
         val travel = travelDirection * viewportHeight.coerceAtLeast(300f)
-        seekTravel = travel
-
         // 在一次一致的状态更新中发布来源、目标及 PREPARING
         Snapshot.withMutableSnapshot {
+            seekTravel = travel
             outgoingPane = source
             currentPane = target
             state = LyricLayerTransitionState.PREPARING

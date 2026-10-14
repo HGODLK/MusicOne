@@ -431,10 +431,7 @@ internal fun ImmersiveLyrics(
                             currentDisplayPane.transitionHistory.takeIf { it.seekReveal.active }
                         } else if (limitTransitionHistory) transitionHistory else null,
                         boundaryWindow = boundaryWindow,
-                        paneOffset = {
-                            if (controller.state == LyricLayerTransitionState.PREPARING) 0f
-                            else controller.seekOffset.value - if (outgoing) controller.seekTravel else 0f
-                        },
+                        paneOffset = { controller.paneTranslation(currentDisplayPane) },
                         lyricSettleProgress = { if (outgoing) 1f else lyricSettle.value },
                         smoothProgressMs = if (outgoing) null else verbatimProgressMs,
                         onLineClick = { index, line ->

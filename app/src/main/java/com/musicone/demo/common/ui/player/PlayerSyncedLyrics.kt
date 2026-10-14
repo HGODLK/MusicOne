@@ -4,10 +4,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.layer.drawLayer
-import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalView
@@ -215,8 +211,9 @@ internal fun PlayerSyncedLyrics(
                 val old = window !== current
                 val heldPreparing = !old && held.active && held.preparation != null
                 val windowPreparing = preparing || heldPreparing
-                val layer = rememberGraphicsLayer()
-                val recorded = remember { booleanArrayOf(false) }
+                val stageRole = remember(window, held) {
+                    { lyricTrackWindowStageRole(window, current, outgoing, held) }
+                }
                 val matchesPlayback = shown.id == track.id
                 val settled by remember(window, motion) {
                     derivedStateOf { motion.settledAt(window.slot) }
@@ -244,32 +241,18 @@ internal fun PlayerSyncedLyrics(
                     },
                     Modifier.fillMaxSize().lyricHeldWeight {
                         if (held.active) held.weight(window) else held.slidingWeight(window)
-                    }.graphicsLayer {
-                        translationY = if (held.active || (preparing && !old)) 0f else travelPx * (motion.offset.value + window.slot)
-                        if (!old) lyricTracePosition("MusicOne:track-window-y") { translationY }
-                    }.drawWithContent {
-                        if (old) {
-                            // 退场只记录一次，后续位移直接复用图层。
-                            if (!recorded[0]) {
-                                layer.record { this@drawWithContent.drawContent() }
-                                recorded[0] = true
-                            }
-                            drawLayer(layer)
-                        } else {
-                            val recordHeldSource = heldTrackChange || held.active
-                            recorded[0] = recordHeldSource
-                            // 待入场窗口先完成绘制和定位，正式显示后直接绘制当前歌词。
-                            if (recordHeldSource) {
-                                layer.record { this@drawWithContent.drawContent() }
-                                drawLayer(layer)
-                            } else if (preparing) layer.record { this@drawWithContent.drawContent() }
-                            else drawContent()
-                        }
-                    },
+                    }.lyricTrackWindowStage(motion, held, window, stageRole,
+                        preparing = { preparing }, heldTrackChange = { latestHeldTrackChange },
+                        travelPx = { travelPx }),
                     active = active && !old && matchesPlayback && !windowPreparing && settled,
                     followPlayback = followPlayback && !old && matchesPlayback && !windowPreparing && settled && !held.active,
                     verbatimProgressMs = wordClock,
-                    onReady = if (!old && preparing) { { window.ready.complete(Unit); Unit } } else null,
+                    onReady = if (!old && preparing) { {
+                        if (stageRole() == LyricWindowStageRole.CURRENT && preparing && !held.active) {
+                            window.ready.complete(Unit)
+                        }
+                        Unit
+                    } } else null,
                     exitAlignment = if (old) null else exitAlignment,
                     openingAlignment = if (old) null else openingAlignment,
                     prepareWhileHidden = !old && !held.active && (preparing || (prepareWhileHidden && matchesPlayback)),
@@ -285,8 +268,8 @@ internal fun PlayerSyncedLyrics(
                     readingBounds = readingBounds,
                     boundaryWindow = boundaryWindow?.let { bounds ->
                         LyricBoundaryWindow(bounds.topBuffer,
-                            offset = { bounds.offset() + if (held.active || preparing && !old) 0f
-                                else travelPx * (motion.offset.value + window.slot) },
+                            offset = { bounds.offset() + lyricTrackWindowTranslation(stageRole(), preparing,
+                                held.active, travelPx, motion.offset.value, window.slot) },
                             velocity = { bounds.velocity() })
                     },
                     typography = typography,
@@ -299,10 +282,20 @@ internal fun PlayerSyncedLyrics(
                     intermediateCommitPending = !old && matchesPlayback && window.playback.intermediateCommitPending,
                     onIntermediateSeekOwnership = { window.playback.intermediatePositionOwned = it },
                     onWindowLayout = if (!old && matchesPlayback && !held.active && onWindowLayout != null) {
-                        { layout, protection -> onWindowLayout(layout,
-                            if (preparing || !settled || outgoing.isNotEmpty()) LyricBlurProtection.HANDOFF else protection) }
+                        { layout, protection ->
+                            if (stageRole() == LyricWindowStageRole.CURRENT && !held.active) {
+                                onWindowLayout(layout,
+                                    if (preparing || !settled || outgoing.isNotEmpty()) LyricBlurProtection.HANDOFF else protection)
+                            }
+                        }
                     } else null,
-                    onOpeningFront = if (!old && matchesPlayback && !held.active && !preparing) onOpeningFront else null,
+                    onOpeningFront = if (!old && matchesPlayback && !held.active && !preparing && onOpeningFront != null) {
+                        { front ->
+                            if (stageRole() == LyricWindowStageRole.CURRENT && !held.active && !preparing) {
+                                onOpeningFront(front)
+                            }
+                        }
+                    } else null,
                 )
             }
         }
