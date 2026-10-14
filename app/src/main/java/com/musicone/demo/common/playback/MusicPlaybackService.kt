@@ -58,6 +58,7 @@ class MusicPlaybackService : MediaSessionService() {
             setHandleAudioBecomingNoisy(true)
         }
         exoPlayer = player
+        player.addListener(PlaybackServiceDiagnostics { isPlaybackOngoing })
         val playback = MusicPlaybackRuntimeOwner.acquire(application, this)
         runtime = playback
         detailsLoader = PlaybackDetailsLoader(this, player).also(player::addListener)
@@ -105,12 +106,15 @@ class MusicPlaybackService : MediaSessionService() {
             )
         }
         mediaSession = sessionBuilder.build()
+        // 在恢复待播放请求之前注册会话，后台通知管理不依赖页面控制器连接时机。
+        addSession(requireNotNull(mediaSession))
         playback.attachPlayer(player)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
 
     override fun onDestroy() {
+        android.util.Log.i("MusicPlaybackService", "播放服务销毁")
         exoPlayer?.let { runtime?.detachPlayer(it) }
         MusicPlaybackRuntimeOwner.release(this)
         runtime = null

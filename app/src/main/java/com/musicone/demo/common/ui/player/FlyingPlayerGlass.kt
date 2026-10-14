@@ -42,16 +42,17 @@ private class PlayerGlassSnapshotCache {
 }
 
 /**
- * 转场前预模糊首页和播放页快照；动画期间只在固定 Canvas 中裁剪、混合和绘制。
+ * 转场前预模糊当前来源页和播放页快照；动画期间只在固定 Canvas 中裁剪、混合和绘制。
  * 进度不进入组合和测量阶段，避免扩张玻璃逐帧触发重组与双重模糊。
  */
 @Composable
 internal fun FlyingPlayerGlass(motion: PageMotion) {
     val dark = MaterialTheme.colorScheme.background.luminance() < .3f
-    val sourceLayer = LocalPlayerBackdropTexture.current
+    val transitionBackdrop = LocalPlayerTransitionBackdrop.current
+    val sourceLayer = transitionBackdrop?.layer ?: LocalPlayerBackdropTexture.current
     val targetLayer = LocalPlayerAtmosphereTexture.current
     val fallbackLayer = LocalPlayerSurfaceTexture.current
-    val backdropBounds = LocalPlayerBackdropBounds.current
+    val backdropBounds = transitionBackdrop?.bounds ?: LocalPlayerBackdropBounds.current
     val sourceSnapshot = rememberGraphicsLayer()
     val targetSnapshot = rememberGraphicsLayer()
     val path = remember { Path() }

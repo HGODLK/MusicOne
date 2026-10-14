@@ -35,7 +35,11 @@ class PlayerBaselineProfileGenerator {
             if (isManualCapture()) {
                 val sleepMs = InstrumentationRegistry.getArguments().getString("manual_sleep_ms")?.toLongOrNull() ?: 180_000L
                 mark("播放器人工采集窗口", true, "等待模拟器实机操作 (${sleepMs}ms)")
-                SystemClock.sleep(sleepMs)
+                val started = SystemClock.elapsedRealtime()
+                if (InstrumentationRegistry.getArguments().getString("artist_background_capture") == "true") {
+                    ArtistBackgroundProfileJourney(device).capture()
+                }
+                SystemClock.sleep((sleepMs - (SystemClock.elapsedRealtime() - started)).coerceAtLeast(0L))
                 return@collect
             }
             if (!waitForHome()) {

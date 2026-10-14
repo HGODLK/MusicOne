@@ -27,6 +27,7 @@ internal fun PlayerMotionHost(
     controlHandoff: PlayerControlHandoff,
     retention: PlayerRetentionState,
     launchCovering: Boolean,
+    transitionBackdrop: PlayerTransitionBackdrop,
     onDismiss: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -51,7 +52,9 @@ internal fun PlayerMotionHost(
             retainedState.lyricLoadState != state.lyricLoadState) retainedState = state
     }
     RetainedPlayerContent(motion.mounted, prewarming, retention) {
-        PlayerMotionContent(motion, displayed, viewModel, controlHandoff, dismiss)
+        CompositionLocalProvider(LocalPlayerTransitionBackdrop provides transitionBackdrop) {
+            PlayerMotionContent(motion, displayed, viewModel, controlHandoff, dismiss)
+        }
     }
 }
 

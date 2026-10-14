@@ -49,8 +49,10 @@ internal fun BottomPlayerBar(
         favorites.toggle(latest?.let { playerVisualActionTrack(it, displayed) } ?: displayed)
     }
     val density = LocalDensity.current
-    val miniBackdropLayer = if (entities.pages.isNotEmpty()) entitySceneLayer else backdropLayer
-    val miniBackdropBounds = if (entities.pages.isNotEmpty()) entitySceneBounds else backdropBounds
+    val miniBackdrop = playerTransitionBackdrop(entities.pages.isNotEmpty(), backdropLayer, backdropBounds,
+        entitySceneLayer, entitySceneBounds)
+    val miniBackdropLayer = miniBackdrop.layer
+    val miniBackdropBounds = miniBackdrop.bounds
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     SideEffect { measurements.systemHeight = systemBottom }
     val openPlayer = {

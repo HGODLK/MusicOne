@@ -407,7 +407,9 @@ fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>()
                     rootColor = if (immersiveNeteaseSurface) Color.Transparent else Color.Unspecified,
                     rootDarkIcons = neteaseProfileVisual.useDarkForeground.takeIf { immersiveNeteaseSurface },
                 )
-                PlayerMotionHost(playerMotion, viewModel, playerControlHandoff, playerRetention, homeLaunch.covering) {
+                PlayerMotionHost(playerMotion, viewModel, playerControlHandoff, playerRetention, homeLaunch.covering,
+                    playerTransitionBackdrop(entityNavigation.pages.isNotEmpty(), backdropLayer, backdropBounds,
+                        entitySceneLayer, entitySceneBounds)) {
                     viewModel.setPlayerExpanded(false)
                 }
             }
