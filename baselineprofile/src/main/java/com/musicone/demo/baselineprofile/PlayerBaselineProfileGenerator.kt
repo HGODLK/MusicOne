@@ -165,7 +165,8 @@ class PlayerBaselineProfileGenerator {
         return false
     }
 
-    private fun MacrobenchmarkScope.isTablet(): Boolean = device.displayWidth >= 1600
+    private fun MacrobenchmarkScope.isTablet(): Boolean =
+        device.displayWidth >= 1600 || Build.MODEL.contains("SM-S9110", ignoreCase = true)
 
     private fun isManualCapture(): Boolean =
         InstrumentationRegistry.getArguments().getString("manual_capture") == "true"

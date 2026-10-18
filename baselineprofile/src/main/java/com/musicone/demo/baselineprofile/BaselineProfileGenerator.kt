@@ -617,7 +617,8 @@ class BaselineProfileGenerator {
         Log.i(PROFILE_LOG, "设备=$DEVICE_LABEL 型号=${Build.MODEL} 设备代号=${Build.DEVICE} 分辨率=${device.displayWidth}x${device.displayHeight} 包=$PACKAGE_NAME 音源=QQ")
     }
 
-    private fun MacrobenchmarkScope.isTablet(): Boolean = device.displayWidth >= 1600
+    private fun MacrobenchmarkScope.isTablet(): Boolean =
+        device.displayWidth >= 1600 || Build.MODEL.contains("SM-S9110", ignoreCase = true)
 
     private fun MacrobenchmarkScope.scrollToTop() {
         runCatching {
