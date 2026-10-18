@@ -17,8 +17,10 @@ internal fun SettingsPageHost(navigation: SettingsNavigation, state: PlatformSet
     var retained by remember { mutableStateOf(SettingsDestination.SETTINGS) }
     var origin by remember { mutableStateOf(Rect.Zero) }
     var loginBack by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var supplementalBack by remember { mutableStateOf<(() -> Unit)?>(null) }
     // 在组合阶段读取局部返回状态，表单退回后必须重新登记，避免旧处理器一直吞掉返回。
-    val backInterceptor = if (navigation.destination != SettingsDestination.PLATFORM_LOGIN) null
+    val backInterceptor = if (navigation.destination == SettingsDestination.SUPPLEMENTAL) supplementalBack
+        else if (navigation.destination != SettingsDestination.PLATFORM_LOGIN) null
         else if (state.securityVerification != null) model::cancelSecurityVerification else loginBack
     SideEffect { navigation.backInterceptor = backInterceptor }
     DisposableEffect(navigation) { onDispose { navigation.backInterceptor = null } }
@@ -54,7 +56,12 @@ internal fun SettingsPageHost(navigation: SettingsNavigation, state: PlatformSet
         }, label = "设置层级文字衔接") { displayed ->
                     when (displayed) {
                         SettingsDestination.SETTINGS -> SettingsHomeScreen(state,
-                            navigation::back, navigation::openSources, bottomInset, navigation::openCachedMusic)
+                            navigation::back, navigation::openSources, bottomInset, navigation::openCachedMusic,
+                            navigation::openLibrary, navigation::openSupplemental)
+                        SettingsDestination.MUSIC_LIBRARY -> MusicLibrarySettingsScreen(navigation::back, bottomInset)
+                        SettingsDestination.SUPPLEMENTAL -> Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+                            BiliSupplementalSettings(bottomInset, navigation::backPage, { supplementalBack = it })
+                        }
                         SettingsDestination.CACHED_MUSIC, SettingsDestination.CACHED_PLAYLIST -> CachedMusicScreen(
                             state.selectedSource, cachePlaylists,
                             if (displayed == SettingsDestination.CACHED_PLAYLIST) navigation.cachedPlaylistId else null,

@@ -30,7 +30,7 @@ internal fun PlayerCoverStage(track: MusicTrack, playing: Boolean, motion: PageM
 @Composable
 internal fun PlayerSongInformation(track: MusicTrack, favorite: Boolean, motion: PageMotion,
     modifier: Modifier = Modifier,
-    anchorsEnabled: Boolean = true, actionTrack: MusicTrack = track, onFavorite: () -> Unit) {
+    anchorsEnabled: Boolean = true, actionTrack: MusicTrack = track, lyricsOpened: Boolean = false, onFavorite: () -> Unit) {
     val textMarquee = playerTextMarqueeEnabled(motion.phase, motion.targetContentHandoff)
     val ink = LocalContentColor.current
     Row(modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -38,7 +38,8 @@ internal fun PlayerSongInformation(track: MusicTrack, favorite: Boolean, motion:
             TrackTitle(track,
                 modifier = Modifier
                     .motionAnchor(if (anchorsEnabled) motion else null, "title", true, hideDuringMotion = false, textSizeSp = 22f)
-                    .playerTextHandoffCapture(motion, "title", track),
+                    .playerTextHandoffCapture(motion, "title", track)
+                    .onlineLyricOffset(actionTrack, lyricsOpened && motion.phase == MotionPhase.SHOWN),
                 style = MusicOneTextStyles.playerTitle, color = ink,
                 marquee = true, marqueeRunning = textMarquee,
                 badgeOnDark = ink.luminance() > .5f, showBadges = false, primaryTitleOnly = true)

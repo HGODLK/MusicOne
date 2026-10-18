@@ -3,27 +3,21 @@ package com.musicone.demo
 import androidx.compose.foundation.lazy.LazyListLayoutInfo
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** 选择完整的历史段，不改变列表布局、文字透明度或开合进度。 */
+/** 历史上下文只用于屏外准备和行程测量，可见歌词始终由真实文字边界控制。 */
 internal class LyricTransitionHistory {
-    private var prepared = false
-    private var firstRetained by mutableIntStateOf(0)
-    private var limited by mutableStateOf(false)
     var preservingCloseWindow by mutableStateOf(false)
         private set
-    val seekReveal = LyricSeekHistoryReveal()
     var openingContext: LyricOpeningContext? = null
         private set
 
     fun prepare(layout: LazyListLayoutInfo, current: Int, density: Density,
         typography: LyricTypography? = null): Int {
-        seekReveal.clear()
         openingContext = null
         val previous = layout.visibleItemsInfo.firstOrNull { it.index == current - 1 }
         val earlier = layout.visibleItemsInfo.firstOrNull { it.index == current - 2 }
@@ -39,45 +33,31 @@ internal class LyricTransitionHistory {
                     measuredTypography.translationLineSp.sp.toPx() + 2.dp.toPx()
                 } else 0f
         }
-        firstRetained = lyricTransitionHistoryStart(current, previous?.size?.toFloat(),
+        return lyricTransitionHistoryStart(current, previous?.size?.toFloat(),
             earlier?.size?.toFloat(), previous?.let { shortHeight(it.contentType == true) },
             earlier?.let { shortHeight(it.contentType == true) }, lyricDensity.density)
-        prepared = true
-        return firstRetained
     }
 
     fun prepareOpening(context: LyricOpeningContext) {
-        seekReveal.clear()
         openingContext = context
-        firstRetained = context.first
-        prepared = true
     }
 
-    fun releaseForSeek(fadeAddedRows: Boolean = false) {
-        if (limited && fadeAddedRows) seekReveal.revealBefore(firstRetained)
-        // seek 已改变入场目标，后续可见上下文由列表实测布局提供，不能在端点补出旧限制外的行。
+    fun releaseForSeek() {
+        // seek 已改变入场目标，后续上下文由列表实测布局提供。
         openingContext = null
-        firstRetained = 0
-        limited = false
-        prepared = true
     }
 
-    fun update(layout: () -> LazyListLayoutInfo, current: Int, density: Density, progress: Float, enabled: Boolean,
-        typography: LyricTypography? = null, closingWindow: Boolean = false) {
+    fun update(progress: Float, enabled: Boolean, closingWindow: Boolean = false) {
         if (closingWindow && progress > 0f) preservingCloseWindow = true
         if (progress <= 0f || progress >= 1f && !closingWindow) {
             preservingCloseWindow = false
         }
-        limited = enabled && !preservingCloseWindow && progress > 0f && progress < 1f
-        if (limited && !prepared) prepare(layout(), current, density, typography)
-        // 中途反向沿用同一批完整段；到展开端点后恢复全部历史歌词。
+        // 端点仅释放准备快照，不再切换任何歌词行的绘制资格。
         if ((progress == 1f && !preservingCloseWindow) || !enabled) {
-            prepared = false
             openingContext = null
         }
     }
 
-    fun draws(index: Int): Boolean = !limited || index >= firstRetained
 }
 
 internal fun lyricTransitionHistoryStart(current: Int, previous: Float?, earlier: Float?,

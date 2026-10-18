@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
@@ -40,7 +41,6 @@ internal fun MiniPlayer(
     openGesture: Modifier = Modifier,
 ) {
     val motion = LocalPlayerMotion.current
-    val qqFeedback = track.source == MusicSource.QQ
     val swipe = rememberMiniPlayerSwipe(track)
     androidx.compose.runtime.CompositionLocalProvider(LocalMiniPlayerImmersiveVisual provides immersiveVisual) {
     MiniPlayerInkProvider(backdropLayer, backdropBounds) { ink ->
@@ -51,16 +51,14 @@ internal fun MiniPlayer(
         .motionAnchor(motion, "surface", false)) {
         MiniPlayerInformation(track, isFavorite, swipe, onOpen, onFavorite)
         PlaybackControlButton(
-            qqFeedback = qqFeedback,
             onClick = onToggle,
             modifier = Modifier.motionAnchor(motion, "play", false),
         ) {
             androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides miniPlayerInkColor("play")) {
-                PlaybackStateIcon(isPlaying, qqFeedback, Modifier.size(21.dp).miniPlayerInkRegion("play"))
+                PlaybackStateIcon(isPlaying, Modifier.size(21.dp).miniPlayerInkRegion("play"))
             }
         }
         PlaybackControlButton(
-            qqFeedback = qqFeedback,
             onClick = onNext,
             horizontalMotion = 5.dp,
             modifier = Modifier
@@ -83,6 +81,10 @@ private fun MiniPlayerSurface(
 ) {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
     val dark = MaterialTheme.colorScheme.background.luminance() < .3f
+    val borderColor = immersiveVisual?.panelBorder
+        ?: if (dark) Color.White.copy(alpha = .16f) else Color(0xFFE0E2E6)
+    val handoff = LocalPlayerControlHandoff.current
+    SideEffect { handoff?.observeInk("surfaceBorder", borderColor) }
     MusicOneBackdropGlass(
         backdropLayer = backdropLayer,
         backdropBounds = backdropBounds,
@@ -96,8 +98,7 @@ private fun MiniPlayerSurface(
             ?: if (dark) Color(0xFF242526) else Color(0xFFF6F7F8),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
-            immersiveVisual?.panelBorder
-                ?: if (dark) Color.White.copy(alpha = .16f) else Color(0xFFE0E2E6),
+            borderColor,
         ),
         backgroundSnapshot = LocalPlayerSurfaceTexture.current,
     ) {

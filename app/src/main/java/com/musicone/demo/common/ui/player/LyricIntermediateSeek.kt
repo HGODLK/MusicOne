@@ -149,7 +149,7 @@ internal fun LyricIntermediateSeekEffect(
                 snapshotFlow { state.engaged }.first { it }
                 while (state.engaged) {
                     val source = controller.currentPane
-                    source.transitionHistory.releaseForSeek(fadeAddedRows = true)
+                    source.transitionHistory.releaseForSeek()
                     val result = alignIntermediateLyricSeek(source,
                         target = { state.target(latestCurrent) },
                         held = { state.holding },
@@ -165,7 +165,6 @@ internal fun LyricIntermediateSeekEffect(
                             val target = state.target(latestCurrent)
                             controller.updatePlaybackLine(target, presentDuringTransition = true)
                             source.playbackStep.consume(target, enabled = true)
-                            source.transitionHistory.seekReveal.finish()
                             state.finish()
                         }
                         LyricIntermediateSeekResult.FAR -> {
@@ -187,8 +186,6 @@ internal fun LyricIntermediateSeekEffect(
             }
         } finally {
             withContext(NonCancellable) { transition?.cancelAndJoin() }
-            controller.currentPane.transitionHistory.seekReveal.finish()
-            controller.outgoingPane?.transitionHistory?.seekReveal?.finish()
             state.releaseOwner(owner)
         }
     }

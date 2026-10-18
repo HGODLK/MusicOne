@@ -57,7 +57,7 @@ internal object ArtworkRepository {
         }
     }
 
-    private fun loadLocalFile(imageUrl: String, maxSide: Int): Bitmap? = runCatching {
+    private fun loadLocalFile(imageUrl: String, maxSide: Int): Bitmap? = runCatchingCancellable {
         val uri = URI.create(imageUrl)
         decodeArtwork(File(uri).readBytes(), maxSide)
     }.onFailure { error ->
@@ -67,7 +67,7 @@ internal object ArtworkRepository {
     private fun download(imageUrl: String, maxSide: Int): Bitmap? {
         var lastFailure: Throwable? = null
         artworkDownloadCandidates(imageUrl).forEach { candidate ->
-            val bitmap = runCatching { downloadCandidate(candidate, maxSide) }
+            val bitmap = runCatchingCancellable { downloadCandidate(candidate, maxSide) }
                 .onFailure { lastFailure = it }
                 .getOrNull()
             if (bitmap != null) return bitmap

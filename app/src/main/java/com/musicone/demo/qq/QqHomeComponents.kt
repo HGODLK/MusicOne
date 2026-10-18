@@ -6,7 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.geometry.Size
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Arrangement
@@ -196,12 +197,16 @@ internal fun QqPlaylistCard(
     sharedTransition: Boolean = true,
     prominentTitle: Boolean = false,
     compactText: Boolean = false,
-    onLongClick: ((Rect) -> Unit)? = null,
+    onLongClick: ((QqPlaylistCardOrigin) -> Unit)? = null,
     artworkMaxSide: Int = 768,
     sourceKey: String = playlist.id,
+    initialArtwork: List<ArtworkBlendSnapshot>? = null,
+    freezeArtwork: Boolean = false,
+    reorderState: PlaylistCardReorderState? = null,
 ) {
     val shape = RoundedCornerShape(20.dp)
     var cardBounds by remember { mutableStateOf(Rect.Zero) }
+    val displayedArtwork = remember { arrayOfNulls<List<ArtworkBlendSnapshot>>(1) }
     val motion = LocalPlaylistMotion.current
     val transition = LocalPlaylistCardTransition.current
     val requester = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
@@ -214,12 +219,19 @@ internal fun QqPlaylistCard(
     val artwork = requestedArtwork ?: ArtworkRepository.peek(playlist.artworkUrl, artworkMaxSide)
     BoxWithConstraints(
         modifier.widthIn(max = width).aspectRatio(1f).bringIntoViewRequester(requester).clip(shape)
-            .onGloballyPositioned { cardBounds = it.boundsInRoot() }.combinedClickable(
+            .onGloballyPositioned {
+                // 被顶部裁掉的卡片仍保留完整原点，退回时由原视口恢复遮挡。
+                cardBounds = Rect(it.positionInRoot(), Size(it.size.width.toFloat(), it.size.height.toFloat()))
+            }.playlistCardDrag(reorderState, playlist.id, transition?.busy != true && motion?.mounted != true,
+                onLongClick?.let { action -> { action(QqPlaylistCardOrigin(cardBounds, displayedArtwork[0]) { cardBounds }) } })
+            .combinedClickable(
             enabled = transition?.busy != true && motion?.mounted != true,
             onClickLabel = "打开${playlist.title}",
             onLongClickLabel = "管理歌单",
             hapticFeedbackEnabled = false,
-            onLongClick = onLongClick?.let { action -> { action(cardBounds) } },
+            onLongClick = onLongClick?.takeIf { reorderState == null }?.let { action -> {
+                action(QqPlaylistCardOrigin(cardBounds, displayedArtwork[0]) { cardBounds })
+            } },
             onClick = {
             if (transition == null || !sharedTransition) onClick()
             else transition.open(sourceKey, artwork, {
@@ -247,6 +259,8 @@ internal fun QqPlaylistCard(
             shape,
             Alignment.Center,
             sourceKey = sourceKey, imageUrl = playlist.artworkUrl,
+            initialArtwork = initialArtwork, freezeArtwork = freezeArtwork,
+            onArtworkSnapshot = { displayedArtwork[0] = it },
         )
         Box(
             Modifier.fillMaxSize().graphicsLayer {
@@ -283,7 +297,7 @@ internal fun QqPlaylistCard(
             }
         }
         Surface(
-            onClick = { transition?.preparePlayback(sourceKey); onPlay() },
+            onClick = { if (sharedTransition) transition?.preparePlayback(sourceKey); onPlay() },
             modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).size(42.dp).graphicsLayer {
                 alpha = transition?.alphaFor(sourceKey) ?: 1f
             },

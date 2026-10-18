@@ -57,7 +57,7 @@ internal fun ImmersiveLyricLine(
     val isCurrentOrRecent = index in (current - 1)..(current + 1)
     val verbatimEnabled = ExperiencePreferences.options.verbatimLyricAnimation
     val canAnimateVerbatim = verbatimEnabled && line.words.isNotEmpty() && smoothProgressMs != null && isCurrentOrRecent
-    val baseAnnotated = remember(line.text) { musicOneDisplayAnnotatedString(line.text) }
+    val baseAnnotated = remember(line.text) { lyricOriginalAnnotatedString(line.text) }
     val highlightRanges = remember(line.text, line.words) { lyricWordHighlightRanges(line) }
     SideEffect {
         playbackMotion.configureWords(index, highlightRanges, smoothProgressMs,

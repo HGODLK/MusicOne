@@ -5,6 +5,20 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PlaybackTaskOwnershipTest {
+    @Test fun kugouResolutionFailureOnlySkipsExplicitUnavailableTracks() = runBlocking {
+        for (failure in listOf(java.io.IOException("network"), TrackUnavailableException("无版权"))) {
+            val song = track("kugou-song").copy(source = MusicSource.KUGOU)
+            val key = PlaybackRequestKey(song.id, 1)
+            val events = mutableListOf<PlaybackTrackEvent>()
+            val loader = PlaybackTrackLoader(this, { _, _ -> null }, { _, _, _ -> throw failure },
+                { it }, { it == key }, { false }, events::add)
+            loader.start(song, key, AudioQuality.STANDARD, AudioQuality.STANDARD, 0, true, false)
+            yield()
+            assertEquals(failure is TrackUnavailableException, events.filterIsInstance<PlaybackTrackEvent.Failed>().single().maySkip)
+            loader.cancel()
+        }
+    }
+
     private fun track(id: String) = MusicTrack(id, MusicSource.QQ, "歌曲", "歌手", "专辑",
         240_000, 0, 0, "曲", "https://example.com/$id.flac")
     private fun source(quality: AudioQuality = AudioQuality.LOSSLESS) =

@@ -45,7 +45,7 @@ internal class ArtistPageState(private val singer: QqSearchSinger, private val r
                 val queue = withContext(Dispatchers.IO) {
                     val result = linkedMapOf<String, MusicTrack>()
                     var next: Int? = 0
-                    while (next != null && result.size < 1000) {
+                    while (next != null) {
                         ensureActive()
                         val begin = next
                         val page = repository.songs(singer.id, begin, sort)
@@ -54,7 +54,7 @@ internal class ArtistPageState(private val singer: QqSearchSinger, private val r
                         }
                         next = page.next?.takeIf { it > begin }
                     }
-                    result.values.take(1000)
+                    result.values.toList()
                 }
                 if (queue.isNotEmpty()) play(queue, null)
                 else playAllError = "暂无可播放歌曲"

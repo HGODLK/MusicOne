@@ -36,6 +36,11 @@ internal class QqSearchMotion {
     val mounted get() = menu.value > 0f || full.value > 0f
 }
 
+/** 根界面只观察挂载端点，菜单和全屏之间的逐帧进度仍留在搜索内部。 */
+@Composable
+internal fun rememberQqSearchMounted(motion: QqSearchMotion): State<Boolean> =
+    remember(motion) { derivedStateOf { motion.mounted } }
+
 @Composable
 internal fun rememberQqSearchMotion(state: QqSearchState, backdrop: GraphicsLayer): QqSearchMotion {
     val motion = remember { QqSearchMotion() }

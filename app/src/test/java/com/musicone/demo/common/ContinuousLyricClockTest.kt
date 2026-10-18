@@ -4,6 +4,28 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ContinuousLyricClockTest {
+    @Test fun wholeLineSelectionDoesNotDependOnTheOneSecondSamplingPhase() {
+        val lines = listOf(TimedLyric(0, "前一句"), TimedLyric(10_500, "当前句"))
+        val earlySample = continuousLyricPosition(10_000, 1_000, 1_600, true, false, 200_000)
+        val lateSample = continuousLyricPosition(10_550, 1_550, 1_600, true, false, 200_000)
+        assertEquals(10_600L, earlySample)
+        assertEquals(earlySample, lateSample)
+        assertEquals(1, activeLyric(lines, earlySample))
+        assertEquals(activeLyric(lines, earlySample), activeLyric(lines, lateSample))
+    }
+
+    @Test fun nextTrackUsesItsOwnSamplingOriginAndKeepsSourceLead() {
+        val next = LyricWindowPlayback("next")
+        val sample = PlaybackProgressSnapshot("next", 0, 2, 5_000)
+        next.update(sample)
+        val snapshot = next.wordSnapshot(sample, null)
+        val position = continuousLyricPosition(snapshot.positionMs, snapshot.sampledAtMs, 5_250,
+            true, false, 200_000)
+        assertEquals(250L, lyricDisplayPosition(position, MusicSource.LOCAL))
+        assertEquals(250L, lyricDisplayPosition(position, MusicSource.QQ))
+        assertEquals(630L, lyricDisplayPosition(position, MusicSource.NETEASE))
+    }
+
     @Test fun playingUsesSamplingTimeWithoutTheOldOneSecondCap() {
         assertEquals(12_500L, continuousLyricPosition(10_000, 1_000, 3_500, true, false, 210_000))
         assertEquals(10_319L, continuousLyricPosition(10_000, 1_000, 1_319, true, false, 210_000))
@@ -49,6 +71,6 @@ class ContinuousLyricClockTest {
         assertTrue(needsVerbatimLyricsRefresh(track.copy(lyrics = qrc)))
         assertTrue(needsVerbatimLyricsRefresh(track.copy(lyrics = listOf(TimedLyric(0, "光")).confirmedByCurrentQqParser())))
         assertFalse(needsVerbatimLyricsRefresh(track.copy(lyrics = qrc.confirmedByCurrentQqParser())))
-        assertFalse(needsVerbatimLyricsRefresh(track.copy(source = MusicSource.NETEASE)))
+        assertTrue(needsVerbatimLyricsRefresh(track.copy(source = MusicSource.NETEASE)))
     }
 }

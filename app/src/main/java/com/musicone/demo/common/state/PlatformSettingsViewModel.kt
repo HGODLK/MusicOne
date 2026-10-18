@@ -51,7 +51,7 @@ internal class PlatformSettingsViewModel(application: Application) : AndroidView
     }
 
     fun selectSource(source: MusicSource) {
-        if (!auth.supports(source)) return
+        if (source == MusicSource.BILIBILI || (source.requiresAccount && !auth.supports(source))) return
         stopQrLogin()
         clearSecurityVerification()
         preferences.saveSource(source)
@@ -62,7 +62,7 @@ internal class PlatformSettingsViewModel(application: Application) : AndroidView
                 sourceSelected = true,
                 loginSource = source,
                 account = session.account,
-                sessionStatus = if (session.credential.isBlank()) SessionStatus.SIGNED_OUT else SessionStatus.CHECKING,
+                sessionStatus = if (!source.requiresAccount) SessionStatus.CONNECTED else if (session.credential.isBlank()) SessionStatus.SIGNED_OUT else SessionStatus.CHECKING,
                 message = null,
             )
         }
@@ -70,6 +70,7 @@ internal class PlatformSettingsViewModel(application: Application) : AndroidView
     }
 
     fun startLogin(source: MusicSource = _state.value.selectedSource) {
+        if (!source.requiresAccount || source == MusicSource.BILIBILI) return
         stopQrLogin()
         pendingCaptchaCredential = ""
         clearSecurityVerification()
@@ -172,7 +173,9 @@ internal class PlatformSettingsViewModel(application: Application) : AndroidView
         val session = preferences.readSession(snapshot.loginSource)
         viewModelScope.launch {
             _state.update { it.copy(working = true, message = null) }
-            runCatching {
+            runCatchingCancellable {
+                // 发出请求前保留设备信息，首次网络失败后重试仍使用同一设备。
+                pendingCaptchaCredential = auth.prepareCaptchaCredential(snapshot.loginSource, session, pendingCaptchaCredential)
                 withContext(Dispatchers.IO) {
                     auth.sendCaptcha(
                         snapshot.loginSource,
@@ -189,6 +192,7 @@ internal class PlatformSettingsViewModel(application: Application) : AndroidView
                 }
                 countDownResend()
             }.onFailure { error ->
+                (error as? KugouSmsRequestException)?.let { pendingCaptchaCredential = it.credentialSeed }
                 if (!showSecurityVerification(error, SecurityRetryAction.SEND_CAPTCHA)) {
                     _state.update { it.copy(working = false, message = error.asUserMessage()) }
                 }
@@ -206,7 +210,7 @@ internal class PlatformSettingsViewModel(application: Application) : AndroidView
         val session = preferences.readSession(snapshot.loginSource)
         viewModelScope.launch {
             _state.update { it.copy(working = true, message = null) }
-            runCatching {
+            runCatchingCancellable {
                 withContext(Dispatchers.IO) {
                     auth.loginByCaptcha(
                         source = snapshot.loginSource,
@@ -221,6 +225,7 @@ internal class PlatformSettingsViewModel(application: Application) : AndroidView
                 pendingCaptchaCredential = ""
                 onLoginSuccess(result.credential, result.account)
             }.onFailure { error ->
+                (error as? KugouSmsRequestException)?.let { pendingCaptchaCredential = it.credentialSeed }
                 if (!showSecurityVerification(error, SecurityRetryAction.LOGIN)) {
                     _state.update { it.copy(working = false, message = error.asUserMessage()) }
                 }
@@ -232,13 +237,39 @@ internal class PlatformSettingsViewModel(application: Application) : AndroidView
         val challenge = pendingSecurityChallenge ?: return
         val action = pendingSecurityAction ?: return
         if (_state.value.working) return
+        if (challenge.source == MusicSource.NETEASE) {
+            if (!neteaseHasLoginCookie(result.cookie)) {
+                _state.update { it.copy(message = "官方页面尚未完成登录") }
+                return
+            }
+            viewModelScope.launch {
+                _state.update { it.copy(working = true, message = null) }
+                runCatchingCancellable { withContext(Dispatchers.IO) { auth.account(MusicSource.NETEASE, result.cookie) } }
+                    .onSuccess { account ->
+                        if (pendingSecurityChallenge !== challenge) return@onSuccess
+                        clearSecurityVerification()
+                        pendingCaptchaCredential = ""
+                        onLoginSuccess(result.cookie, account)
+                    }.onFailure { error ->
+                        if (pendingSecurityChallenge === challenge) _state.update { it.copy(working = false, message = error.asUserMessage()) }
+                    }
+            }
+            return
+        }
+
         viewModelScope.launch {
             // 验证结果交回后先释放窗口，后台续接不再保留透明触摸层。
             _state.update { it.copy(working = true, message = null, securityVerification = null) }
-            runCatching {
+            runCatchingCancellable {
                 withContext(Dispatchers.IO) { auth.completeSecurityVerification(challenge, result) }
             }.onSuccess { credential ->
                 if (pendingSecurityChallenge !== challenge) return@onSuccess
+                clearSecurityVerification()
+                if (challenge.isKugouAccountRecovery()) {
+                    pendingCaptchaCredential = ""
+                    _state.update(PlatformSettingsUiState::afterKugouAccountRecovery)
+                    return@onSuccess
+                }
                 when (action) {
                     SecurityRetryAction.SEND_CAPTCHA, SecurityRetryAction.LOGIN ->
                         pendingCaptchaCredential = mergePlatformCredentials(pendingCaptchaCredential, credential)
@@ -247,7 +278,6 @@ internal class PlatformSettingsViewModel(application: Application) : AndroidView
                     )
                     SecurityRetryAction.START_QR -> Unit
                 }
-                clearSecurityVerification()
                 _state.update { it.copy(working = false, securityVerification = null) }
                 when (action) {
                     SecurityRetryAction.SEND_CAPTCHA -> sendCaptcha()
@@ -263,7 +293,13 @@ internal class PlatformSettingsViewModel(application: Application) : AndroidView
     }
 
     fun cancelSecurityVerification() {
+        val recovery = pendingSecurityChallenge?.isKugouAccountRecovery() == true
         clearSecurityVerification()
+        if (recovery) {
+            pendingCaptchaCredential = ""
+            _state.update { it.afterKugouAccountRecovery().copy(message = "已取消账号恢复；恢复后请重新获取短信验证码登录") }
+            return
+        }
         _state.update {
             it.copy(
                 working = false,
@@ -347,7 +383,7 @@ internal class PlatformSettingsViewModel(application: Application) : AndroidView
         val session = preferences.readSession(source)
         if (session.credential.isBlank() || validationJobs[source]?.isActive == true) return
         validationJobs[source] = viewModelScope.launch {
-            runCatching {
+            runCatchingCancellable {
                 withContext(Dispatchers.IO) {
                     if (source == MusicSource.QQ) qqPersistentSession.validate(session)
                     else QqValidatedSession(session.credential, auth.account(source, session.credential))
@@ -442,7 +478,7 @@ private fun SavedPlatformSettings.initialUiState(): PlatformSettingsUiState {
         sourceSelected = sourceSelected || selected.credential.isNotBlank(),
         loginSource = selectedSource,
         account = selected.account,
-        sessionStatus = if (selected.credential.isBlank()) SessionStatus.SIGNED_OUT else SessionStatus.CHECKING,
+        sessionStatus = if (!selectedSource.requiresAccount) SessionStatus.CONNECTED else if (selected.credential.isBlank()) SessionStatus.SIGNED_OUT else SessionStatus.CHECKING,
     )
 }
 
@@ -450,6 +486,8 @@ private fun MusicSource.scanAppName(): String = when (this) {
     MusicSource.NETEASE -> "网易云音乐"
     MusicSource.QQ -> "QQ"
     MusicSource.KUGOU -> "酷狗音乐"
+    MusicSource.LOCAL -> "本地音乐"
+    MusicSource.BILIBILI -> "哔哩哔哩"
 }
 
 private fun Throwable.invalidSession(): Boolean =

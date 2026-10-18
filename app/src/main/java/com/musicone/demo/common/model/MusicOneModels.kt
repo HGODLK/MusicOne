@@ -7,6 +7,8 @@ enum class MusicSource(
     NETEASE("网易云音乐", 0xFFEC4141),
     QQ("QQ 音乐", 0xFF31C27C),
     KUGOU("酷狗音乐", 0xFF009AF3),
+    LOCAL("本地音乐", 0xFF9B8AC4),
+    BILIBILI("哔哩哔哩", 0xFFFB7299),
 }
 
 enum class MusicAccessBadge(val label: String) {
@@ -41,6 +43,9 @@ data class MusicTrack(
     val artistRefs: List<MusicArtist> = emptyList(),
     val albumMid: String = "",
     val qqAccess: QqTrackAccessInfo? = null,
+    val localUri: String = "",
+    val bilibiliBvid: String = "",
+    val bilibiliCid: Long = 0L,
 )
 
 internal fun MusicTrack.remoteId(): String = id.removePrefix(source.idPrefix)
@@ -52,6 +57,8 @@ private val MusicSource.idPrefix: String
         MusicSource.NETEASE -> "netease-"
         MusicSource.QQ -> "qq-"
         MusicSource.KUGOU -> "kugou-"
+        MusicSource.LOCAL -> "local-"
+        MusicSource.BILIBILI -> "bilibili-"
     }
 
 data class MusicPlaylist(
@@ -68,4 +75,5 @@ data class MusicPlaylist(
     val artworkUrl: String? = null,
     val qqDirectoryId: Long? = null,
     val isOwned: Boolean = false,
+    val isPlatformFavorites: Boolean = false,
 )

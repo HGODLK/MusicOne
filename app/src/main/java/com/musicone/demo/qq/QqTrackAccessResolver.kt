@@ -8,15 +8,17 @@ internal class QqTrackAccessResolver(
     private val details: (List<MusicTrack>, String) -> JSONObject = ::requestQqTrackAccess,
 ) {
     fun resolve(tracks: List<MusicTrack>, credential: String, fresh: Boolean = true,
-        metadataTrackIds: Set<String> = emptySet()): List<MusicTrack> {
+        metadataTrackIds: Set<String> = emptySet(), forceRefresh: Boolean = false): List<MusicTrack> {
         if (tracks.isEmpty()) return tracks
         val accountId = qqCredentialAccountId(credential)
         val member = membership(credential)
         val now = System.currentTimeMillis()
         val prepared = tracks.map { track ->
             if (track.source != MusicSource.QQ) return@map track
-            val raw = track.qqAccess ?: QqTrackAccessInfo(trial = track.trialAvailable)
-            val info = if (fresh && raw.payStatus != null && raw.permissionAccountId.isBlank()) {
+            val original = track.qqAccess ?: QqTrackAccessInfo(trial = track.trialAvailable)
+            // 强制核对失败时不能继续把旧账号、旧时刻的权限当成本次结果。
+            val raw = if (forceRefresh) original.copy(permissionAccountId = "", checkedAtMs = 0L) else original
+            val info = if (!forceRefresh && fresh && raw.payStatus != null && raw.permissionAccountId.isBlank()) {
                 raw.copy(permissionAccountId = accountId, checkedAtMs = now)
             } else raw
             track.copy(qqAccess = info).withQqAccess(accountId, member?.vip == true, member?.superVip == true)
@@ -26,13 +28,13 @@ internal class QqTrackAccessResolver(
         val missing = prepared.filter { track ->
             if (track.source != MusicSource.QQ) return@filter false
             val cached = QqEntitlements.cached(credential, track.id)
-            if (cached != null && !(fresh && track.qqAccess?.complete == true &&
+            if (!forceRefresh && cached != null && !(fresh && track.qqAccess?.complete == true &&
                     track.qqAccess.kind != cached.kind) && !(fresh && track.qqAccess?.payStatus != null &&
                     track.qqAccess.permissionAccountId == accountId)) {
                 resolved[track.id] = cached
                 if (track.id !in metadataTrackIds) return@filter false
             }
-            if (track.id in metadataTrackIds) return@filter true
+            if (forceRefresh || track.id in metadataTrackIds) return@filter true
             val info = track.qqAccess ?: return@filter true
             !info.complete || (accountId.isNotBlank() && track.accessBadge != null &&
                 (info.payStatus == null || info.permissionAccountId != accountId ||

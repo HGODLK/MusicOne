@@ -74,6 +74,11 @@ struct UsbAudioContext {
     int32_t bytesPerSample;
     int32_t bytesPerFrame;
     int32_t maxPacketSize;
+    int32_t packetsPerSecond;
+    int32_t busIntervalsPerSecond;
+    int32_t packetsPerUrb;
+    int32_t feedbackBytes;
+    int32_t feedbackFractionBits;
 
     std::atomic<bool> running;
 

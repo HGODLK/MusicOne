@@ -141,6 +141,9 @@ internal fun MusicTrack.toQqStoredTrackJson(): JSONObject = JSONObject()
     .put("mediaId", mediaId)
     .put("songMid", songMid)
     .put("albumMid", albumMid)
+    .put("localUri", localUri)
+    .put("bilibiliBvid", bilibiliBvid)
+    .put("bilibiliCid", bilibiliCid)
     .put("artistRefs", JSONArray().apply {
         artistRefs.forEach { put(JSONObject().put("mid", it.mid).put("name", it.name)) }
     })
@@ -182,6 +185,9 @@ internal fun JSONObject.toQqStoredTrack(): MusicTrack? = runCatching {
         mediaId = optString("mediaId"),
         songMid = optString("songMid"),
         albumMid = optString("albumMid"),
+        localUri = optString("localUri"),
+        bilibiliBvid = optString("bilibiliBvid"),
+        bilibiliCid = optLong("bilibiliCid"),
         artistRefs = optJSONArray("artistRefs")?.searchObjects().orEmpty().map {
             MusicArtist(it.optString("mid"), it.optString("name"))
         }.filter { it.mid.isNotBlank() && it.name.isNotBlank() },

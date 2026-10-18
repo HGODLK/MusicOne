@@ -11,13 +11,15 @@ enum class AudioQuality(
     EXHIGH("极高音质", "极高", 320_000, "exhigh"),
     LOSSLESS("无损音质", "无损", 999_000, "lossless"),
     HI_RES("Hi-Res", "Hi-Res", 1_999_000, "hires"),
-    DOLBY("Dolby 全景声", "Dolby", 768_000, "dolby");
+    DOLBY("Dolby全景", "Dolby", 768_000, "dolby");
 
     fun fallbackCandidates(): List<AudioQuality> = STANDARD_AUDIO_QUALITIES
         .filter { it.ordinal <= ordinal }
         .sortedByDescending(AudioQuality::ordinal)
 
-    fun fallbackCandidates(source: MusicSource): List<AudioQuality> = if (source == MusicSource.QQ) {
+    fun fallbackCandidates(source: MusicSource): List<AudioQuality> = if (source == MusicSource.BILIBILI) {
+        listOf(DOLBY, HI_RES, STANDARD).filter { it.ordinal <= ordinal }
+    } else if (source == MusicSource.QQ) {
         QQ_AUDIO_QUALITIES.filter { it.ordinal <= ordinal }.sortedByDescending(AudioQuality::ordinal)
     } else {
         fallbackCandidates()
@@ -40,6 +42,9 @@ internal data class PlaybackSource(
     val trial: Boolean,
     val actualFormat: String? = null,
     val verificationPending: Boolean = false,
+    val requestHeaders: Map<String, String> = emptyMap(),
+    val cacheKey: String? = null,
+    val mimeType: String? = null,
 )
 
 internal data class ResolvedPlayback(
@@ -58,6 +63,7 @@ internal val QQ_AUDIO_QUALITIES = listOf(
 internal val STANDARD_AUDIO_QUALITIES = AudioQuality.entries.filter { it != AudioQuality.DOLBY }
 
 internal val PLAYER_AUDIO_QUALITIES = listOf(
+    AudioQuality.DOLBY,
     AudioQuality.HI_RES,
     AudioQuality.LOSSLESS,
     AudioQuality.EXHIGH,
@@ -83,27 +89,35 @@ internal fun verifiedPlayerQualities(
 
 internal fun playerDisplayedQuality(preferred: AudioQuality, actual: AudioQuality): AudioQuality = when {
     actual == AudioQuality.HIGHER -> AudioQuality.EXHIGH
-    actual == AudioQuality.DOLBY -> AudioQuality.LOSSLESS
     else -> actual
 }
 
-internal fun AudioQuality.displayLabel(source: MusicSource): String = when (this) {
+internal fun AudioQuality.displayLabel(source: MusicSource): String = when {
+    source == MusicSource.BILIBILI && this == AudioQuality.STANDARD -> "普通"
+    else -> when (this) {
     AudioQuality.HI_RES -> "HiRes无损"
-    AudioQuality.LOSSLESS, AudioQuality.DOLBY -> "FLAC无损"
+    AudioQuality.LOSSLESS -> "FLAC无损"
+    AudioQuality.DOLBY -> "Dolby全景"
     AudioQuality.HIGHER, AudioQuality.EXHIGH -> "MP3高品质"
     AudioQuality.STANDARD -> "MP3标准"
+    }
 }
 
-internal fun AudioQuality.displayCompactLabel(source: MusicSource): String = when (this) {
+internal fun AudioQuality.displayCompactLabel(source: MusicSource): String = when {
+    source == MusicSource.BILIBILI && this == AudioQuality.STANDARD -> "NORM"
+    else -> when (this) {
     AudioQuality.HI_RES -> "HiRes"
-    AudioQuality.LOSSLESS, AudioQuality.DOLBY -> "FLAC"
+    AudioQuality.LOSSLESS -> "FLAC"
+    AudioQuality.DOLBY -> "Dolby"
     AudioQuality.HIGHER, AudioQuality.EXHIGH -> "MP3H"
     AudioQuality.STANDARD -> "MP3L"
+    }
 }
 
 internal fun AudioQuality.displayDescription(): String = when (this) {
     AudioQuality.HI_RES -> "最高24bit/192KHz"
-    AudioQuality.LOSSLESS, AudioQuality.DOLBY -> "最高24bit/48KHz"
+    AudioQuality.LOSSLESS -> "最高24bit/48KHz"
+    AudioQuality.DOLBY -> "杜比音源 · 输出效果取决于设备"
     AudioQuality.HIGHER, AudioQuality.EXHIGH -> "最高320kbps"
     AudioQuality.STANDARD -> "普通音质"
 }

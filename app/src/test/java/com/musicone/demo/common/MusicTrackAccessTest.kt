@@ -5,9 +5,26 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONObject
 
 class MusicTrackAccessTest {
-    @Test fun playerUsesFourUnifiedQualityLevelsAndIndependentHiRes() {
+    @Test fun missingKugouHashRemainsRetryableForResourceRecovery() {
+        val track = JSONObject().put("MixSongID", "12345").put("SongName", "失效歌曲")
+            .toKugouTrack(hasVipAccess = true)
+        assertEquals("kugou-missing-12345", track.id)
+        assertTrue(track.playable)
+        assertNull(track.unavailableReason)
+    }
+
+    @Test fun numericQqSongWithoutMidRemainsEligibleForMetadataRecovery() {
+        val track = JSONObject().put("songid", 12345).put("songname", "可补全歌曲")
+            .put("pay", JSONObject().put("pay_play", 0)).toQqTrack()
+        assertEquals("qq-12345", track.id)
+        assertEquals("", track.qqPlaybackMid())
+        assertTrue(track.playable)
+    }
+
+    @Test fun playerUsesIndependentHiResAndDolbyQualityLevels() {
         assertEquals(
             listOf(
                 AudioQuality.STANDARD,
@@ -18,7 +35,7 @@ class MusicTrackAccessTest {
             ),
             QQ_AUDIO_QUALITIES,
         )
-        assertEquals(listOf(AudioQuality.HI_RES, AudioQuality.LOSSLESS, AudioQuality.EXHIGH,
+        assertEquals(listOf(AudioQuality.DOLBY, AudioQuality.HI_RES, AudioQuality.LOSSLESS, AudioQuality.EXHIGH,
             AudioQuality.STANDARD), PLAYER_AUDIO_QUALITIES)
         assertEquals("MP3标准", AudioQuality.STANDARD.displayLabel(MusicSource.QQ))
         assertEquals("MP3高品质", AudioQuality.EXHIGH.displayLabel(MusicSource.QQ))
@@ -308,11 +325,11 @@ class MusicTrackAccessTest {
         assertFalse(access.trialAvailable)
     }
 
-    @Test fun qqStandaloneTrackShowsPaid() {
+    @Test fun qqStandalonePriceShowsPaidButDoesNotProvePlaybackDenial() {
         val access = qqTrackAccess(requiresPayment = true, monthly = false, price = 200, trialAvailable = false)
 
         assertEquals(MusicAccessBadge.PAID, access.badge)
-        assertFalse(access.playable)
+        assertTrue(access.playable)
     }
 
     @Test fun qqVipEntitlementOnlyRemovesVipMarker() {

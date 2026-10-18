@@ -73,7 +73,7 @@ internal object NeteaseProfileBackgroundStore {
             ?.toString()
 
     suspend fun loadPreview(context: Context, source: Uri): Bitmap? = withContext(Dispatchers.IO) {
-        runCatching { decodeForScreen(context, source) }.getOrNull()
+        runCatchingCancellable { decodeForScreen(context, source) }.getOrNull()
     }
 
     suspend fun saveCrop(
@@ -94,8 +94,8 @@ internal object NeteaseProfileBackgroundStore {
     }
 
     suspend fun import(context: Context, source: Uri): Boolean = withContext(Dispatchers.IO) {
-        runCatching {
-            val bitmap = decodeForScreen(context, source) ?: return@runCatching false
+        runCatchingCancellable {
+            val bitmap = decodeForScreen(context, source) ?: return@runCatchingCancellable false
             try {
                 val aspect = context.resources.displayMetrics.run { widthPixels.toFloat() / heightPixels.coerceAtLeast(1) }
                 saveCrop(context, NeteaseBackgroundTarget.Global, bitmap, NeteaseCropSelection(aspectRatio = aspect))
@@ -131,22 +131,24 @@ internal object NeteaseProfileBackgroundStore {
     private fun writeBitmap(target: File, bitmap: Bitmap): Boolean {
         target.parentFile?.mkdirs()
         val temporary = File(target.parentFile, "${target.name}.tmp")
-        return runCatching {
-            FileOutputStream(temporary).use { output ->
-                val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    Bitmap.CompressFormat.WEBP_LOSSY
-                } else {
-                    @Suppress("DEPRECATION")
-                    Bitmap.CompressFormat.WEBP
+        return try {
+            runCatchingCancellable {
+                FileOutputStream(temporary).use { output ->
+                    val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        Bitmap.CompressFormat.WEBP_LOSSY
+                    } else {
+                        @Suppress("DEPRECATION")
+                        Bitmap.CompressFormat.WEBP
+                    }
+                    check(bitmap.compress(format, 90, output)) { "背景图压缩失败" }
                 }
-                check(bitmap.compress(format, 90, output)) { "背景图压缩失败" }
-            }
-            if (!temporary.renameTo(target)) {
-                target.delete()
-                check(temporary.renameTo(target)) { "背景图保存失败" }
-            }
-            true
-        }.onFailure { temporary.delete() }.getOrDefault(false)
+                if (!temporary.renameTo(target)) {
+                    target.delete()
+                    check(temporary.renameTo(target)) { "背景图保存失败" }
+                }
+                true
+            }.getOrDefault(false)
+        } finally { temporary.delete() }
     }
 
     private fun decodeForScreen(context: Context, source: Uri): Bitmap? {

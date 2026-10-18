@@ -43,6 +43,9 @@ internal class QqLibraryViewModel(application: Application) : AndroidViewModel(a
     private val collectionJobs = mutableMapOf<String, Job>()
     private var favoriteChanges: Map<String, Pair<MusicTrack, Boolean>> = emptyMap()
     private val favoriteSnapshot = QqFavoritePlaylistSnapshot()
+    private val snapshots = QqLibrarySnapshotStore(application)
+    private var configuredNamespace = ""
+    private var restoreJob: Job? = null
 
     fun syncFavoriteChanges(changes: Map<String, Pair<MusicTrack, Boolean>>) {
         favoriteChanges = changes
@@ -65,6 +68,8 @@ internal class QqLibraryViewModel(application: Application) : AndroidViewModel(a
                         it.copy(collectedPlaylists = if (collected) listOf(playlist) + remaining else remaining,
                             loadingCollected = false)
                     }
+                    val playlists = _state.value.collectedPlaylists
+                    withContext(Dispatchers.IO) { snapshots.saveCollected(session, playlists) }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -80,20 +85,37 @@ internal class QqLibraryViewModel(application: Application) : AndroidViewModel(a
         val key = "$source\n$sessionRevision"
         if (key == configurationKey) return
         configurationKey = key
+        restoreJob?.cancel()
         favoritesJob?.cancel()
         createdJob?.cancel()
         collectedJob?.cancel()
         collectionJobs.values.forEach { it.cancel() }
         collectionJobs.clear()
-        favoriteChanges = emptyMap()
-        favoriteSnapshot.clear()
         val session = preferences.readSession(MusicSource.QQ)
         val signedIn = source == MusicSource.QQ && session.credential.isNotBlank() && session.account != null
-        _state.value = QqLibraryUiState(signedIn = signedIn)
+        val sameAccount = signedIn && configuredNamespace == session.cacheNamespace()
+        configuredNamespace = if (signedIn) session.cacheNamespace() else ""
+        if (!sameAccount) {
+            favoriteChanges = emptyMap()
+            favoriteSnapshot.clear()
+        }
+        // 同账号续期只更新请求归属，不能先清空已显示的目录。
+        _state.value = if (sameAccount) _state.value.copy(
+            loadingFavorites = false, loadingCreated = false, loadingCollected = false,
+            updatingCollections = emptySet(), collectionMessage = null,
+        ) else QqLibraryUiState(signedIn = signedIn)
         if (!signedIn) return
-        loadFavorites(session, key)
-        loadCreated(session, key)
-        loadCollected(session, key)
+        restoreJob = viewModelScope.launch {
+            if (!sameAccount) {
+                val cached = withContext(Dispatchers.IO) { snapshots.read(session) }
+                if (key != configurationKey) return@launch
+                cached.favoritePlaylist?.let(favoriteSnapshot::record)
+                _state.value = cached.copy(favoritePlaylist = favoriteSnapshot.present(favoriteChanges))
+            }
+            loadFavorites(session, key)
+            loadCreated(session, key)
+            loadCollected(session, key)
+        }
     }
 
     fun refresh() {
@@ -105,6 +127,7 @@ internal class QqLibraryViewModel(application: Application) : AndroidViewModel(a
     }
 
     private fun refresh(forceArtworkIds: Set<String>) {
+        if (restoreJob?.isActive == true) return
         val session = preferences.readSession(MusicSource.QQ)
         if (!_state.value.signedIn || session.account == null) return
         loadFavorites(session, configurationKey, forceArtworkIds)
@@ -124,9 +147,9 @@ internal class QqLibraryViewModel(application: Application) : AndroidViewModel(a
             try {
                 val playlist = withContext(Dispatchers.IO) {
                     playlistArtworkAliases.resolve(
-                        client.favoritePlaylist(session.credential, account.userId, account.hasVipAccess),
+                        client.favoritePlaylistPage(session.credential, account.userId, account.hasVipAccess).playlist,
                         session.credential,
-                    )
+                    ).also { snapshots.saveFavorites(session, it) }
                 }
                 if (requestedKey == configurationKey) {
                     favoriteSnapshot.record(playlist)
@@ -164,7 +187,9 @@ internal class QqLibraryViewModel(application: Application) : AndroidViewModel(a
         createdJob = viewModelScope.launch {
             _state.update { it.copy(loadingCreated = true, createdMessage = null) }
             try {
-                val playlists = withContext(Dispatchers.IO) { client.createdPlaylists(session.credential, account.userId) }
+                val playlists = withContext(Dispatchers.IO) {
+                    client.createdPlaylists(session.credential, account.userId).also { snapshots.saveCreated(session, it) }
+                }
                 if (requestedKey == configurationKey) {
                     _state.update { state -> state.copy(
                         createdPlaylists = playlists,
@@ -198,7 +223,7 @@ internal class QqLibraryViewModel(application: Application) : AndroidViewModel(a
             _state.update { it.copy(loadingCollected = true, collectedMessage = null) }
             try {
                 val playlists = withContext(Dispatchers.IO) {
-                    client.collectedPlaylists(session.credential, account.userId)
+                    client.collectedPlaylists(session.credential, account.userId).also { snapshots.saveCollected(session, it) }
                 }
                 if (requestedKey == configurationKey) {
                     _state.update { state -> state.copy(
@@ -251,7 +276,9 @@ internal fun MusicPlaylist.withFavoriteChanges(changes: Map<String, Pair<MusicTr
         .filterNot { changes[it.id]?.second == false }
         // 已存在的远端收藏也要采用本地刚补全的封面，不能只在新增行时使用变更对象。
         .map { track -> changes[track.id]?.takeIf { it.second }?.first ?: track }
-    val additions = changes.values.filter { (track, liked) -> liked && kept.none { it.id == track.id } }.map { it.first }
+    val additions = changes.values.filter { (track, liked) ->
+        liked && track.source == source && kept.none { it.id == track.id }
+    }.map { it.first }
     val updated = additions + kept
     return copy(tracks = updated, count = (count + updated.size - tracks.size).coerceAtLeast(0))
 }

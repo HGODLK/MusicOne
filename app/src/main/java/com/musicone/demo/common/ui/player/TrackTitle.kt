@@ -35,6 +35,7 @@ internal fun TrackTitle(
     primaryTitleOnly: Boolean = false,
     style: TextStyle = MaterialTheme.typography.titleSmall,
 ) {
+    val displayed = displayedPlaybackTrack(track)
     val resolvedStyle = style.copy(
         fontSize = fontSize ?: style.fontSize,
         fontWeight = fontWeight ?: style.fontWeight,
@@ -47,7 +48,8 @@ internal fun TrackTitle(
             modifier = Modifier.weight(1f, fill = false)
                 .then(if (marquee) Modifier.basicMarquee(iterations = if (marqueeRunning) Int.MAX_VALUE else 0) else Modifier),
             style = resolvedStyle,
-            color = color,
+            color = if (!displayed.playable)
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .5f) else color,
             maxLines = 1,
             overflow = overflow,
         )

@@ -23,7 +23,7 @@ internal fun PlatformMyScreen(
     onPlayQqPlaylist: (MusicPlaylist) -> Unit,
     onChooseSource: () -> Unit,
 ) {
-    if (sessionStatus != SessionStatus.CONNECTED) {
+    if (source != MusicSource.QQ && source != MusicSource.LOCAL && !canShowPlatformLibrary(source, account, sessionStatus)) {
         PlatformSignedOutScreen(
             MusicOnePage.MY,
             source,
@@ -62,5 +62,6 @@ internal fun PlatformMyScreen(
             onOpenPlaylist,
             onRefreshQqLibrary,
         )
+        MusicSource.LOCAL, MusicSource.BILIBILI -> Unit
     }
 }

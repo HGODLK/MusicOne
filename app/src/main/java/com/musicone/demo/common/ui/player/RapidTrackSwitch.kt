@@ -1,6 +1,7 @@
 package com.musicone.demo
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -22,6 +23,7 @@ internal data class RapidTrackSwitchPresentation(
     val phase: RapidTrackSwitchPhase,
     val lyricsAvailable: Boolean,
     val token: Long,
+    val lyricsResolved: Boolean = lyricsAvailable,
 )
 
 /** QQ 可见歌词的单次切歌也先交接；连续切歌只提交完成收束的最终歌曲。 */
@@ -105,10 +107,12 @@ internal class RapidTrackSwitch(
         )
         if (target.lyrics.isEmpty()) {
             cacheJob = scope.launch {
-                val lyrics = cachedLyrics(target)
-                if (lyrics.isNotEmpty() && mutablePresentation.value?.token == requestToken) {
+                val lyrics = try { cachedLyrics(target) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { emptyList() }
+                if ((lyrics.isNotEmpty() || target.source.supportsLibraryEditing) && mutablePresentation.value?.token == requestToken) {
                     mutablePresentation.update { current ->
-                        current?.copy(track = target.copy(lyrics = lyrics), lyricsAvailable = true)
+                        current?.copy(track = target.copy(lyrics = lyrics), lyricsAvailable = lyrics.isNotEmpty(), lyricsResolved = true)
                     }
                 }
             }

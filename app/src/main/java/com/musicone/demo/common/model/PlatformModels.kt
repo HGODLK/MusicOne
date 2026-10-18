@@ -51,4 +51,6 @@ internal enum class SettingsDestination {
     PLATFORM_LOGIN,
     CACHED_MUSIC,
     CACHED_PLAYLIST,
+    MUSIC_LIBRARY,
+    SUPPLEMENTAL,
 }

@@ -11,6 +11,7 @@ internal class CachedPlaybackDataSource(
     private val cached: DataSource.Factory,
     private val streaming: DataSource.Factory,
     private val onReadFinished: () -> Unit = {},
+    private val direct: DataSource.Factory? = null,
 ) : DataSource {
     private var reader: DataSource? = null
     private val listeners = mutableListOf<TransferListener>()
@@ -22,7 +23,8 @@ internal class CachedPlaybackDataSource(
 
     override fun open(dataSpec: DataSpec): Long {
         val key = offlinePlaybackKey(dataSpec.uri.toString())
-        val source = (if (key != null) cached else streaming).createDataSource()
+        val factory = if (key != null) cached else if (dataSpec.uri.scheme !in listOf("http", "https") && direct != null) direct else streaming
+        val source = factory.createDataSource()
         reader = source
         listeners.forEach(source::addTransferListener)
         return source.open(if (key == null) dataSpec else dataSpec.buildUpon().setKey(key).build())

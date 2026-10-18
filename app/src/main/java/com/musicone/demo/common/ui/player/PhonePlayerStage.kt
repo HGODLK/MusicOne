@@ -52,19 +52,26 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
         PHONE_LYRICS_TOP_GLASS_LIMIT.toPx(), 8.dp.toPx()) }
     val readingBounds = LyricReadingBounds(topGlass.clearStart,
         navigationExtension + controlsHeightPx() + with(density) { PLAYER_CONTROLS_WIDENED_BLUR_HEIGHT.toPx() })
-    val lyricExitAlignment = remember(lyrics) {
-        if (lyrics) null else CompletableDeferred<Unit>()
+    val residentLyrics = LocalPlayerResourcePreparationAllowed.current
+    val lyricExitAlignment = remember(lyrics, residentLyrics) {
+        if (lyrics || residentLyrics) null else CompletableDeferred<Unit>()
     }
-    val lyricsMotion = rememberPhoneLyricsMotion(lyrics, lyricExitAlignment)
-    val latestPrewarming by rememberUpdatedState(prewarming)
+    val lyricsMotion = rememberPhoneLyricsMotion(lyrics, lyricExitAlignment, playerVisible,
+        prepareOpening = !residentLyrics)
+    val drawingAtRest = remember(lyricsMotion, playerVisible, lyrics, prewarming) {
+        derivedStateOf { prewarming || phoneLyricsStandby(playerVisible, lyrics, lyricsMotion.lyricsProgress,
+            lyricsMotion.headerProgress, lyricsMotion.dragging) }
+    }
+    val drawAtRest by drawingAtRest
+    val residency = rememberLyricResidency(residentLyrics,
+        playerVisible && motion.phase == MotionPhase.SHOWN && motion.wantsOpen && state.playerExpanded,
+        drawAtRest || !playerVisible)
+    val latestDrawingAtRest by rememberUpdatedState(drawingAtRest)
+    // 图层放置、玻璃遮罩和文字边界在绘制时共读待命状态，避免各自沿用旧坐标。
     val boundaryWindow = remember(lyricsMotion, lyricTopExtension) {
         LyricBoundaryWindow(lyricTopExtension.toFloat(),
-            offset = { if (latestPrewarming) 0f else lyricsMotion.windowOffsetPx },
-            velocity = { if (latestPrewarming) 0f else lyricsMotion.windowVelocityPxPerSecond })
-    }
-    lyricsMotion.expectOpeningTrack(track.source, track.id)
-    val recordOpeningFront = remember(lyricsMotion, track.source, track.id) {
-        { front: PhoneLyricsOpeningFront -> lyricsMotion.recordOpeningFront(track.source, track.id, front) }
+            offset = { if (latestDrawingAtRest.value) 0f else lyricsMotion.windowOffsetPx },
+            velocity = { if (latestDrawingAtRest.value) 0f else lyricsMotion.windowVelocityPxPerSecond })
     }
     val recordWindowLayout = remember(lyricsMotion, density, spec.mode) {
         { layout: androidx.compose.foundation.lazy.LazyListLayoutInfo, protection: LyricBlurProtection ->
@@ -90,6 +97,8 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
     } else Modifier.graphicsLayer {
         alpha = if (motion.moving && motion.sourceSnapshot[key] != null && motion.targetSnapshot[key] != null) 0f else 1f
     }
+    val informationMenuEnabled = playerInformationMenuEnabled(actionTrack.source, lyrics,
+        lyricsMotion.lyricsProgress, lyricsMotion.headerProgress, lyricsMotion.dragging)
     // 同一份封面、文字、爱心和歌词始终保留，只在放置阶段改变位置与图层缩放。
     Layout(modifier = modifier.onGloballyPositioned {
         origin = it.positionInRoot()
@@ -101,13 +110,15 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
         PlayerArtwork(visualTrack, motion,
             shared("cover").clickable(enabled = lyrics, onClickLabel = "收起歌词", onClick = onLyricsDismiss),
             110.sp, artworkShape)
-        TrackTitle(visualTrack, modifier = shared("title", text = true).playerRelatedInformation(actionTrack, !lyrics && lyricsMotion.lyricsProgress == 0f),
+        TrackTitle(visualTrack, modifier = shared("title", text = true).playerRelatedInformation(actionTrack, informationMenuEnabled)
+            .onlineLyricOffset(actionTrack, lyrics && lyricsMotion.lyricsProgress == 1f &&
+                lyricsMotion.headerProgress == 1f && !lyricsMotion.dragging),
             style = MusicOneTextStyles.playerTitle.copy(fontSize = spec.titleSize),
             color = ink, marquee = true, marqueeRunning = textMarquee,
             badgeOnDark = ink.luminance() > .5f, showBadges = false, primaryTitleOnly = true)
         Text(musicOneUiAnnotatedString(playerPrimaryArtists(visualTrack.artists)), style = MusicOneTextStyles.playerArtist.copy(fontSize = spec.artistSize),
             color = ink.copy(alpha = .62f), maxLines = 1,
-            modifier = shared("subtitle", text = true).playerRelatedInformation(actionTrack, !lyrics && lyricsMotion.lyricsProgress == 0f)
+            modifier = shared("subtitle", text = true).playerRelatedInformation(actionTrack, informationMenuEnabled)
                 .basicMarquee(iterations = if (textMarquee) Int.MAX_VALUE else 0))
         AnimatedFavoriteButton(visualTrack.id in favorites.state.ids, { favorites.toggle(actionTrack) },
             Modifier.playerDetailReveal(motion))
@@ -123,20 +134,21 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
                     bottomExtension = navigationExtension,
                     topExtension = lyricTopExtension,
                     topBuffer = lyricTopExtension,
-                    windowMotionOffset = { if (prewarming) 0f else lyricsMotion.windowOffsetPx },
+                    windowMotionOffset = boundaryWindow.offset,
                     focusProtection = { lyricsMotion.spatialTravel.blurProtection },
                     topGlass = topGlass,
-                ).padding(horizontal = contentHorizontalPadding)
+                ).lyricResidentRefresh(residency).padding(horizontal = contentHorizontalPadding)
                     .then(if (lyrics) Modifier else Modifier.clearAndSetSemantics { }),
                 active = playerVisible && (lyrics || lyricsMotion.lyricsProgress > .0005f),
-                followPlayback = playerVisible && lyrics && !lyricsMotion.dragging && lyricsMotion.lyricsProgress == 1f && lyricsMotion.headerProgress == 1f,
+                followPlayback = playerVisible && lyrics && !lyricsMotion.dragging,
                 animateTrackChange = playerVisible && !lyricsMotion.dragging,
                 // 手势展开时尚未提交 lyrics，不能被关闭态的旧对齐请求挡住。
                 exitAlignment = if (lyricsMotion.dragging && !lyrics) null else lyricExitAlignment,
                 openingAlignment = lyricsMotion.openingAlignment,
-                prepareWhileHidden = prewarming || (playerVisible && !lyrics && lyricsMotion.lyricsProgress == 0f && !lyricsMotion.dragging),
-                revealTopLineBeforeEntrance = true,
-                limitTransitionHistory = true,
+                prepareWhileHidden = drawAtRest && !residentLyrics,
+                revealTopLineBeforeEntrance = !residentLyrics,
+                limitTransitionHistory = !residentLyrics,
+                residency = residency,
                 topExtensionPx = lyricTopExtension,
                 topBufferPx = lyricTopExtension,
                 readingBounds = readingBounds,
@@ -151,7 +163,6 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
                     lyricsMotion.entranceProgress > 0f && lyricsMotion.entranceProgress < 1f,
                 trackTransitionDirection = state.trackTransitionDirection,
                 onWindowLayout = recordWindowLayout,
-                onOpeningFront = recordOpeningFront,
             )
         } else {
             Box(Modifier.fillMaxSize())
@@ -178,23 +189,9 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
         val cover = children[0].measure(Constraints.fixed(coverSide, coverSide))
         val title = children[1].measure(Constraints(maxWidth = textWidth))
         val artist = children[2].measure(Constraints(maxWidth = textWidth))
-        lyricsMotion.contactProgress = lyricsContactProgress(
-            (height + lyricTopExtension).toFloat(), header.toFloat(),
-            coverContentHeight - infoHeight + 8.dp.toPx() + title.height + artist.height,
-        )
         val heart = children[3].measure(Constraints.fixed(heartSize, heartSize))
         val lines = children[4].measure(Constraints.fixed(width,
             (height - header + lyricTopExtension).coerceAtLeast(1)))
-        val closedTitleTop = coverContentHeight - infoHeight + 8.dp.roundToPx()
-        val closedSide = coverSide * playingScale.value
-        val informationBottom = maxOf(closedTitleTop + title.height + artist.height.toFloat(),
-            closedTitleTop + heartSize.toFloat(), (coverContentHeight - infoHeight + closedSide) / 2f)
-        val compactBottom = maxOf(10.dp.toPx() + compactSide,
-            15.dp.toPx() + (title.height + artist.height) * .9f, 17.dp.toPx() + heartSize)
-        lyricsMotion.openingStage = PhoneLyricsOpeningStage(
-            phoneLyricsWindowTop(height, header, lyricTopExtension, 0f, false, lyricTopExtension,
-                lyricsMotion.dragTravelPx).toFloat() - lyricTopExtension,
-            informationBottom, informationBottom - compactBottom, lyricsMotion.dragTravelPx, density.density)
         layout(width, height) {
             val p = lyricsMotion.headerProgress
             val side = motionLerp(coverSide * playingScale.value, compactSide, p)
@@ -223,8 +220,11 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
             anchor("subtitle", titleX, artistY, artist.width * textScale, artist.height * textScale,
                 contentScale = textScale, textSizeSp = spec.artistSize.value)
             // 先绘制扩展到屏幕顶端的歌词，再盖上原位的封面、标题和收藏按钮。
-            lines.placeWithLayer(0, phoneLyricsWindowTop(height, header, lyricTopExtension,
-                lyricsMotion.lyricsProgress, prewarming, lyricTopExtension, lyricsMotion.windowOffsetPx))
+            // 固定阅读槽位，位移与歌词遮罩都在图层阶段读取当前进度，首帧从屏外接入。
+            lines.placeWithLayer(0, header - lyricTopExtension) {
+                // 完全关闭时在原阅读槽录制真实歌词；既有玻璃层只记录来源，不输出像素。
+                translationY = boundaryWindow.offset()
+            }
             cover.placeWithLayer(coverX.roundToInt(), coverY.roundToInt()) {
                 transformOrigin = TransformOrigin(0f, 0f)
                 scaleX = side / coverSide; scaleY = side / coverSide

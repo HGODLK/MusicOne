@@ -26,6 +26,20 @@ class PlaylistPullGestureTest {
         assertFalse(playlistPullShouldClose(4f, 500f, 6f))
     }
 
+    @Test fun menuReturnUsesTheHostHeightEvenWhenTheGestureIsOnASmallCover() {
+        assertEquals(520f, playlistPullTravel(240f, 800f, true), .001f)
+        assertEquals(520f, playlistPullTravel(800f, 800f, true), .001f)
+        assertEquals(156f, playlistPullTravel(240f, 800f, false), .001f)
+        assertEquals(156f, playlistPullTravel(240f, 0f, true), .001f)
+    }
+
+    @Test fun tabletArtistOnlyClosesFromTheInformationPane() {
+        assertTrue(artistPullRegionAllowed(true, 429f, 1000))
+        assertFalse(artistPullRegionAllowed(true, 430f, 1000))
+        assertFalse(artistPullRegionAllowed(true, 800f, 1000))
+        assertTrue(artistPullRegionAllowed(false, 800f, 1000))
+    }
+
     @Test fun offscreenCoverRemainsMountedAndReturnsContinuouslyAfterRelease() = checkOffscreenReturn(false)
     @Test fun cancelledOffscreenPullReboundsContinuouslyToOriginalCover() = checkOffscreenReturn(true)
 

@@ -24,6 +24,7 @@ internal fun PlatformMusicTheme(
         MusicSource.NETEASE -> NeteaseMusicThemeColor
         MusicSource.QQ -> QqMusicThemeColor
         MusicSource.KUGOU -> KugouMusicThemeColor
+        MusicSource.LOCAL, MusicSource.BILIBILI -> Color(source.accent)
     }
     val dark = MaterialTheme.colorScheme.background == MusicOneDarkColors.background
     val accent = if (neutral) { if (dark) MusicOneDarkColors.primary else MusicOneNeutralAccent }

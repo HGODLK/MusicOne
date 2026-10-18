@@ -35,7 +35,7 @@ class LyricTransitionHistoryTest {
         assertEquals(7, lyricTransitionHistoryStart(8, null, null, null, null, 1f))
     }
 
-    @Test fun heldReversalKeepsWholeParagraphsAndExpandedBrowsingRestoresAllHistory() {
+    @Test fun contextSurvivesReversalAndSeekDropsTheOldPreparation() {
         val layout = proxy<LazyListLayoutInfo>(mapOf(
             "getViewportSize-YbymL2g" to ((390L shl 32) or 900L),
             "getVisibleItemsInfo" to (3..10).map { index ->
@@ -44,17 +44,18 @@ class LyricTransitionHistoryTest {
         ))
         val history = LyricTransitionHistory()
         val density = Density(1f)
-        history.prepare(layout, 8, density)
+        val first = history.prepare(layout, 8, density)
+        val context = LyricOpeningContext(first, layout)
+        history.prepareOpening(context)
         for (progress in listOf(.01f, .4f, .8f, .4f)) {
-            history.update({ layout }, 8, density, progress, enabled = true)
-            assertEquals(listOf(6, 7), (3 until 8).filter(history::draws))
-            assertTrue(history.draws(8))
-            assertTrue(history.draws(9))
+            history.update(progress, enabled = true)
+            assertSame(context, history.openingContext)
         }
-        history.update({ layout }, 8, density, 1f, enabled = true)
-        assertTrue((3..10).all(history::draws))
-        history.update({ layout }, 8, density, .4f, enabled = false)
-        assertTrue((3..10).all(history::draws))
+        history.releaseForSeek()
+        assertNull(history.openingContext)
+        history.prepareOpening(context)
+        history.update(.4f, enabled = false)
+        assertNull(history.openingContext)
     }
 
     private inline fun <reified T> proxy(values: Map<String, Any>): T =

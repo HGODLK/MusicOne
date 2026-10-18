@@ -21,9 +21,9 @@ class NavigationCapsuleSelectionTest {
 
     @Test fun allPlatformColorsAreTranslucentWhileNeutralRemainsUnchanged() {
         listOf(NeteaseMusicThemeColor, QqMusicThemeColor, KugouMusicThemeColor).forEach { color ->
-            assertTrue(navigationCapsuleSelectionColor(false, color, null).alpha in .54f.. .58f)
+            assertTrue(navigationCapsuleSelectionColor(false, color).alpha in .54f.. .58f)
         }
-        assertEquals(MusicOneNeutralContainer, navigationCapsuleSelectionColor(true, MusicOneNeutralContainer, Color.Red))
-        assertTrue(navigationCapsuleSelectionColor(false, Color.Red, Color.White).alpha in .22f.. .26f)
+        assertEquals(MusicOneNeutralContainer, navigationCapsuleSelectionColor(true, MusicOneNeutralContainer))
+        assertEquals(NeteaseMusicThemeColor.copy(alpha = .56f), navigationCapsuleSelectionColor(false, NeteaseMusicThemeColor))
     }
 }

@@ -4,17 +4,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PhoneLyricsSpatialTravelTest {
-    @Test fun entranceAlignmentCannotReverseTheCombinedScreenTravelWhileHeaderWaits() {
-        for (contact in listOf(.4f, .55f, .59f, .7f)) {
+    @Test fun entranceAlignmentKeepsCombinedScreenTravelMonotonicAcrossLayouts() {
+        for (travel in listOf(480f, 922f, 1600f)) {
             for (origin in listOf(-220f, -292f, 73f)) {
                 val alignment = LyricEntranceTravel(0f, origin)
                 val positions = (0..100).map { step ->
                     val p = step / 100f
-                    val offset = phoneLyricsSpatialWindowOffset(922f, p,
-                        lyricsDragHeaderProgress(p, 0f, 0f, contact), 418f, 6f)
-                    offset + alignment.remainingOffset(phoneLyricsEntranceProgress(offset, 922f))
+                    val offset = phoneLyricsSpatialWindowOffset(travel, p,
+                        lyricsDragHeaderProgress(p, 0f, 0f), 418f, 6f)
+                    offset + alignment.remainingOffset(phoneLyricsEntranceProgress(offset, travel))
                 }
-                assertTrue("页眉等待期间合成位置不能向下回退", positions.zipWithNext().all { (a, b) -> b <= a + .001f })
+                assertTrue("连续让位期间合成位置不能向下回退", positions.zipWithNext().all { (a, b) -> b <= a + .001f })
                 assertEquals(0f, positions.last(), .001f)
             }
         }
@@ -73,7 +73,7 @@ class PhoneLyricsSpatialTravelTest {
     @Test fun lyricsEnterFromTheFirstMovementAndReversalRetracesTheSamePosition() {
         val positions = (0..100).map { step ->
             val p = step / 100f
-            phoneLyricsSpatialWindowOffset(940f, p, lyricsDragHeaderProgress(p, 0f, 0f, .4f), 164f, 6f)
+            phoneLyricsSpatialWindowOffset(940f, p, lyricsDragHeaderProgress(p, 0f, 0f), 164f, 6f)
         }
         assertTrue(positions[1] < positions[0])
         assertTrue(positions.zipWithNext().all { (before, after) -> after <= before })
@@ -88,7 +88,6 @@ class PhoneLyricsSpatialTravelTest {
         motion.dragTravelPx = 940f
         motion.controlsSpacePx = 296f
         motion.spatialTravel.recordHeight(164f, 6f)
-        motion.contactProgress = .95f
         motion.beginDrag()
         motion.dragTo(.85f)
         val clearExposed = motion.dragTravelPx - motion.windowOffsetPx - motion.controlsSpacePx
@@ -105,7 +104,7 @@ class PhoneLyricsSpatialTravelTest {
             for (step in 0..100) for (hidden in listOf(0f, .5f, 1f)) {
                 val p = step / 100f
                 val offset = phoneLyricsSpatialWindowOffset(distance, p,
-                    lyricsDragHeaderProgress(p, 0f, 0f, .4f), 164f, 6f)
+                    lyricsDragHeaderProgress(p, 0f, 0f), 164f, 6f)
                 val windowTop = phoneLyricsWindowTop(height, header, buffer, p, false, buffer, offset)
                 for (navigation in listOf(0, 48, 96)) {
                     val localBoundary = playerControlsBlurBoundary(distance + navigation,

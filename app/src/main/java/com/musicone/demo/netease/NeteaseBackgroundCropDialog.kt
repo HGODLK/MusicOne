@@ -127,7 +127,7 @@ internal fun NeteaseBackgroundCropDialog(
 }
 
 @Composable
-private fun NeteaseCropViewport(
+internal fun NeteaseCropViewport(
     bitmap: Bitmap,
     selection: MutableState<NeteaseCropSelection>,
     modifier: Modifier,

@@ -159,7 +159,7 @@ internal fun PlaylistPlaybackActions(
             Spacer(Modifier.width(6.dp))
             Text("播放", fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
-        if (source == MusicSource.QQ) QqPlaylistSortButton(sort, onSort) else PlaylistSortButton(sort, onSort)
+        QqPlaylistSortButton(sort, onSort)
     }
 }
 

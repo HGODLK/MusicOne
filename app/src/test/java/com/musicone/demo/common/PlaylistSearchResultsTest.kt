@@ -4,6 +4,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PlaylistSearchResultsTest {
+    @Test fun unchangedLongListReusesRowsWhenOnlyPlaybackStateRecomposes() {
+        val tracks = (1..2_000).map { track(it.toString()) }
+        val results = PlaylistSearchResults(tracks)
+        val rows = results.rows
+        repeat(50) { results.update(tracks, false) }
+        assertSame(rows, results.rows)
+        results.update(tracks + track("last"), false)
+        assertEquals(2_001, results.rows.size)
+    }
+
     private fun track(id: String, title: String = id) = MusicTrack(
         id, MusicSource.QQ, title, "歌手", "专辑", 1_000L, 0L, 0L, "", "",
     )

@@ -20,6 +20,8 @@ internal class SettingsNavigation {
     fun openCachedPlaylist(id: String) { cachedPlaylistId = id; destination = SettingsDestination.CACHED_PLAYLIST }
 
     fun openSources() { destination = SettingsDestination.SOURCES }
+    fun openLibrary() { destination = SettingsDestination.MUSIC_LIBRARY }
+    fun openSupplemental() { destination = SettingsDestination.SUPPLEMENTAL }
 
     fun openSettings() {
         destination = SettingsDestination.SETTINGS
@@ -40,6 +42,7 @@ internal class SettingsNavigation {
         destination = when (destination) {
             SettingsDestination.CACHED_PLAYLIST -> SettingsDestination.CACHED_MUSIC
             SettingsDestination.CACHED_MUSIC -> SettingsDestination.SETTINGS
+            SettingsDestination.MUSIC_LIBRARY, SettingsDestination.SUPPLEMENTAL -> SettingsDestination.SETTINGS
             SettingsDestination.PLATFORM_LOGIN -> loginReturn
             SettingsDestination.SOURCES -> SettingsDestination.SETTINGS
             SettingsDestination.SETTINGS -> SettingsDestination.CLOSED

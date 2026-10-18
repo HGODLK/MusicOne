@@ -47,6 +47,7 @@ internal fun PlayerRelatedMenuHost(state: MusicOneUiState, model: MusicPlaybackR
                 } else drawContent()
             }) {
                 QqPlaylistSongMenuHost(context, emptyList(), 0.dp, {}, {}, {}, relatedOnly = true,
+                    hasLyrics = state.currentTrack?.lyrics?.isNotEmpty() == true,
                     liveBackdrop = navigation.pages.isNotEmpty()) {
                     val menu = LocalQqPlaylistSongMenu.current
                     content(menu?.expanded == true || navigation.pages.isNotEmpty())
@@ -89,8 +90,9 @@ internal fun PlayerRelatedMenuHost(state: MusicOneUiState, model: MusicPlaybackR
     }
 }
 
-internal fun Modifier.playerRelatedInformation(track: MusicTrack, enabled: Boolean): Modifier = composed {
+internal fun Modifier.playerRelatedInformation(track: MusicTrack, enabled: Boolean, lyricOffsetMenu: Boolean = false): Modifier = composed {
     val menu = LocalQqPlaylistSongMenu.current
+    val actionLabel = if (lyricOffsetMenu) "调整歌词偏移" else if (track.source.supportsLibraryEditing) "歌曲资料与歌词" else "查看歌手或专辑"
     var bounds by remember { mutableStateOf(Rect.Zero) }
     var press by remember(track.id) { mutableStateOf<Offset?>(null) }
     onGloballyPositioned { bounds = it.boundsInRoot() }
@@ -100,10 +102,12 @@ internal fun Modifier.playerRelatedInformation(track: MusicTrack, enabled: Boole
                 press = bounds.topLeft + down.position
             }
         }
-        .clickable(enabled = enabled && track.source == MusicSource.QQ && menu != null,
-            onClickLabel = "查看歌手或专辑") {
+        .clickable(enabled = enabled && (track.source == MusicSource.QQ || track.source.supportsLibraryEditing ||
+            (lyricOffsetMenu && track.source.supportsOnlineLyricOffset)) && menu != null,
+            onClickLabel = actionLabel) {
             val point = press ?: bounds.center
-            menu?.open(track, Rect(point.x - 1f, point.y - 1f, point.x + 1f, point.y + 1f))
+            menu?.open(track, Rect(point.x - 1f, point.y - 1f, point.x + 1f, point.y + 1f),
+                fromLyricsTitle = lyricOffsetMenu)
         }
-        .semantics { contentDescription = "查看歌手或专辑" }
+        .semantics { contentDescription = actionLabel }
 }

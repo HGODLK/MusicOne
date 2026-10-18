@@ -13,7 +13,7 @@ internal class QqRecentPlayReporter(
     fun report(track: MusicTrack, generation: Long) {
         if (track.source != MusicSource.QQ || !track.hasQqRecentPlayIdentity() || !reported.add(generation)) return
         scope.launch {
-            runCatching { report(track) }.onFailure { Log.w("QqRecentPlay", "最近播放上报失败", it) }
+            runCatchingCancellable { report(track) }.onFailure { Log.w("QqRecentPlay", "最近播放上报失败", it) }
         }
     }
 }

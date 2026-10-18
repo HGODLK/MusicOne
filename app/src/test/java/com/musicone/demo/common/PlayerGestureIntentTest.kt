@@ -13,15 +13,15 @@ class PlayerGestureIntentTest {
         assertTrue(shouldDismissPlayer(.2f, -563f, true, drag.distancePx, drag.reverseDistancePx))
         assertTrue(shouldDismissPlayer(.45f, -563f, true, drag.distancePx, drag.reverseDistancePx))
         // 未过半屏且速度反向推回时，不再仅凭位移误关
-        assertFalse(shouldDismissPlayer(.8f, -563f, true, drag.distancePx, drag.reverseDistancePx))
+        assertFalse(shouldDismissPlayer(.8f, -563f, true, 60f, drag.reverseDistancePx))
     }
 
     @Test fun deliberateReturnAcrossThePositionThresholdRestoresTheOriginalSide() {
         val opening = PlayerGestureDisplacement(false)
         opening.move(180f)
         opening.move(-120f)
-        assertTrue(shouldOpenPlayer(.4f, 900f, true, -opening.distancePx, opening.reverseDistancePx))
-        assertFalse(shouldOpenPlayer(.2f, 900f, true, -opening.distancePx, opening.reverseDistancePx))
+        assertFalse(shouldOpenPlayer(.4f, 900f, true, -opening.distancePx, opening.reverseDistancePx))
+        assertTrue(shouldOpenPlayer(.7f, 900f, true, -opening.distancePx, opening.reverseDistancePx))
         val closing = PlayerGestureDisplacement(true)
         closing.move(-180f)
         closing.move(120f)

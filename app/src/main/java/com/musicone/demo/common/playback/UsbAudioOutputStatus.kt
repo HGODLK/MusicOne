@@ -21,6 +21,7 @@ internal data class UsbAudioOutputSnapshot(
     val sampleRate: Int = 0,
     val bitDepth: Int = 0,
     val detail: String? = null,
+    val converted: Boolean = false,
 )
 
 /** USB 输出状态由播放线程发布，设置页只负责展示。 */

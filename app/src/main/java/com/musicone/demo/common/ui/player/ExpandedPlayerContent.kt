@@ -3,7 +3,6 @@ package com.musicone.demo
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -14,9 +13,14 @@ import androidx.compose.ui.composed
 internal fun ExpandedPlayerContent(state: MusicOneUiState, track: MusicTrack, visualTrack: MusicTrack, motion: PageMotion,
     viewModel: MusicPlaybackRuntime, onDismiss: () -> Unit, contentActivated: Boolean) {
     var lyrics by remember { mutableStateOf(false) }
-    var queue by rememberSaveable { mutableStateOf(false) }
+    val queueState = LocalPlayerQueueState.current
     val controls = rememberPlayerControlsVisibilityState()
+    val lyricContent = remember { PlayerLyricsContent() }
+    val lyricScope = rememberCoroutineScope()
+    val phoneLyricMotion = remember { PhoneLyricsMotion(false, lyricScope) }
     val view = androidx.compose.ui.platform.LocalView.current
+    PlayerInteractionPerformance(motion, phoneLyricMotion, track, lyricsRequested = lyrics,
+        blocked = !contentActivated || !state.playerExpanded || queueState.visible)
     val visible = LocalPlayerVisible.current
     if (visible) {
         DisposableEffect(view, state.isPlaying, PlaybackOptions.keepScreenOn) {
@@ -25,16 +29,29 @@ internal fun ExpandedPlayerContent(state: MusicOneUiState, track: MusicTrack, vi
             onDispose { view.keepScreenOn = previous }
         }
     }
-    LaunchedEffect(visible) { if (!visible) queue = false }
-    LaunchedEffect(motion.wantsOpen) { if (!motion.wantsOpen) lyrics = false }
-    CompositionLocalProvider(LocalContentColor provides playerForegroundColor()) {
+    LaunchedEffect(track.id, track.lyrics.isEmpty(), state.lyricLoadState) {
+        if (lyrics && !track.source.supportsLibraryEditing && track.lyrics.isEmpty() && state.lyricLoadState == LyricLoadState.UNAVAILABLE) {
+            lyrics = false
+            controls.show()
+        }
+    }
+    // 整页退场仍使用当前歌词页眉的锚点，隐藏后再恢复封面页状态。
+    LaunchedEffect(motion.phase) {
+        if (motion.phase == MotionPhase.HIDDEN) {
+            lyrics = false
+            phoneLyricMotion.resetWhileHidden()
+        }
+    }
+    CompositionLocalProvider(LocalContentColor provides playerForegroundColor(),
+        LocalPlayerLyricsContent provides lyricContent,
+        LocalRetainedPhoneLyricsMotion provides phoneLyricMotion) {
         BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             val spec = playerLayoutSpec(maxWidth, maxHeight)
             CompositionLocalProvider(LocalPlayerLayoutSpec provides spec) {
             if (spec.mode == PlayerLayoutMode.LANDSCAPE_TWO_PANE) {
                 BalancedTabletPlayer(state, track, visualTrack, motion, viewModel, contentActivated) {
                     controls.show()
-                    queue = true
+                    queueState.open()
                 }
             } else {
                 PhoneExpandedPlayer(
@@ -47,18 +64,17 @@ internal fun ExpandedPlayerContent(state: MusicOneUiState, track: MusicTrack, vi
                     controls = controls,
                     contentActivated = contentActivated,
                     onLyrics = {
-                        lyrics = !lyrics
+                        if (lyrics || track.source.supportsLibraryEditing || track.lyrics.isNotEmpty()) lyrics = !lyrics
                         if (!lyrics) controls.show()
                     },
                     onQueue = {
                         controls.show()
-                        queue = true
+                        queueState.open()
                     },
                 )
             }
             }
         }
-        if (queue && visible) PlayerQueueSheet(state, viewModel) { queue = false }
     }
 }
 

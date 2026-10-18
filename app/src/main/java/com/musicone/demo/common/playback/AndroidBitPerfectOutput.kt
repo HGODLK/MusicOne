@@ -35,10 +35,12 @@ internal class AndroidBitPerfectOutput(context: Context) {
         val sampleRate = format.sampleRate.takeIf { it > 0 } ?: return null
         val channelCount = format.channelCount.takeIf { it > 0 } ?: return null
         val encoding = format.pcmEncoding.takeIf { it != Format.NO_VALUE } ?: return null
+        // 既有系统 Sink 会将高位整数转换成 float，完整 S32 交由 UAC2 整数路径保留。
+        if (encoding == AudioFormat.ENCODING_PCM_24BIT_PACKED || encoding == AudioFormat.ENCODING_PCM_32BIT) return null
         // 系统路径不能改写 PCM 容器；两者不一致时交给可执行整数重排的 UAC2 独占路径。
         if (encoding.bitDepth() != sourceBitDepth) return null
         val manager = applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val device = manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull(::isUsbOutput) ?: return null
+        val device = manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull(::isUsbAudioOutput) ?: return null
         val selected = runCatching { manager.getSupportedMixerAttributes(device) }.getOrNull()
             ?.firstOrNull { attributes ->
                 attributes.mixerBehavior == AudioMixerAttributes.MIXER_BEHAVIOR_BIT_PERFECT &&
@@ -67,14 +69,6 @@ internal class AndroidBitPerfectOutput(context: Context) {
         val session = active ?: return
         active = null
         runCatching { session.manager.clearPreferredMixerAttributes(session.attributes, session.device) }
-    }
-
-    @RequiresApi(Build.VERSION_CODES.M)
-    private fun isUsbOutput(device: AudioDeviceInfo): Boolean = when (device.type) {
-        AudioDeviceInfo.TYPE_USB_DEVICE,
-        AudioDeviceInfo.TYPE_USB_HEADSET,
-        AudioDeviceInfo.TYPE_USB_ACCESSORY -> true
-        else -> false
     }
 
     private fun Int.bitDepth(): Int = when (this) {

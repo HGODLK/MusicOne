@@ -5,43 +5,53 @@ import androidx.compose.runtime.snapshots.Snapshot
 import kotlinx.coroutines.*
 import org.junit.Assert.*
 import org.junit.Test
-import kotlin.math.sqrt
-import kotlin.math.exp
 
 class PhoneLyricsOpeningHandoffTest {
-    @Test fun headerMakesRoomForOriginalSpringAcrossLayouts() {
-        for (travel in listOf(480f, 902f, 1600f)) for (compact in listOf(120f, 369f, 460f, 900f))
-            for (contact in listOf(0f, .15f, .4f, .59f, .8f, 1f)) {
-                val path = PhoneLyricsOpeningHandoff(travel, compact, contact)
-                assertEquals(0f, path.header(0f), 0f)
-                assertEquals(1f, path.header(1f), 0f)
-                var previous = travel
-                for (i in 1..1000) {
-                    val input = i / 1000f
-                    val q = input
-                    val offset = phoneLyricsSpatialWindowOffset(travel, q, path.header(q), compact, 6f)
-                    assertTrue(offset <= previous)
-                    assertEquals(travel * (1f - q), offset, .51f)
-                    previous = offset
+    @Test fun firstAndLongIdleReopeningUseIdenticalSpringsAcrossFrameCadences() = runBlocking {
+        for (intervals in listOf(listOf(8_333_333L), listOf(16_666_667L), listOf(33_333_333L),
+                listOf(16_000_000L, 33_000_000L, 50_000_000L))) {
+            val clock = BroadcastFrameClock()
+            withContext(clock) {
+                var time = 0L
+                suspend fun frame(interval: Long) {
+                    yield(); time += interval; clock.sendFrame(time)
+                    Snapshot.sendApplyNotifications(); yield()
                 }
+                fun configured(visible: Boolean) = PhoneLyricsMotion(visible).apply {
+                    dragTravelPx = 902f; controlsSpacePx = 296f
+                    spatialTravel.recordHeight(73f, 6f)
+                }
+                val first = configured(false)
+                val reopened = configured(true)
+                val close = launch { reopened.moveTo(false) }
+                repeat(200) { frame(16_666_667L) }
+                assertTrue(close.isCompleted)
+                assertEquals(0f, reopened.lyricsProgress, 0f)
+                assertEquals(0f, reopened.headerProgress, 0f)
+                frame(6_000_000_000L)
+                val firstJob = launch { first.moveTo(true) }
+                val reopenJob = launch { reopened.moveTo(true) }
+                repeat(180) { index ->
+                    frame(intervals[index % intervals.size])
+                    assertEquals(first.lyricsProgress, reopened.lyricsProgress, .00001f)
+                    assertEquals(first.headerProgress, reopened.headerProgress, .00001f)
+                    assertEquals(first.windowOffsetPx, reopened.windowOffsetPx, 0f)
+                    assertTrue("封面从起步就连续让位", first.headerProgress + .0001f >= first.lyricsProgress)
+                    if (index == 2) assertTrue(first.headerProgress > 0f)
+                }
+                assertTrue(firstJob.isCompleted && reopenJob.isCompleted)
             }
+        }
     }
 
-    @Test fun coarseAndUnevenFramesCannotTurnContactIntoAStoppedPlateau() {
-        val path = PhoneLyricsOpeningHandoff(902f, 369f, .5f)
-        for (intervals in listOf(listOf(1000.0 / 30), listOf(1000.0 / 60), listOf(1000.0 / 90),
-                listOf(1000.0 / 120), listOf(16.0, 33.0, 50.0, 16.0))) {
-            var time = 0.0
-            var previous = 0f
-            repeat(60) { frame ->
-                time += intervals[frame % intervals.size] / 1000
-                val omega = sqrt(210.0)
-                val input = (1 - (1 + omega * time) * exp(-omega * time)).toFloat()
-                val offset = phoneLyricsSpatialWindowOffset(902f, input, path.header(input), 369f, 6f)
-                val visible = 1f - offset / 902f
-                assertEquals(input, visible, .0006f)
-                assertTrue(visible >= previous)
-                previous = visible
+    @Test fun completeClosingAndImmediateReversalKeepTheSameDragGeometry() {
+        for (start in listOf(0f, .0001f, .2f, .7f, .9999f, 1f)) {
+            val motion = PhoneLyricsMotion(false)
+            runBlocking { motion.lyrics.snapTo(start); motion.header.snapTo(start) }
+            motion.beginDrag()
+            for (p in listOf(start, .9f, .1f, .00005f, .99995f, start, 1f, 0f)) {
+                motion.dragTo(p)
+                assertEquals(p, motion.headerProgress, .0001f)
             }
         }
     }
@@ -54,7 +64,7 @@ class PhoneLyricsOpeningHandoffTest {
                 yield(); time += 16_666_667; clock.sendFrame(time); Snapshot.sendApplyNotifications(); yield()
             } }
             val motion = PhoneLyricsMotion(false)
-            motion.dragTravelPx = 902f; motion.controlsSpacePx = 296f; motion.contactProgress = .5f
+            motion.dragTravelPx = 902f; motion.controlsSpacePx = 296f
             motion.spatialTravel.recordHeight(73f, 6f)
             var job = launch { motion.moveTo(true) }
             frames(12)
@@ -78,11 +88,11 @@ class PhoneLyricsOpeningHandoffTest {
 
     @Test fun heldSongLayoutChangesCannotRetargetOpeningGesture() {
         val motion = PhoneLyricsMotion(false)
-        motion.dragTravelPx = 902f; motion.controlsSpacePx = 296f; motion.contactProgress = .5f
+        motion.dragTravelPx = 902f; motion.controlsSpacePx = 296f
         motion.spatialTravel.recordHeight(73f, 6f)
         motion.beginDrag(); motion.dragTo(.48f)
         val position = motion.windowOffsetPx; val header = motion.headerProgress
-        motion.contactProgress = .8f; motion.spatialTravel.recordHeight(280f, 6f)
+        motion.spatialTravel.recordHeight(280f, 6f)
         motion.dragTo(.48f)
         assertEquals(position, motion.windowOffsetPx, 0f)
         assertEquals(header, motion.headerProgress, 0f)

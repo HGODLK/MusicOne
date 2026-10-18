@@ -35,6 +35,6 @@ internal class QqPlaybackSourceCache(
     }
 
     private fun key(track: MusicTrack, cookie: String, quality: AudioQuality) = Key(
-        cookie, track.qqPlaybackMid(), track.mediaId, track.providerType, track.durationMs, quality,
+        cookie, track.qqPlaybackMid(), track.qqPlaybackMediaMid(quality), track.providerType, track.durationMs, quality,
     )
 }

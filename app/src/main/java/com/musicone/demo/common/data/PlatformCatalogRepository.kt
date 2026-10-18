@@ -17,6 +17,8 @@ internal interface PlatformCatalogAdapter {
     fun recommendedTracks(page: Int, policy: CatalogFetchPolicy = CatalogFetchPolicy.CACHE_FIRST): List<MusicTrack>
     fun userPlaylists(): List<MusicPlaylist> = emptyList()
     suspend fun playlistDetail(playlist: MusicPlaylist): MusicPlaylist
+    suspend fun playlistPage(playlist: MusicPlaylist, cursor: PlaylistTrackCursor?): PlaylistTrackPage =
+        PlaylistTrackPage(playlistDetail(playlist))
 }
 
 internal class PlatformCatalogRepository(context: Context) {
@@ -49,6 +51,9 @@ internal class PlatformCatalogRepository(context: Context) {
     suspend fun playlistDetail(playlist: MusicPlaylist): MusicPlaylist =
         onAdapter(playlist.source) { it.playlistDetail(playlist) }
 
+    suspend fun playlistPage(playlist: MusicPlaylist, cursor: PlaylistTrackCursor?): PlaylistTrackPage =
+        onAdapter(playlist.source) { it.playlistPage(playlist, cursor) }
+
     private suspend fun <T> onAdapter(source: MusicSource, block: suspend (PlatformCatalogAdapter) -> T): T =
         withContext(Dispatchers.IO) {
             val adapter = adapters[source] ?: throw IllegalStateException("${source.label}尚未接入内容服务")
@@ -67,6 +72,8 @@ private class KugouCatalogAdapter(
     override fun recommendedTracks(page: Int, policy: CatalogFetchPolicy): List<MusicTrack> =
         api.recommendedTracks(cookie(), page)
     override suspend fun playlistDetail(playlist: MusicPlaylist): MusicPlaylist = api.playlistDetail(playlist, cookie())
+    override suspend fun playlistPage(playlist: MusicPlaylist, cursor: PlaylistTrackCursor?): PlaylistTrackPage =
+        api.playlistPage(playlist, cookie(), cursor)
 }
 
 private class QqCatalogAdapter(
@@ -105,18 +112,24 @@ private class QqCatalogAdapter(
         }
         artworkAliases.remember(QqTrackAccessResolver().resolve(tracks, it.credential, fresh = false))
     }
-    override suspend fun playlistDetail(playlist: MusicPlaylist): MusicPlaylist = session().let {
-        val detail = if (playlist.id == QQ_RECENT_SONGS_PLAYLIST_ID) {
-            playlist
+    override suspend fun playlistDetail(playlist: MusicPlaylist): MusicPlaylist =
+        collectPlaylistTrackPages { playlistPage(playlist, it) }
+
+    override suspend fun playlistPage(playlist: MusicPlaylist, cursor: PlaylistTrackCursor?): PlaylistTrackPage = session().let {
+        val page = if (playlist.id == QQ_RECENT_SONGS_PLAYLIST_ID) {
+            PlaylistTrackPage(playlist)
+        } else if (playlist.id == QQ_FAVORITES_PLAYLIST_ID) {
+            library.favoritePlaylistPage(it.credential, it.account?.userId.orEmpty(),
+                it.account?.hasVipAccess == true, cursor?.offset ?: 0)
         } else if (playlist.isQqSearchAlbum) {
-            QqAlbumRepository().load(playlist, it.credential, it.account?.hasVipAccess == true)
+            PlaylistTrackPage(QqAlbumRepository().load(playlist, it.credential, it.account?.hasVipAccess == true))
         } else if (playlist.id.startsWith(QQ_PROFILE_DIRECTORY_ID_PREFIX)) {
-            library.profileDirectoryDetail(playlist, it.credential, it.account?.hasVipAccess == true)
+            library.profileDirectoryPage(playlist, it.credential, it.account?.hasVipAccess == true, cursor?.offset ?: 0)
         } else {
-            api.playlistDetail(playlist, it.credential, it.account?.hasVipAccess == true)
+            QqPlaylistPaging().page(playlist, it.credential, it.account?.hasVipAccess == true, cursor?.offset ?: 0)
         }
-        playlistArtworkAliases.resolve(detail.copy(tracks = QqTrackAccessResolver().resolve(
-            detail.tracks, it.credential, fresh = false)), it.credential)
+        page.copy(playlist = playlistArtworkAliases.resolve(page.playlist.copy(tracks = QqTrackAccessResolver().resolve(
+            page.playlist.tracks, it.credential, fresh = false)), it.credential))
     }
 }
 
@@ -138,5 +151,8 @@ private class NeteaseCatalogAdapter(
     override suspend fun playlistDetail(playlist: MusicPlaylist): MusicPlaylist = session().let {
         api.playlistDetail(playlist.remoteId(), it.credential, it.account?.hasVipAccess == true)
             .copy(isOwned = playlist.isOwned)
+    }
+    override suspend fun playlistPage(playlist: MusicPlaylist, cursor: PlaylistTrackCursor?): PlaylistTrackPage = session().let {
+        api.playlistPage(playlist, it.credential, it.account?.hasVipAccess == true, cursor)
     }
 }

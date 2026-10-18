@@ -1,5 +1,6 @@
 package com.musicone.demo
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -17,8 +18,6 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.Lifecycle
@@ -28,8 +27,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 @Composable
 internal fun QqMyScreen(
@@ -41,35 +38,35 @@ internal fun QqMyScreen(
     val recentPlay by recentPlayViewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val editor = remember { QqPlaylistEditorState(PlatformPreferences(context), scope) }
-    val haptic = LocalHapticFeedback.current
+    val musicLibraryUi = LocalMusicLibraryUi.current
+    val editor = remember { QqPlaylistEditorState(PlatformPreferences(context), scope, musicLibraryUi.store, context.applicationContext) }
     var host by remember { mutableStateOf(Rect.Zero) }
     var hiddenId by remember { mutableStateOf<String?>(null) }
-    var pendingDeleteId by remember(account?.userId) { mutableStateOf<String?>(null) }
-    var departingId by remember(account?.userId) { mutableStateOf<String?>(null) }
-    var locallyDeletedIds by remember(account?.userId) { mutableStateOf(emptySet<String>()) }
+    val removals = remember(account?.userId) { PlaylistCardRemovalState() }
     val editorBackdrop = rememberGraphicsLayer()
-    var created by rememberSaveable { mutableStateOf(true) }
+    var section by rememberSaveable { mutableIntStateOf(0) }
+    val created = section == 0
+    val localSection = section == 2
     val scroll = rememberLazyGridState()
     val gridTopPadding = 88.dp
     val headerInset = with(LocalDensity.current) { gridTopPadding.toPx() }
     val (segmentMotion, switchSegment) = rememberLibrarySegmentSwitch(
-        created, scroll, headerInset,
-    ) { created = it }
-    val playlists = if (created) library.createdPlaylists else library.collectedPlaylists
+        section, scroll, headerInset,
+    ) { section = it }
+    val playlists = if (localSection) musicLibraryUi.snapshot.localPlaylists else if (created) library.createdPlaylists else library.collectedPlaylists
     val loading = if (created) library.loadingCreated else library.loadingCollected
     val message = if (created) library.createdMessage else library.collectedMessage
     val entry = LocalAccountEntry.current ?: onOpenSettings
     val favorite = library.favoritePlaylist ?: MusicPlaylist(QQ_FAVORITES_PLAYLIST_ID, MusicSource.QQ,
         "我喜欢", "", "", 0, 0xFFE6B8C8, 0xFF98677D, "喜", emptyList())
-    val displayedPlaylists = playlists.filterNot { it.id == favorite.id || it.id in locallyDeletedIds }
+    val availablePlaylists = removals.present(playlists.filterNot { it.id == favorite.id })
+    val reorder = rememberPlaylistCardReorder(scroll, availablePlaylists,
+        if (localSection) "local" else "qq:${account?.userId.orEmpty()}:$section", localSection)
+    val displayedPlaylists = reorder.arrange(availablePlaylists)
     val myVisible = LocalMyPageVisible.current
     ObserveQqRecentPlayVisibility(recentPlayViewModel, myVisible && LocalRecommendationVisible.current)
     LaunchedEffect(library.signedIn, myVisible) {
         if (library.signedIn && myVisible) recentPlayViewModel.ensureLoaded(force = true)
-    }
-    LaunchedEffect(library.createdPlaylists.map(MusicPlaylist::id)) {
-        locallyDeletedIds = locallyDeletedIds.intersect(library.createdPlaylists.mapTo(mutableSetOf(), MusicPlaylist::id))
     }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { recentPlayViewModel.ensureLoaded(force = true) }
     ReportPrimaryHeaderScroll(MusicOnePage.MY, scroll)
@@ -78,15 +75,18 @@ internal fun QqMyScreen(
         val gutter = maxOf(if (maxWidth >= 600.dp) 32.dp else 20.dp, (maxWidth - 1120.dp) / 2)
         val favoriteWidth = if (maxWidth >= 600.dp)
             (maxWidth - gutter * 2 - 16.dp * (columns - 1)) / columns else maxWidth - gutter * 2
+        val pairedWidth = if (maxWidth >= 600.dp) favoriteWidth * 1.08f else null
+        val cardSide = (maxWidth - gutter * 2 - 16.dp * (columns - 1)) / columns
+        val trailingSpace = key(section) { playlistGridTrailingSpace(displayedPlaylists.size, columns, cardSide) }
         LazyVerticalGrid(GridCells.Fixed(columns), state = scroll, modifier = Modifier.fillMaxSize()
             .onGloballyPositioned { segmentMotion.viewportTop = it.positionInRoot().y }
-            .librarySegmentMotion(segmentMotion, created)
+            .librarySegmentMotion(segmentMotion, section)
             .playerQualityBackdropSnapshot(editorBackdrop, editor.open),
-            userScrollEnabled = !segmentMotion.moving,
-            contentPadding = PaddingValues(start = gutter, end = gutter, top = gridTopPadding, bottom = bottomInset + 28.dp),
+            userScrollEnabled = !segmentMotion.moving && !reorder.dragging && !editor.open,
+            contentPadding = PaddingValues(start = gutter, end = gutter, top = gridTopPadding, bottom = bottomInset + 28.dp + trailingSpace),
             horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             item("profile", span = { GridItemSpan(maxLineSpan) }) {
-                Box(Modifier.padding(bottom = 12.dp)) { QqProfileHeader(account, onOpenSettings) }
+                Box(Modifier.animateContentSize(musicSpring()).padding(bottom = 12.dp)) { QqProfileHeader(account, onOpenSettings) }
             }
             item("favorites", span = { GridItemSpan(maxLineSpan) }) {
                 val open = {
@@ -95,18 +95,12 @@ internal fun QqMyScreen(
                 }
                 val presented = favorite.copy(title = "我喜欢",
                     subtitle = if (library.signedIn) "${favorite.count} 首歌曲" else "登录后同步")
+                // 两张卡片占用固定槽位，横滑溢出由整页视口裁剪，不能在网格留白处提前截断。
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopStart) {
-                    QqPlaylistCard(
-                        playlist = presented,
-                        onClick = open,
-                        onPlay = { library.favoritePlaylist?.let(onPlayPlaylist) ?: open() },
-                        modifier = Modifier.width(favoriteWidth),
-                        width = 1280.dp,
-                        artworkVersion = library.artworkVersions[favorite.id] ?: 0L,
-                        sharedTransition = library.favoritePlaylist != null,
-                        prominentTitle = true,
-                        sourceKey = "qq-my-favorite:${favorite.id}",
-                    )
+                    PairedLibraryCards(presented, musicLibraryUi.snapshot.unified,
+                        onOpen = { if (it.id == favorite.id) open() else onOpenPlaylist(it) },
+                        onPlay = { if (it.id == favorite.id) library.favoritePlaylist?.let(onPlayPlaylist) ?: open() else onPlayPlaylist(it) },
+                        tabletCardWidth = pairedWidth)
                 }
             }
             item("library-heading", span = { GridItemSpan(maxLineSpan) }) {
@@ -118,54 +112,53 @@ internal fun QqMyScreen(
                 }, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("我的歌单", fontSize = 23.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { if (library.signedIn) editor.show(null, Rect.Zero) else entry() }) {
+                        IconButton(onClick = { if (localSection) editor.show(null, Rect.Zero, local = true) else if (library.signedIn) editor.show(null, Rect.Zero) else entry() }) {
                             Icon(Icons.Rounded.Add, "新建歌单")
                         }
                     }
-                    QqPlaylistSegment(created, library.createdPlaylists.size, library.collectedPlaylists.size,
-                        { switchSegment(true) }, { switchSegment(false) })
+                    LibrarySectionTabs(section, listOf("创建 ${library.createdPlaylists.size}", "收藏 ${library.collectedPlaylists.size}", "本地 ${musicLibraryUi.snapshot.localPlaylists.size}"), switchSegment)
                 }
             }
-            items(displayedPlaylists, key = { "${created}:${it.id}" }) { playlist ->
+            items(displayedPlaylists, key = { it.id }) { playlist ->
                 val presented = playlist.withQqLibrarySongCountSubtitle()
                 val artworkVersion = library.artworkVersions[playlist.id] ?: 0L
-                val removalProgress by androidx.compose.animation.core.animateFloatAsState(
-                    targetValue = if (departingId == playlist.id) 0f else 1f,
-                    animationSpec = musicMotion(220),
-                    label = "删除歌单淡出",
-                )
                 QqPlaylistCard(
                     playlist = presented,
                     onClick = { onOpenPlaylist(presented) },
                     onPlay = { onPlayPlaylist(presented) },
-                    modifier = Modifier.fillMaxWidth().graphicsLayer {
-                        alpha = if (hiddenId == playlist.id) 0f else removalProgress
-                        scaleX = .94f + .06f * removalProgress
-                        scaleY = scaleX
+                    modifier = Modifier.fillMaxWidth().playlistCardLift(reorder, playlist.id).graphicsLayer {
+                        alpha = if (hiddenId == playlist.id || removals.hidden(playlist.id)) 0f else 1f
                     }.animateItem(
                         fadeInSpec = if (segmentMotion.moving) null else musicMotion(320),
-                        fadeOutSpec = if (segmentMotion.moving || departingId == playlist.id) null else musicMotion(220),
-                        placementSpec = if (segmentMotion.moving) null else musicSpring(),
+                        fadeOutSpec = if (segmentMotion.moving || removals.hidden(playlist.id)) null else musicMotion(220),
+                        placementSpec = if (segmentMotion.moving || reorder.activeId == playlist.id) null else musicSpring(),
                     ),
                     width = 1280.dp,
                     artworkVersion = artworkVersion,
-                    sourceKey = "qq-my-library:$created:${playlist.id}",
-                    onLongClick = if (created) { bounds ->
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    sourceKey = if (localSection) "library-user:${playlist.id}" else "qq-my-library:$created:${playlist.id}",
+                    freezeArtwork = hiddenId == playlist.id,
+                    reorderState = reorder,
+                    onLongClick = if (created || localSection) { origin ->
+                        removals.hold(playlist, displayedPlaylists.indexOfFirst { it.id == playlist.id })
                         hiddenId = playlist.id
-                        editor.show(presented, bounds, artworkVersion)
+                        editor.show(presented, origin.bounds, artworkVersion, origin.artwork, local = localSection,
+                            currentBounds = origin.currentBounds)
                     } else null,
                 )
             }
             if (displayedPlaylists.isEmpty()) item("status", span = { GridItemSpan(maxLineSpan) }) {
                 QqInlineMessage(when {
+                    localSection -> "还没有本地歌单，点击右上角创建"
                     !library.signedIn -> "登录后，你的音乐收藏会出现在这里"
                     loading -> "正在同步歌单…"
                     else -> message ?: if (created) "还没有创建的歌单" else "还没有收藏的歌单"
                 })
             }
             item("recent-play", span = { GridItemSpan(maxLineSpan) }) {
-                QqRecentPlaySection(recentPlay, library.signedIn, onOpenPlaylist)
+                Box(Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = musicSpring())
+                    .animateContentSize(musicSpring())) {
+                    QqRecentPlaySection(recentPlay, library.signedIn, onOpenPlaylist)
+                }
             }
         }
         if (segmentMotion.moving) Box(Modifier.matchParentSize().clickable(
@@ -177,20 +170,12 @@ internal fun QqMyScreen(
             backdrop = editorBackdrop,
             bottomInset = bottomInset,
             onChanged = { action, target ->
-                if (action == PlaylistEditMode.Delete) pendingDeleteId = target?.id else onRefresh()
+                if (action == PlaylistEditMode.Delete && target != null) removals.confirmDelete(target.id)
+                else if (!editor.local) onRefresh()
             },
             onRestored = { hiddenId = null },
             onClosed = {
-                pendingDeleteId?.let { deletedId ->
-                    pendingDeleteId = null
-                    scope.launch {
-                        departingId = deletedId
-                        delay(if (ExperiencePreferences.options.reduceMotion) 0L else 220L)
-                        locallyDeletedIds = locallyDeletedIds + deletedId
-                        departingId = null
-                        onRefresh()
-                    }
-                }
+                if (removals.finish() != null && !editor.local) onRefresh()
             },
         )
     }

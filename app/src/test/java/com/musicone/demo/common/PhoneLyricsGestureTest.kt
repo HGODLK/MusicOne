@@ -33,17 +33,16 @@ class PhoneLyricsGestureTest {
         assertFalse(lyricsDragTarget(.04f, -900f, 400f, true))
     }
 
-    @Test fun trackMetadataRemeasurementCannotChangeTheHeldHeaderPath() {
+    @Test fun headerBeginsMakingRoomWithTheFirstGestureDisplacement() {
         val motion = PhoneLyricsMotion(false)
-        motion.contactProgress = .6f
         motion.beginDrag()
-        motion.dragTo(.7f)
-        val before = motion.headerProgress
-        motion.contactProgress = .3f
-        motion.dragTo(.7f)
-        assertEquals(before, motion.headerProgress, 0f)
-        motion.dragTo(.8f)
-        assertEquals(.5f, motion.headerProgress, .0001f)
+        motion.dragTo(.01f)
+        assertTrue("手势起步不能等歌词接触封面后才让位", motion.headerProgress > 0f)
+        val firstHeader = motion.headerProgress
+        motion.dragTo(.02f)
+        assertTrue(motion.headerProgress > firstHeader)
+        motion.dragTo(0f)
+        assertEquals(0f, motion.headerProgress, 0f)
     }
 
     @Test fun reversingDragBeforeReleaseKeepsOriginalState() {
@@ -60,10 +59,10 @@ class PhoneLyricsGestureTest {
     @Test fun openingAndClosingDragFollowSameGeometry() {
         repeat(101) {
             val p = it / 100f
-            assertEquals(lyricsDragHeaderProgress(p, 0f, 0f, .4f),
-                lyricsDragHeaderProgress(p, 1f, 1f, .4f), .0001f)
+            assertEquals(lyricsDragHeaderProgress(p, 0f, 0f),
+                lyricsDragHeaderProgress(p, 1f, 1f), .0001f)
         }
-        assertEquals(.25f, lyricsDragHeaderProgress(.6f, .6f, .25f, .4f), .0001f)
+        assertEquals(.25f, lyricsDragHeaderProgress(.6f, .6f, .25f), .0001f)
     }
 
     @Test fun draggedPositionSettlesImmediatelyWithoutWaitingForObsoleteAlignment() = runBlocking {
@@ -87,7 +86,7 @@ class PhoneLyricsGestureTest {
             val aligned = CompletableDeferred<Unit>()
             val job = launch { motion.moveTo(false, aligned) }
             assertEquals(.45f, motion.lyricsProgress, .0001f)
-            frames(1)
+            frames(2)
             assertTrue(motion.lyricsProgress < .45f)
             assertTrue(motion.headerProgress < header)
             aligned.complete(Unit)

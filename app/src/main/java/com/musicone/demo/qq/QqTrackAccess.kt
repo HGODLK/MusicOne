@@ -35,7 +35,8 @@ data class QqTrackAccessInfo(
         val badge = kind.takeUnless {
             purchased || (it == MusicAccessBadge.VIP && if (superVip) superVipAccess else vip)
         }
-        return MusicTrackAccess(badge, trial && badge != null, badge == null || trial)
+        // 角标只说明收费类型；缺少当前账号的明确权限结果时仍允许尝试播放。
+        return MusicTrackAccess(badge, trial && badge != null, true)
     }
 }
 

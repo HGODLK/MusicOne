@@ -9,6 +9,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LyricCacheRecoveryTest {
+    @Test fun failureWithoutCachedLyricsMustRemainRetryable() = runBlocking {
+        try {
+            fetchLyricsPreservingFallback(track, emptyList()) { throw java.io.IOException("断网") }
+            fail("没有缓存时不能把请求失败伪装成无歌词")
+        } catch (_: java.io.IOException) { }
+    }
+
     @Test fun failedNetworkRefreshPreservesLegacyFallbackAndCancellationPropagates() = runBlocking {
         val legacy = listOf(TimedLyric(0, "旧歌词"))
         assertEquals(legacy, fetchLyricsPreservingFallback(track, legacy) { throw java.io.IOException("断网") })
@@ -16,6 +23,14 @@ class LyricCacheRecoveryTest {
             fetchLyricsPreservingFallback(track, legacy) { throw CancellationException("取消") }
             fail("取消请求不能交付旧数据")
         } catch (_: CancellationException) { }
+    }
+
+    @Test fun kugouLrcFallbackDoesNotHideExistingVerbatimLyrics() = runBlocking {
+        val track = MusicTrack("kugou-song", MusicSource.KUGOU, "歌曲", "歌手", "", 210_000, 0, 0, "", "")
+        val verbatim = listOf(TimedLyric(0, "逐字歌词", words = listOf(LyricWord(0, 400, "逐字歌词")),
+            parserVersion = CURRENT_KUGOU_LYRIC_PARSER_VERSION))
+        val plain = listOf(TimedLyric(0, "普通歌词"))
+        assertEquals(verbatim, fetchLyricsPreservingFallback(track, verbatim) { plain })
     }
     private val track = MusicTrack("qq-song", MusicSource.QQ, "歌曲", "歌手", "", 210_000, 0, 0, "", "")
     private val fresh = listOf(TimedLyric(16_175, "第一句"), TimedLyric(22_305, "第二句"))

@@ -1,9 +1,7 @@
 package com.musicone.demo
 
 import android.content.Context
-import android.net.Uri
 import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 
 internal data class LivePlaybackRestore(
@@ -18,7 +16,7 @@ internal class PlaybackSessionCoordinator(private val context: Context) {
     private val connection = ServicePlaybackConnection()
     private val positionOwner = PlaybackPositionOwner()
     private val pendingSeek = PlaybackPendingSeek()
-    private val persistence = QqPlaybackPersistence(context)
+    private val persistence = MixedPlaybackPersistence(context)
     val player get() = connection.player
 
     fun attach(player: Player) = connection.attach(player)
@@ -26,6 +24,13 @@ internal class PlaybackSessionCoordinator(private val context: Context) {
 
     fun whenReady(action: (Player) -> Unit) = connection.whenReady(action)
     fun clearPendingSeek() = pendingSeek.clear()
+
+    fun clearQueue(stillEmpty: () -> Boolean) {
+        pendingSeek.clear()
+        retainedPlaybackSession.clear()
+        persistence.clearQueue()
+        whenReady { player -> if (stillEmpty()) { player.stop(); player.clearMediaItems() } }
+    }
 
     fun seek(key: PlaybackRequestKey, positionMs: Long, isCurrent: (PlaybackRequestKey) -> Boolean) {
         if (!isCurrent(key)) return
@@ -61,22 +66,32 @@ internal class PlaybackSessionCoordinator(private val context: Context) {
     fun saveProgressIfNeeded(state: MusicOneUiState, position: Long) = persistence.saveProgressIfNeeded(state, position)
     fun resetProgressBucket(position: Long) = persistence.resetProgressBucket(position)
 
+    fun refreshMetadata(track: MusicTrack, key: PlaybackRequestKey, isCurrent: (PlaybackRequestKey) -> Boolean) {
+        val transport = player ?: return
+        if (isCurrent(key) && matches(key.generation, key.trackId)) refreshSystemMediaMetadata(transport, track)
+    }
+
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     fun start(track: MusicTrack, key: PlaybackRequestKey, positionMs: Long, playWhenReady: () -> Boolean,
               isCurrent: (PlaybackRequestKey) -> Boolean, started: (Player, Long) -> Unit, failed: () -> Unit) {
         whenReady { player ->
             if (!isCurrent(key)) return@whenReady
+            if (qqPlaybackQuality(track.previewUrl.orEmpty()) == AudioQuality.DOLBY && !DolbyPlaybackPolicy.eligibility.allowed) {
+                failed()
+                return@whenReady
+            }
             runCatching {
                 val startingPosition = pendingSeek.take(key) ?: positionMs.coerceAtLeast(0L)
-                val metadata = MediaMetadata.Builder()
-                    .setExtras(android.os.Bundle().apply { putLong("musicone_duration", track.durationMs) })
-                    .setTitle(track.title).setArtist(track.artists).setAlbumTitle(track.album)
-                    .apply { track.artworkUrl?.takeIf(String::isNotBlank)?.let { setArtworkUri(Uri.parse(it)) } }
-                    .build()
+                val metadata = systemMediaMetadata(track)
                 playbackTrace("MusicOne:audio-set-item") {
-                    player.setMediaItem(MediaItem.Builder().setMediaId(track.id)
-                        .setCustomCacheKey(playbackCacheKey(context, track).also { MusicDiskCache.available()?.activeKey = it })
-                        .setUri(track.previewUrl).setMediaMetadata(metadata).build(), startingPosition)
+                    val item = MediaItem.Builder().setMediaId(track.id).setUri(track.previewUrl).setMediaMetadata(metadata)
+                    if (track.source == MusicSource.BILIBILI && track.previewUrl.startsWith("data:application/dash+xml")) {
+                        item.setMimeType("application/dash+xml")
+                        MusicDiskCache.available()?.activeKey = SupplementalPlaybackRequests.cacheKey(track.previewUrl)
+                    } else if (track.source != MusicSource.LOCAL) {
+                        item.setCustomCacheKey(playbackCacheKey(context, track).also { MusicDiskCache.available()?.activeKey = it })
+                    } else MusicDiskCache.available()?.activeKey = null
+                    player.setMediaItem(item.build(), startingPosition)
                 }
                 playbackTrace("MusicOne:audio-prepare") { player.prepare() }
                 PlaybackPipelineDiagnostics.stage("已请求准备", key.generation)

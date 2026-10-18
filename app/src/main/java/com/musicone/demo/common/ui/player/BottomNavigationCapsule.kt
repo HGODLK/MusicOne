@@ -1,9 +1,5 @@
 package com.musicone.demo
 
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,8 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -40,6 +34,7 @@ internal fun BottomCapsule(
     onPageChange: (MusicOnePage) -> Unit,
     onNavigationContact: () -> Unit,
     navigationDragBlocked: () -> Boolean,
+    queueState: PlayerQueueState,
     immersiveVisual: NeteaseProfileVisual? = null,
 ) {
     val primaryHeaderState = LocalPrimaryPageHeaderState.current
@@ -64,11 +59,10 @@ internal fun BottomCapsule(
     Box(Modifier.fillMaxWidth().padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
         val dark = MaterialTheme.colorScheme.background.luminance() < .3f
         val neutral = LocalPlatformNeutral.current
-        val activeColor = if (neutral) MaterialTheme.colorScheme.primary
-            else immersiveVisual?.foreground ?: MaterialTheme.colorScheme.primary
+        val activeColor = MaterialTheme.colorScheme.primary
         val inactiveColor = immersiveVisual?.secondary ?: MaterialTheme.colorScheme.onSurfaceVariant
         val selectedColor = navigationCapsuleSelectionColor(
-            neutral, MaterialTheme.colorScheme.primaryContainer, immersiveVisual?.foreground,
+            neutral, MaterialTheme.colorScheme.primaryContainer,
         )
         MusicOneBackdropGlass(
             backdropLayer = backdropLayer,
@@ -88,35 +82,19 @@ internal fun BottomCapsule(
             Box(
                 Modifier.padding(5.dp).fillMaxWidth().height(52.dp)
                     .onSizeChanged { selectionTravelPx = (it.width / 2f).coerceAtLeast(1f) }
-                    .pointerInput(Unit) {
-                        awaitEachGesture {
-                            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                            currentNavigationContact()
-                            waitForUpOrCancellation(pass = PointerEventPass.Initial)
-                        }
-                    }
-                    .pointerInput(selectionTravelPx) {
-                        detectHorizontalDragGestures(
-                            onDragStart = {
-                                dragPosition = if (currentDragBlocked()) null else selectionPosition()
-                            },
-                            onHorizontalDrag = { change, dragAmount ->
-                                change.consume()
-                                nextCapsuleDragPosition(
-                                    dragPosition,
-                                    selectionPosition(),
-                                    dragAmount,
-                                    selectionTravelPx,
-                                    currentDragBlocked(),
-                                )?.let { updated ->
-                                    dragPosition = updated
-                                    onSelectionDrag(updated)
-                                }
-                            },
-                            onDragEnd = { if (dragPosition != null) settleDrag() },
-                            onDragCancel = { if (dragPosition != null) settleDrag() },
-                        )
-                    },
+                    .navigationCapsuleGesture(
+                        onContact = { currentNavigationContact() },
+                        blocked = { currentDragBlocked() },
+                        onHorizontalDrag = { amount ->
+                            nextCapsuleDragPosition(dragPosition, currentSelectionPosition(), amount,
+                                selectionTravelPx, currentDragBlocked())?.let { updated ->
+                                dragPosition = updated
+                                onSelectionDrag(updated)
+                            }
+                        },
+                        onHorizontalEnd = { if (dragPosition != null) settleDrag() },
+                        queueState = queueState,
+                    ),
             ) {
                 NavigationCapsuleSelection(
                     page = page,

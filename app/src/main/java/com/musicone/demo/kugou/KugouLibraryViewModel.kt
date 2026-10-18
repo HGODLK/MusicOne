@@ -29,12 +29,21 @@ internal class KugouLibraryViewModel(application: Application) : AndroidViewMode
     val state: StateFlow<KugouLibraryUiState> = _state.asStateFlow()
     private var configurationKey = ""
     private var loadJob: Job? = null
+    private val favoriteArtwork = KugouFavoriteArtwork()
+    private var favoriteChanges: Map<String, Pair<MusicTrack, Boolean>> = emptyMap()
+
+    fun syncFavoriteChanges(changes: Map<String, Pair<MusicTrack, Boolean>>) {
+        favoriteChanges = changes
+        _state.update { it.copy(favoritePlaylist = favoriteArtwork.present(changes)) }
+    }
 
     fun configure(source: MusicSource, sessionRevision: Long) {
         val key = "$source\n$sessionRevision"
         if (key == configurationKey) return
         configurationKey = key
         loadJob?.cancel()
+        favoriteArtwork.clear()
+        favoriteChanges = emptyMap()
         val session = preferences.readSession(MusicSource.KUGOU)
         val signedIn = source == MusicSource.KUGOU && session.account != null && session.credential.isNotBlank()
         _state.value = KugouLibraryUiState(signedIn = signedIn)
@@ -49,13 +58,16 @@ internal class KugouLibraryViewModel(application: Application) : AndroidViewMode
             _state.update { it.copy(loading = true, message = null) }
             try {
                 val library = withContext(Dispatchers.IO) { client.library(cookie) }
-                if (configurationKey == requestedKey) _state.update {
-                    it.copy(
-                        favoritePlaylist = library.favorite,
-                        createdPlaylists = library.created,
-                        collectedPlaylists = library.collected,
-                        loading = false,
-                    )
+                if (configurationKey == requestedKey) {
+                    favoriteArtwork.record(library.favorite)
+                    _state.update {
+                        it.copy(
+                            favoritePlaylist = favoriteArtwork.present(favoriteChanges),
+                            createdPlaylists = library.created,
+                            collectedPlaylists = library.collected,
+                            loading = false,
+                        )
+                    }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled

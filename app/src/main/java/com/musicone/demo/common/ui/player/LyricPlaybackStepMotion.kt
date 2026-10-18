@@ -210,6 +210,8 @@ internal class LyricPlaybackStepMotion(
             }
         } finally {
             wordUpdates.cancel()
+            // 关闭态暂停后重新运行，不能把数秒空闲时间作为一个动画步长补进去。
+            frameTimeNanos = null
         }
     }
 

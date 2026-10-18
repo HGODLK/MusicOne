@@ -44,19 +44,19 @@ internal class QqLibrarySegmentMotion {
 
 @Composable
 internal fun rememberLibrarySegmentSwitch(
-    selected: Boolean,
+    selected: Int,
     scroll: LazyGridState,
     headerInset: Float,
-    onSelected: (Boolean) -> Unit,
-): Pair<QqLibrarySegmentMotion, (Boolean) -> Unit> {
+    onSelected: (Int) -> Unit,
+): Pair<QqLibrarySegmentMotion, (Int) -> Unit> {
     val motion = remember { QqLibrarySegmentMotion() }
     val scope = rememberCoroutineScope()
     val current by rememberUpdatedState(selected)
     val revealInset by rememberUpdatedState(headerInset)
     val select by rememberUpdatedState(onSelected)
-    val switch: (Boolean) -> Unit = { target ->
+    val switch: (Int) -> Unit = { target ->
         if (target != current && !motion.moving) {
-            motion.direction = if (target) -1f else 1f
+            motion.direction = if (target < current) -1f else 1f
             motion.moving = true
             scope.launch {
                 try {
@@ -89,11 +89,11 @@ internal fun rememberLibrarySegmentSwitch(
 }
 
 @Composable
-internal fun Modifier.librarySegmentMotion(motion: QqLibrarySegmentMotion, selected: Boolean): Modifier {
+internal fun Modifier.librarySegmentMotion(motion: QqLibrarySegmentMotion, selected: Int): Modifier {
     val previous = rememberGraphicsLayer()
     val incoming = rememberGraphicsLayer()
     val fadePaint = remember { Paint() }
-    val recordedSelection = remember { arrayOf<Boolean?>(null) }
+    val recordedSelection = remember { arrayOf<Int?>(null) }
     val background = MaterialTheme.colorScheme.background
     SideEffect { motion.capture = { previous.toImageBitmap() } }
     return drawWithContent {

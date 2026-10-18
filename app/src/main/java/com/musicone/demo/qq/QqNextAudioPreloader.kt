@@ -110,6 +110,7 @@ internal class QqNextAudioPreloader(
 
     fun take(track: MusicTrack, quality: AudioQuality): ResolvedPlayback? {
         val saved = ready ?: return null
+        if (!DolbyPlaybackPolicy.permits(saved.playback.source.actualQuality)) return null
         if (track.source != MusicSource.QQ || saved.request.trackId != track.id ||
             saved.request.quality != quality ||
             saved.request.namespace != preferences.readSession(MusicSource.QQ).cacheNamespace() ||

@@ -17,12 +17,12 @@ internal fun MusicLibrarySynchronization(viewModel: MusicPlaybackRuntime, favori
     LaunchedEffect(viewModel, source, sessionRevision) {
         launch {
             viewModel.favoritePreparation.target.collect { target ->
-                if (target?.first?.source == source) favorites.refresh()
+                if (target != null) favorites.refresh()
             }
         }
         launch {
             viewModel.rapidTrackSwitch.presentation.distinctUntilChangedBy { it?.token }.collect { target ->
-                if (target?.track?.source == source) favorites.refresh()
+                if (target != null) favorites.refresh()
             }
         }
     }

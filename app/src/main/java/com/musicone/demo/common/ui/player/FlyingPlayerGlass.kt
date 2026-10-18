@@ -23,10 +23,12 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
+import kotlin.math.ceil
 
 private class PlayerGlassSnapshotCache {
     var moving = false
@@ -48,6 +50,8 @@ private class PlayerGlassSnapshotCache {
 @Composable
 internal fun FlyingPlayerGlass(motion: PageMotion) {
     val dark = MaterialTheme.colorScheme.background.luminance() < .3f
+    val handoff = LocalPlayerControlHandoff.current
+    val defaultBorderColor = if (dark) Color.White.copy(alpha = .16f) else Color(0xFFE0E2E6)
     val transitionBackdrop = LocalPlayerTransitionBackdrop.current
     val sourceLayer = transitionBackdrop?.layer ?: LocalPlayerBackdropTexture.current
     val targetLayer = LocalPlayerAtmosphereTexture.current
@@ -110,7 +114,7 @@ internal fun FlyingPlayerGlass(motion: PageMotion) {
             return@Canvas
         }
         if (preparing) return@Canvas
-        val source = motion.sourceSnapshot["surface"] ?: return@Canvas
+        val source = playerSourceAnchor(motion, "surface") ?: return@Canvas
         val target = motion.targetSnapshot["surface"] ?: return@Canvas
 
         val progress = motion.value
@@ -187,17 +191,20 @@ internal fun FlyingPlayerGlass(motion: PageMotion) {
         }
         val borderAlpha = playerGlassBorderAlpha(progress)
         if (borderAlpha > .001f) {
+            val capturedBorder = handoff?.sourceInk("surfaceBorder", defaultBorderColor) ?: defaultBorderColor
+            val liveBorder = handoff?.currentInk("surfaceBorder", capturedBorder) ?: capturedBorder
+            val borderColor = lerp(capturedBorder, liveBorder, playerGlassSourceHandoffAlpha(progress))
+            // 与 Compose BorderStroke 共用向内描边及像素取整，终点外缘保持原矩形。
+            val stroke = ceil(1.dp.toPx())
+            val inset = stroke / 2f
             drawRoundRect(
-                // 与迷你播放器的静态边框使用同一颜色，并完整覆盖到交接帧。
-                color = if (dark) {
-                    Color.White.copy(alpha = .16f * borderAlpha)
-                } else {
-                    Color(0xFFE0E2E6).copy(alpha = borderAlpha)
-                },
-                topLeft = bounds.topLeft,
-                size = bounds.size,
-                cornerRadius = CornerRadius(corner),
-                style = Stroke(1.dp.toPx()),
+                // 复用真实迷你播放条的描边，包括网易云背景自适应颜色和原始透明度。
+                color = borderColor.copy(alpha = borderColor.alpha * borderAlpha),
+                topLeft = bounds.topLeft + Offset(inset, inset),
+                size = androidx.compose.ui.geometry.Size(
+                    (bounds.width - stroke).coerceAtLeast(0f), (bounds.height - stroke).coerceAtLeast(0f)),
+                cornerRadius = CornerRadius((corner - inset).coerceAtLeast(0f)),
+                style = Stroke(stroke),
             )
         }
     }

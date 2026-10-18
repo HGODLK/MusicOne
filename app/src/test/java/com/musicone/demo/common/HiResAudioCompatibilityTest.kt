@@ -52,6 +52,20 @@ class HiResAudioCompatibilityTest {
     }
 
     @Test
+    fun flacMetadataPreservesPrecisionWhenTheDecoderContainerIsNotYetKnown() {
+        for (depth in listOf(16, 24, 32)) {
+            val header = ByteArray(42)
+            "fLaC".toByteArray().copyInto(header)
+            header[4] = 0x80.toByte(); header[7] = 34
+            val packed = (176400L shl 44) or (1L shl 41) or ((depth - 1L) shl 36) or 176400L
+            for (index in 18..25) header[index] = (packed ushr ((25 - index) * 8)).toByte()
+            val format = Format.Builder().setSampleMimeType(MimeTypes.AUDIO_FLAC)
+                .setInitializationData(listOf(header)).build()
+            assertEquals(depth, sourceAudioBitDepth(format))
+        }
+    }
+
+    @Test
     fun compressedFormatsWithoutEffectiveBitDepthUseSixteenBitOutput() {
         val format = Format.Builder().setSampleMimeType(MimeTypes.AUDIO_MPEG).build()
 

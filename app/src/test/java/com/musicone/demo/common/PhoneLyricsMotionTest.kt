@@ -114,9 +114,11 @@ class PhoneLyricsMotionTest {
         }
     }
 
-    @Test fun contactUsesInformationPositionAcrossWindowHeights() {
-        assertEquals(.25f, lyricsContactProgress(900f, 100f, 700f), .0001f)
-        assertEquals(.5f, lyricsContactProgress(500f, 100f, 300f), .0001f)
+    @Test fun dragReleasePreservesHeaderSpeedAtEndpointsAndReversalOrigins() {
+        assertEquals(2f, lyricsDragHeaderVelocity(0f, 0f, 0f, 2f), 0f)
+        assertEquals(-2f, lyricsDragHeaderVelocity(1f, 1f, 1f, -2f), 0f)
+        assertEquals(-1f, lyricsDragHeaderVelocity(.6f, .6f, .3f, -2f), .0001f)
+        assertEquals(3.5f, lyricsDragHeaderVelocity(.6f, .6f, .3f, 2f), .0001f)
     }
 
     @Test fun openingWaitsForCompleteRowsAndSurvivesReversalWhileWaiting() = runBlocking {

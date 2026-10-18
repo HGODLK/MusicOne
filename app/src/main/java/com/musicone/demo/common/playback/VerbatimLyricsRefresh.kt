@@ -5,8 +5,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
-internal fun needsVerbatimLyricsRefresh(track: MusicTrack): Boolean = track.source == MusicSource.QQ &&
-    (!hasReusableLyrics(track, track.lyrics) || track.lyrics.none { it.words.isNotEmpty() })
+internal fun needsVerbatimLyricsRefresh(track: MusicTrack): Boolean = when (track.source) {
+    MusicSource.QQ -> !hasReusableLyrics(track, track.lyrics) || track.lyrics.none { it.words.isNotEmpty() }
+    MusicSource.NETEASE -> !hasReusableLyrics(track, track.lyrics)
+    else -> false
+}
 
 /** 设置开启时只升级当前稳定播放的歌曲，切歌加载仍由原请求入口负责。 */
 internal fun CoroutineScope.observeVerbatimLyricsPreference(

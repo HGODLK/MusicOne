@@ -6,6 +6,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PlaybackQueueOrderTest {
+    @Test fun largePlaylistRetainsEveryTrackThroughShuffleAndSnapshotRestore() {
+        val large = (0 until 2_505).map {
+            MusicTrack("qq-large-$it", MusicSource.QQ, "歌曲$it", "歌手", "", 180_000, 0, 0, "", "")
+        }
+        val state = MusicOneUiState().withPlaylistQueue(large, true, Random(9))
+            .let { it.copy(currentTrack = it.queue[1_500]) }
+        assertEquals(2_505, state.queue.size)
+        val encoding = QqPlaybackSnapshotEncoding()
+        val saved = JSONObject(encoding.contentIfChanged(state.toQqPlaybackSnapshot(500)!!)!!).toQqPlaybackSnapshot()
+        val restored = MusicOneUiState().withQqPlaybackSnapshot(saved).withPlaybackMode(PlayerPlaybackMode.LIST)
+        assertEquals(large.map { it.id }, restored.queue.map { it.id })
+        val added = large.first().copy(id = "qq-new")
+        assertEquals(2_506, insertTrackAfterCurrent(restored.queue, restored.currentTrack, added).size)
+    }
+
     private val tracks = (0..7).map {
         MusicTrack("qq-$it", MusicSource.QQ, "歌曲$it", "歌手", "专辑", 180_000, 0, 0, "歌", "")
     }
@@ -88,5 +103,34 @@ class PlaybackQueueOrderTest {
         json.remove("originalQueueIds")
         val restored = MusicOneUiState().withQqPlaybackSnapshot(json.toQqPlaybackSnapshot())
         assertEquals(tracks.map { it.id }, restored.withPlaybackMode(PlayerPlaybackMode.LIST).queue.map { it.id })
+    }
+
+    @Test fun playlistPlayExplicitlyOverridesShuffleAndRepeatModeToAll() {
+        // 原状态为单曲循环 + 随机播放
+        val previous = MusicOneUiState(currentTrack = tracks[1], queue = tracks, shuffle = true, repeatMode = RepeatMode.ONE)
+        // 点击歌单“播放”：明确设置为列表播放 (shuffle = false)，循环模式强制设为全部循环 (repeatMode = ALL)
+        val updated = previous.withPlaylistQueue(tracks, shuffle = false, resetRepeatMode = true)
+        assertFalse(updated.shuffle)
+        assertEquals(RepeatMode.ALL, updated.repeatMode)
+        assertEquals(tracks, updated.queue)
+    }
+
+    @Test fun playlistShuffleExplicitlyOverridesRepeatModeToAllAndShuffles() {
+        // 原状态为单曲循环 + 普通播放
+        val previous = MusicOneUiState(currentTrack = tracks[0], queue = tracks, shuffle = false, repeatMode = RepeatMode.ONE)
+        // 点击歌单“随机”：明确设置为随机播放 (shuffle = true)，循环模式强制设为全部循环 (repeatMode = ALL)
+        val updated = previous.withPlaylistQueue(tracks, shuffle = true, random = Random(42), resetRepeatMode = true)
+        assertTrue(updated.shuffle)
+        assertEquals(RepeatMode.ALL, updated.repeatMode)
+        assertNotEquals(tracks, updated.queue)
+        assertEquals(tracks.toSet(), updated.queue.toSet())
+    }
+
+    @Test fun singleTrackPlaybackPreservesExistingShuffleAndRepeatMode() {
+        // 点播单曲保持原有模式规则，不自动覆盖为整张歌单播放
+        val previous = MusicOneUiState(currentTrack = tracks[2], queue = tracks, shuffle = true, repeatMode = RepeatMode.ONE)
+        val updated = previous.withPlaylistQueue(tracks, shuffle = previous.shuffle, resetRepeatMode = false)
+        assertTrue(updated.shuffle)
+        assertEquals(RepeatMode.ONE, updated.repeatMode)
     }
 }

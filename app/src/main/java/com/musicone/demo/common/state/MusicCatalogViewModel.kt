@@ -40,7 +40,7 @@ internal class MusicCatalogViewModel(application: Application) : AndroidViewMode
     val state: StateFlow<MusicCatalogUiState> = _state.asStateFlow()
     private var selectedSource = MusicSource.NETEASE
     private var configurationKey = ""
-    private val playlistDetails = mutableMapOf<String, MusicPlaylist>()
+    val playlists = PlaylistPagingController(catalog::playlistPage)
     private var playlistLoadJob: Job? = null
     private var recommendationsJob: Job? = null
     private var recommendedTracksJob: Job? = null
@@ -67,7 +67,7 @@ internal class MusicCatalogViewModel(application: Application) : AndroidViewMode
         recommendationsJob = null
         recommendedTracksJob?.cancel()
         libraryJob?.cancel()
-        playlistDetails.clear()
+        playlists.clear()
         recommendedTracksLoadedDay = null
         recommendedTracksSnapshot = null
         preparingRecommendedTracks = false
@@ -94,24 +94,11 @@ internal class MusicCatalogViewModel(application: Application) : AndroidViewMode
     }
 
     fun loadPlaylist(playlist: MusicPlaylist, onLoaded: (MusicPlaylist) -> Unit) {
-        if (!shouldCachePlaylistDetail(playlist)) {
-            // “已播歌曲”本身就是当前完整快照，不能让同一固定 ID 的旧详情覆盖新列表与封面。
-            playlistDetails.remove(playlist.id)
-            _state.update { state -> state.copy(loadingPlaylistId = null, actionMessage = null) }
-            onLoaded(playlist)
-            return
-        }
-        playlistDetails[playlist.id]?.let {
-            _state.update { state -> state.copy(loadingPlaylistId = null, actionMessage = null) }
-            onLoaded(it)
-            return
-        }
         playlistLoadJob?.cancel()
         playlistLoadJob = viewModelScope.launch {
             _state.update { it.copy(loadingPlaylistId = playlist.id, actionMessage = null) }
             try {
-                val detail = catalog.playlistDetail(playlist)
-                playlistDetails[playlist.id] = detail
+                val detail = playlists.complete(playlist)
                 _state.update { it.copy(loadingPlaylistId = null) }
                 onLoaded(detail)
             } catch (cancelled: CancellationException) {
@@ -123,7 +110,7 @@ internal class MusicCatalogViewModel(application: Application) : AndroidViewMode
     }
 
     fun invalidatePlaylist(playlistId: String) {
-        playlistDetails.remove(playlistId)
+        playlists.invalidate(playlistId)
     }
 
     private fun loadRecommendations() {
@@ -133,7 +120,7 @@ internal class MusicCatalogViewModel(application: Application) : AndroidViewMode
         val requestedPage = recommendationsPage
         recommendationsJob = viewModelScope.launch {
             _state.update { it.copy(loadingRecommendations = true, recommendationMessage = null) }
-            runCatching {
+            runCatchingCancellable {
                 catalog.recommendedPlaylists(requestedSource, requestedPage)
             }.onSuccess { playlists ->
                 if (requestedConfiguration == configurationKey) {
@@ -294,7 +281,8 @@ internal class MusicCatalogViewModel(application: Application) : AndroidViewMode
 }
 
 internal fun shouldCachePlaylistDetail(playlist: MusicPlaylist): Boolean =
-    playlist.id != QQ_RECENT_SONGS_PLAYLIST_ID
+    playlist.id != QQ_RECENT_SONGS_PLAYLIST_ID && !playlist.id.startsWith("qq-daily-") &&
+        playlist.id != "kugou-daily"
 
 internal fun recommendedTracksRefreshDue(force: Boolean, hasTracks: Boolean, loadedDay: String?, today: String): Boolean =
     homeDailyRefreshDue(force, hasTracks, loadedDay, today)

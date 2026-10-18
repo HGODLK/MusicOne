@@ -23,7 +23,7 @@ internal class QqApiClient {
             "notice" to "0", "cid" to "205360838", "needNewCode" to "0",
             "loginUin" to userId, "hostUin" to "0", "userid" to userId, "reqfrom" to "1",
         ).entries.joinToString("&") { (key, value) -> "${key.urlEncoded()}=${value.urlEncoded()}" }
-        val profile = runCatching {
+        val profile = runCatchingCancellable {
             JSONObject(PlatformHttp.get("$PROFILE_API?$query", cookie, qqHeaders("https://y.qq.com/")).text.qqJsonText())
         }.getOrNull()
         if (profile?.optInt("code", 0) == 1000) throw PlatformApiException("QQ 音乐登录状态已失效", 301)
@@ -38,7 +38,7 @@ internal class QqApiClient {
         val missingArtwork = batchResolved.filter { it.artworkUrl.isNullOrBlank() }
         val targetedArtwork = missingArtwork.map { track ->
             async {
-                val candidates = runCatching {
+                val candidates = runCatchingCancellable {
                     searchTracks("${track.title} ${track.artists}", cookie, hasVipAccess)
                 }.getOrDefault(emptyList())
                 track.id to track.withQqArtworkFallback(candidates)
@@ -98,13 +98,8 @@ internal class QqApiClient {
         return QqTrackAccessResolver().resolve(tracks.take(count), cookie)
     }
 
-    fun playlistDetail(playlist: MusicPlaylist, cookie: String, hasVipAccess: Boolean = false): MusicPlaylist {
-        val id = playlist.remoteId()
-        val url = "$PLAYLIST_API?type=1&json=1&utf8=1&onlysong=0&disstid=${id.urlEncoded()}&format=json&g_tk=5381&loginUin=0&hostUin=0&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq&needNewCode=0"
-        val raw = PlatformHttp.get(url, cookie, qqHeaders("https://y.qq.com/")).text.qqJsonText()
-        val detail = JSONObject(raw).parseQqPlaylist(playlist, hasVipAccess)
-        return detail.copy(tracks = QqTrackAccessResolver().resolve(detail.tracks, cookie))
-    }
+    fun playlistDetail(playlist: MusicPlaylist, cookie: String, hasVipAccess: Boolean = false): MusicPlaylist =
+        collectPlaylistTrackPages { QqPlaylistPaging().page(playlist, cookie, hasVipAccess, it?.offset ?: 0) }
 
     suspend fun playbackSource(
         track: MusicTrack,
@@ -119,7 +114,9 @@ internal class QqApiClient {
             currentCoroutineContext().ensureActive()
             QqSessionRequestCoordinator.beforeTicketRequest(activeCookie, showVerification = origin != QqRequestOrigin.PRELOAD)
             playbackSources.get(track, activeCookie, quality)
-                ?: playbackSourceOnce(track, activeCookie, quality, inspectMedia, origin).also {
+                ?: resolveQqPlaybackVariant(quality) { spec ->
+                    playbackSourceOnce(track, activeCookie, quality, inspectMedia, origin, spec)
+                }.also {
                     currentCoroutineContext().ensureActive()
                     playbackSources.remember(track, activeCookie, it)
                 }
@@ -132,22 +129,24 @@ internal class QqApiClient {
         quality: AudioQuality,
         inspectMedia: Boolean,
         origin: QqRequestOrigin,
+        spec: QqQualitySpec,
     ): PlaybackSource {
         // 短卡和部分详情缺少文件尺寸，实际可用档位以本次签发并校验的音源为准。
         awaitTicketRequest(cookie, origin)
         val primary = try {
-            requestPlayback(track, cookie, quality, origin).optJSONObject("req_1")?.optJSONObject("data")
+            requestPlayback(track, cookie, quality, spec, origin).optJSONObject("req_1")?.optJSONObject("data")
                 ?.also { it.throwIfQqPlaybackItemsFailed(cookie, origin) }
         } catch (_: QqPlaybackItemUnavailableException) {
             null
         }
         val primaryUrl = primary?.let { resolveQqPlaybackUrl(it, quality) }
         val primaryFull = primaryUrl != null &&
-            (!primaryUrl.isQqTrialUrl() || !inspectMedia || QqAudioValidation.isFullLength(primaryUrl, track))
+            (if (quality == AudioQuality.DOLBY) QqAudioValidation.isFullLength(primaryUrl, track)
+            else !primaryUrl.isQqTrialUrl() || !inspectMedia || QqAudioValidation.isFullLength(primaryUrl, track))
         // Android 换票偶尔只返回试听重定向；热切换时继续取网页兼容票，优先完整音源。
         val compatibilityUrl = if (!primaryFull) try {
                 awaitTicketRequest(cookie, origin)
-                requestCompatibilityPlayback(track, cookie, quality, origin)
+                requestCompatibilityPlayback(track, cookie, quality, spec, origin)
                     .optJSONObject("req_1")?.optJSONObject("data")
                     ?.also { it.throwIfQqPlaybackItemsFailed(cookie, origin) }
                     ?.let { resolveQqPlaybackUrl(it, quality) }
@@ -158,19 +157,23 @@ internal class QqApiClient {
                 null
             } else null
         val compatibilityFull = compatibilityUrl != null &&
-            (!compatibilityUrl.isQqTrialUrl() || !inspectMedia || QqAudioValidation.isFullLength(compatibilityUrl, track))
+            (if (quality == AudioQuality.DOLBY) QqAudioValidation.isFullLength(compatibilityUrl, track)
+            else !compatibilityUrl.isQqTrialUrl() || !inspectMedia || QqAudioValidation.isFullLength(compatibilityUrl, track))
         val url = (when {
             primaryFull -> primaryUrl
             compatibilityFull -> compatibilityUrl
             else -> preferredQqPlaybackUrl(primaryUrl, compatibilityUrl)
         })
-            ?: throw PlatformApiException(track.unavailableReason ?: "歌曲暂无可用播放地址")
+            ?: throw PlatformApiException("歌曲暂无可用播放地址")
         val actualQuality = qqPlaybackQuality(url)
             ?: throw PlatformApiException("QQ 音乐返回了无法识别的音源")
         if (actualQuality != quality) {
             throw PlatformApiException("QQ 音乐未返回${quality.displayLabel(MusicSource.QQ)}音源")
         }
-        val spec = qqQualitySpec(actualQuality)
+        // 杜比直链也必须读取真实编码和时长，文件名前缀不能证明是完整杜比音源。
+        if (actualQuality == AudioQuality.DOLBY && !QqAudioValidation.isFullLength(url, track)) {
+            throw PlatformApiException("未获取到可验证的完整 Dolby全景音源")
+        }
         // Hi-Res 票据可能指向不存在或降档的文件；必须确认后才能结束逐档回退。
         // 点播仅对 Hi-Res 读取 42 字节头，普通无损规格仍留到播放后加载。
         val flac = if (actualQuality == AudioQuality.HI_RES ||
@@ -207,7 +210,9 @@ internal class QqApiClient {
                 currentCoroutineContext().ensureActive()
                 QqSessionRequestCoordinator.beforeTicketRequest(activeCookie)
                 playbackSources.get(track, activeCookie, quality)
-                    ?: playbackSourceOnce(track, activeCookie, quality, true, QqRequestOrigin.QUALITY_PROBE).also {
+                    ?: resolveQqPlaybackVariant(quality) { spec ->
+                        playbackSourceOnce(track, activeCookie, quality, true, QqRequestOrigin.QUALITY_PROBE, spec)
+                    }.also {
                         currentCoroutineContext().ensureActive()
                         playbackSources.remember(track, activeCookie, it)
                     }
@@ -242,7 +247,7 @@ internal class QqApiClient {
                     .put("qrc", 1)
                     .put("roma", 0)
                     .put("trans", 1)))
-        runCatching {
+        runCatchingCancellable {
             postMusicU(body, cookie, origin = origin).optJSONObject("lyric")?.optJSONObject("data")
         }.onFailure { error ->
             lyricDiagnostic(track, "QRC请求失败", detail = "异常=${error::class.java.simpleName}")
@@ -268,26 +273,8 @@ internal class QqApiClient {
         return lyrics
     }
 
-    fun likedTrackIds(cookie: String, userId: String): Set<String> {
-        if (cookie.isBlank()) throw PlatformApiException("请先登录 QQ 音乐", 301)
-        val query = profileAssetQuery(userId, "1", 0, 500)
-        val response = JSONObject(PlatformHttp.get("$FAVORITE_API?$query", cookie, qqHeaders("https://y.qq.com/")).text)
-        if (response.optInt("code", -1) != 0) throw PlatformApiException("QQ 音乐我喜欢加载失败")
-        val songs = response.optJSONObject("data")?.optJSONArray("songlist") ?: JSONArray()
-        return buildSet {
-            for (index in 0 until songs.length()) {
-                val item = songs.optJSONObject(index)?.optJSONObject("data")
-                    ?: songs.optJSONObject(index)
-                    ?: continue
-                // 正常歌曲用 songmid 作身份，音乐流短卡在补全前只有 songid；两者都缓存，
-                // 这样收藏状态可以先命中短卡，详情补全后也不会丢失。
-                item.optString("songmid").ifBlank { item.optString("mid") }
-                    .takeIf(String::isNotBlank)?.let { add("qq-$it") }
-                item.optString("songid").ifBlank { item.optString("id") }
-                    .toLongOrNull()?.takeIf { it > 0L }?.let { add("qq-$it") }
-            }
-        }
-    }
+    fun likedTrackIds(cookie: String, userId: String): Set<String> =
+        QqLibraryClient().likedTrackIds(cookie, userId)
 
     fun setTrackLiked(cookie: String, track: MusicTrack, liked: Boolean) {
         setTracksLiked(cookie, listOf(track), liked)
@@ -307,7 +294,7 @@ internal class QqApiClient {
                 .put("song_type", track.providerType)
                 .put("song_id", track.catalogId.toLongOrNull() ?: 0L))
         val detailRequest = async {
-            runCatching {
+            runCatchingCancellable {
                 postMusicU(
                     JSONObject().put("comm", commonRequest(cookie)).put("req_1", request),
                     cookie,
@@ -316,7 +303,7 @@ internal class QqApiClient {
             }.getOrNull()
         }
         val fallbackRequest: kotlinx.coroutines.Deferred<List<MusicTrack>>? = if (track.artworkUrl.isNullOrBlank()) async {
-            runCatching {
+            runCatchingCancellable {
                 searchTracks("${track.title} ${track.artists}", cookie, hasVipAccess)
             }.getOrDefault(emptyList())
         } else null
@@ -327,7 +314,7 @@ internal class QqApiClient {
             return@coroutineScope enriched
         }
         // 详情失败时搜索结果的根级 size128/size320/sizeflac 也是音质校验后备来源。
-        val candidates = fallbackRequest?.await() ?: runCatching {
+        val candidates = fallbackRequest?.await() ?: runCatchingCancellable {
             searchTracks("${track.title} ${track.artists}", cookie, hasVipAccess)
         }.getOrDefault(emptyList())
         val exact = candidates.firstOrNull { candidate ->
@@ -361,11 +348,11 @@ internal class QqApiClient {
         track: MusicTrack,
         cookie: String,
         quality: AudioQuality,
+        spec: QqQualitySpec,
         origin: QqRequestOrigin,
     ): JSONObject {
-        val spec = qqQualitySpec(quality)
         val mid = track.qqPlaybackMid()
-        val filenames = qqPlaybackFilenames(spec.prefix, spec.extension, mid, track.mediaId)
+        val filenames = qqPlaybackFilenames(spec.prefix, spec.extension, mid, track.qqPlaybackMediaMid(quality))
         return requestPlaybackValues(
             mid,
             track.providerType,
@@ -381,11 +368,11 @@ internal class QqApiClient {
         track: MusicTrack,
         cookie: String,
         quality: AudioQuality,
+        spec: QqQualitySpec,
         origin: QqRequestOrigin,
     ): JSONObject {
-        val spec = qqQualitySpec(quality)
         val mid = track.qqPlaybackMid()
-        val filenames = qqPlaybackFilenames(spec.prefix, spec.extension, mid, track.mediaId)
+        val filenames = qqPlaybackFilenames(spec.prefix, spec.extension, mid, track.qqPlaybackMediaMid(quality))
         return requestPlaybackValues(
             mid,
             track.providerType,
@@ -479,19 +466,11 @@ internal class QqApiClient {
             .put("uin", uin)
     }
 
-    private fun profileAssetQuery(userId: String, reqType: String, offset: Int, limit: Int): String = linkedMapOf(
-        "format" to "json", "inCharset" to "utf8", "outCharset" to "utf-8", "platform" to "yqq.json",
-        "needNewCode" to "0", "loginUin" to userId, "hostUin" to "0", "notice" to "0", "g_tk" to "5381",
-        "ct" to "20", "cid" to "205360956", "userid" to userId, "reqtype" to reqType,
-        "sin" to offset.toString(), "ein" to (offset + limit - 1).toString(),
-    ).entries.joinToString("&") { (key, value) -> "${key.urlEncoded()}=${value.urlEncoded()}" }
 
     companion object {
         private const val SEARCH_API = "https://c.y.qq.com/soso/fcgi-bin/search_for_qq_cp"
-        private const val PLAYLIST_API = "https://i.y.qq.com/qzone-music/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg"
         private const val MUSIC_U_API = "https://u.y.qq.com/cgi-bin/musicu.fcg"
         private const val LYRIC_API = "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg"
-        private const val FAVORITE_API = "https://c.y.qq.com/fav/fcgi-bin/fcg_get_profile_order_asset.fcg"
         private const val PROFILE_API = "https://c6.y.qq.com/rsc/fcgi-bin/fcg_get_profile_homepage.fcg"
         private const val SEARCH_REFERER = "https://y.qq.com/portal/search.html"
         private const val FAVORITE_CONNECT_TIMEOUT_MS = 8_000
@@ -503,17 +482,6 @@ internal fun preferredQqPlaybackUrl(primary: String?, compatibility: String?): S
     compatibility != null && !compatibility.isQqTrialUrl() -> compatibility
     primary != null -> primary
     else -> compatibility
-}
-
-private data class QqQualitySpec(val prefix: String, val extension: String)
-
-private fun qqQualitySpec(quality: AudioQuality): QqQualitySpec = when (quality) {
-    AudioQuality.STANDARD -> QqQualitySpec("M500", "mp3")
-    AudioQuality.HIGHER -> QqQualitySpec("C600", "m4a")
-    AudioQuality.EXHIGH -> QqQualitySpec("M800", "mp3")
-    AudioQuality.LOSSLESS -> QqQualitySpec("F000", "flac")
-    AudioQuality.HI_RES -> QqQualitySpec("RS01", "flac")
-    AudioQuality.DOLBY -> QqQualitySpec("D004", "mp4")
 }
 
 private fun hash33(value: String, seed: Int = 0): Int {
@@ -639,9 +607,10 @@ internal fun qqPlaybackQuality(url: String): AudioQuality? {
     }.getOrDefault(normalized.substringBefore('?').substringBefore('#'))
     val filename = path.substringAfterLast('/')
     return QQ_AUDIO_QUALITIES.firstOrNull { quality ->
-        val spec = qqQualitySpec(quality)
-        filename.startsWith(spec.prefix, ignoreCase = true) &&
-            filename.endsWith(".${spec.extension}", ignoreCase = true)
+        qqQualitySpecs(quality).any { spec ->
+            filename.startsWith(spec.prefix, ignoreCase = true) &&
+                filename.endsWith(".${spec.extension}", ignoreCase = true)
+        }
     }
 }
 

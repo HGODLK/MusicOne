@@ -11,6 +11,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LyricPresentationTest {
+    @Test fun resolvedEmptyLibraryPreviewPresentsNoLyricsInsteadOfWaitingForNetwork() {
+        for (source in listOf(MusicSource.LOCAL, MusicSource.BILIBILI)) {
+            val target = track("custom").copy(source = source, lyrics = emptyList())
+            val preview = previewFor(target).copy(lyricsResolved = true)
+            val request = currentLyricPresentationRequest(MusicOneUiState(), preview)!!
+            assertEquals("custom", request.presentation?.id)
+            assertEquals(emptyList<TimedLyric>(), request.presentation?.lyrics)
+        }
+    }
+
+    @Test fun unresolvedLibraryPreviewStillRetainsTheCurrentLyricsWhileReadingDisk() {
+        val target = track("custom").copy(source = MusicSource.LOCAL, lyrics = emptyList())
+        assertNull(currentLyricPresentationRequest(MusicOneUiState(), previewFor(target))?.presentation)
+    }
+
     @Test fun committedPreviewDoesNotReopenTheOldLyricsWhenPlaybackNotificationIsLate() = runBlocking {
         val initial = MusicOneUiState().forTrackTransition(track("a"), playWhenReady = true)
         val notifications = MutableStateFlow(initial)
@@ -167,6 +182,8 @@ class LyricPresentationTest {
         assertNull(request(target, state = LyricLoadState.LOADING).presentation)
         assertNull(request(target.copy(lyrics = emptyList())).presentation)
         assertEquals(emptyList<TimedLyric>(), request(target, state = LyricLoadState.UNAVAILABLE).presentation?.lyrics)
+        assertEquals(true, request(target, state = LyricLoadState.RETRYABLE).presentation?.retryable)
+        assertEquals(false, request(target, state = LyricLoadState.UNAVAILABLE).presentation?.retryable)
     }
 
     private fun observe(

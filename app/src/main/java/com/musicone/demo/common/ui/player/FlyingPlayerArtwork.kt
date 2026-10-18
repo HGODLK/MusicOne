@@ -46,7 +46,7 @@ private fun FlyingPlayerArtworkFrame(motion: PageMotion, frame: PlayerArtworkFra
     // 画布在准备阶段就常驻，和源、目标封面在同一绘制帧交接，避免源封面先隐藏一帧。
     Canvas(Modifier.fillMaxSize()) {
         if (!motion.moving) return@Canvas
-        val source = motion.sourceSnapshot["cover"] ?: return@Canvas
+        val source = playerSourceAnchor(motion, "cover") ?: return@Canvas
         val target = motion.targetSnapshot["cover"] ?: return@Canvas
         val p = motion.value
         val bounds = motionRect(source.bounds, target.bounds, p)

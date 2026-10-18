@@ -18,15 +18,15 @@ internal object KugouAudioValidation {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, KugouMediaInfo>?): Boolean = size > 32
     }
 
-    private fun inspect(url: String, flacExpected: Boolean): KugouMediaInfo? {
+    private fun inspect(url: String, flacExpected: Boolean, headers: Map<String, String>): KugouMediaInfo? {
         synchronized(cache) { cache[url] }?.let { return it }
-        val flac = if (flacExpected) readQqFlacInfo(url)?.let {
+        val flac = if (flacExpected) readQqFlacInfo(url, timeoutMs = 4_000, headers = headers)?.let {
             KugouMediaInfo(it.durationMs, "audio/flac", it.sampleRate, it.bitDepth)
         } else null
-        val info = flac ?: runCatching {
+        val info = flac ?: runCatchingCancellable {
             val extractor = MediaExtractor()
             try {
-                extractor.setDataSource(url, emptyMap())
+                extractor.setDataSource(url, headers)
                 (0 until extractor.trackCount).firstNotNullOfOrNull { index ->
                     val format = extractor.getTrackFormat(index)
                     val mime = format.getString(MediaFormat.KEY_MIME).orEmpty()
@@ -46,8 +46,12 @@ internal object KugouAudioValidation {
         return info
     }
 
-    fun verify(url: String, track: MusicTrack, quality: AudioQuality): KugouMediaInfo? {
-        val info = inspect(url, quality == AudioQuality.LOSSLESS || quality == AudioQuality.HI_RES) ?: return null
+    fun verify(url: String, track: MusicTrack, quality: AudioQuality, headers: Map<String, String> = emptyMap()): KugouMediaInfo? {
+        val info = inspect(url, quality == AudioQuality.LOSSLESS || quality == AudioQuality.HI_RES, headers)
+        if (info == null) {
+            Log.w("KugouAudioValidation", "quality=${quality.name} reason=MEDIA_PROBE")
+            return null
+        }
         val valid = kugouMediaMatches(info, track.durationMs, quality)
         // 只记录歌曲标识和媒体规格，避免把签名地址或账号信息写入日志。
         Log.d(

@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 internal fun PlatformAvailabilityBadge(source: MusicSource) {
-    if (source == MusicSource.QQ) return
+    if (source == MusicSource.QQ || source == MusicSource.LOCAL) return
     Surface(
         shape = RoundedCornerShape(6.dp),
         color = MaterialTheme.colorScheme.secondaryContainer,

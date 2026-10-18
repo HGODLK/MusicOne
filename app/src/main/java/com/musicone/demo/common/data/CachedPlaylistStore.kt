@@ -10,11 +10,12 @@ internal class CachedPlaylistStore(context: Context) {
     fun read(namespace: String): List<MusicPlaylist> = runCatching {
         JSONArray(preferences.getString(namespace, "[]")).searchObjects().map { value ->
             MusicPlaylist(value.getString("id"), MusicSource.valueOf(value.getString("source")),
-                value.getString("title"), value.optString("subtitle"), "", value.optInt("count"),
+                value.getString("title"), value.optString("subtitle"), value.optString("description"), value.optInt("count"),
                 value.optLong("start"), value.optLong("end"), value.optString("mark"),
                 value.optJSONArray("tracks")?.searchObjects().orEmpty().mapNotNull { it.toQqStoredTrack() },
                 value.optString("artwork").takeIf(String::isNotBlank),
-                value.optLong("directory").takeIf { it > 0 })
+                value.optLong("directory").takeIf { it > 0 }, value.optBoolean("owned"),
+                isPlatformFavorites = value.optBoolean("platformFavorites"))
         }
     }.getOrDefault(emptyList())
 
@@ -23,6 +24,8 @@ internal class CachedPlaylistStore(context: Context) {
         playlists.forEach { playlist ->
             values.put(JSONObject().put("id", playlist.id).put("source", playlist.source.name)
                 .put("title", playlist.title).put("subtitle", playlist.subtitle).put("count", playlist.count)
+                .put("description", playlist.description).put("owned", playlist.isOwned)
+                .put("platformFavorites", playlist.isPlatformFavorites)
                 .put("start", playlist.artworkStart).put("end", playlist.artworkEnd).put("mark", playlist.artworkMark)
                 .put("artwork", playlist.artworkUrl.orEmpty()).put("directory", playlist.qqDirectoryId ?: 0)
                 .put("tracks", JSONArray().apply { playlist.tracks.forEach { put(it.toQqStoredTrackJson()) } }))

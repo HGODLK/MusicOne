@@ -32,6 +32,7 @@ internal class PageMotion(
     private val enterAnimation: AnimationSpec<Float>? = null,
     private val dragAnimation: AnimationSpec<Float>? = null,
     private val immediateGestureHandoff: Boolean = false,
+    private val sharedAnchorKeys: Set<String> = emptySet(),
 ) {
     val progress = Animatable(if (initialOpen) 1f else 0f).apply {
         if (dragAnimation != null) updateBounds(0f, 1f)
@@ -39,6 +40,8 @@ internal class PageMotion(
     var phase by mutableStateOf(if (initialOpen) MotionPhase.SHOWN else MotionPhase.HIDDEN)
         private set
     var wantsOpen by mutableStateOf(initialOpen)
+        private set
+    var openRequestedAtNanos by mutableLongStateOf(0L)
         private set
     var hostBounds by mutableStateOf(Rect.Zero)
         private set
@@ -67,9 +70,25 @@ internal class PageMotion(
     val hasSharedCover get() = sourceSnapshot[coverKey] != null && targetSnapshot[coverKey] != null
 
     fun updateHost(bounds: Rect) {
+        val previous = hostBounds
         val resized = hostBounds.width > 0f && hostBounds.size != bounds.size
         hostBounds = bounds
         if (resized && mounted && phase != MotionPhase.SHOWN) {
+            if (sharedAnchorKeys.isNotEmpty()) {
+                // 播放页改窗保留进度及速度，快照同步到新坐标，不取消整个行程。
+                fun Map<String, MotionAnchor>.resized() = mapValues { (_, anchor) ->
+                    anchor.copy(bounds = Rect(
+                        bounds.left + (anchor.bounds.left - previous.left) * bounds.width / previous.width,
+                        bounds.top + (anchor.bounds.top - previous.top) * bounds.height / previous.height,
+                        bounds.left + (anchor.bounds.right - previous.left) * bounds.width / previous.width,
+                        bounds.top + (anchor.bounds.bottom - previous.top) * bounds.height / previous.height))
+                }
+                if (previous.height > 0f && bounds.width > 0f && bounds.height > 0f) {
+                    sourceSnapshot = sourceSnapshot.resized()
+                    targetSnapshot = targetSnapshot.resized()
+                }
+                return
+            }
             job?.cancel()
             job = scope.launch {
                 progress.snapTo(if (wantsOpen) 1f else 0f)
@@ -83,6 +102,7 @@ internal class PageMotion(
             if (open && phase != MotionPhase.HIDDEN) return
             if (!open && phase != MotionPhase.SHOWN) return
         }
+        if (open && !wantsOpen) openRequestedAtNanos = System.nanoTime()
         wantsOpen = open
         val retainedVelocity = progress.velocity
         job?.cancel()
@@ -110,16 +130,7 @@ internal class PageMotion(
             }
             if ((open || preparingDrag) && needsPreparation && waitForTarget && !fromDrag) {
                 // 只等待本次布局，不等待网络；未就绪时使用淡入回退。
-                withTimeoutOrNull(160L) {
-                    var last: Rect? = null
-                    var matches = 0
-                    while (matches < 2) {
-                        withFrameNanos { }
-                        val bounds = targets[coverKey]?.bounds
-                        matches = if (bounds != null && bounds == last) matches + 1 else 0
-                        last = bounds
-                    }
-                }
+                awaitStableAnchors()
             }
             if (!moving) captureAnchors()
             if (fromDrag) progress.snapTo(start)
@@ -153,6 +164,22 @@ internal class PageMotion(
             // 保留终点画面一帧，再交回真实控件，避免移除动画层时跳过终点。
             withFrameNanos { }
             complete()
+        }
+    }
+
+    private suspend fun awaitStableAnchors() {
+        withTimeoutOrNull(160L) {
+            var last: List<Rect?>? = null
+            var matches = 0
+            while (matches < 2) {
+                withFrameNanos { }
+                // 只有播放页显式要求共享内容整体就绪，其他页面仍只等待原封面锚点。
+                val bounds = if (sharedAnchorKeys.isEmpty()) listOf(targets[coverKey]?.bounds)
+                else sharedAnchorKeys.flatMap { key -> listOf(sources[key]?.bounds, targets[key]?.bounds) }
+                val ready = bounds.all { it != null && (sharedAnchorKeys.isEmpty() || anchorFits(it, hostBounds)) }
+                matches = if (ready && bounds == last) matches + 1 else 0
+                last = bounds
+            }
         }
     }
 
@@ -191,6 +218,7 @@ internal class PageMotion(
     fun beginOpeningDrag(): Boolean {
         if (mounted) return false
         job?.cancel()
+        openRequestedAtNanos = System.nanoTime()
         wantsOpen = true
         openingDrag = true
         targetContentHandoff = false
@@ -199,16 +227,7 @@ internal class PageMotion(
         dragReleaseTimeNanos = null
         phase = MotionPhase.PREPARING
         job = scope.launch {
-            if (waitForTarget) withTimeoutOrNull(160L) {
-                var last: Rect? = null
-                var matches = 0
-                while (matches < 2) {
-                    withFrameNanos { }
-                    val bounds = targets[coverKey]?.bounds
-                    matches = if (bounds != null && bounds == last) matches + 1 else 0
-                    last = bounds
-                }
-            }
+            if (waitForTarget) awaitStableAnchors()
             // 准备期间累计手指位置，布局就绪后直接接上当前进度。
             captureAnchors()
             phase = MotionPhase.DRAGGING
@@ -230,10 +249,11 @@ internal fun rememberPageMotion(initialOpen: Boolean = false, enterMillis: Int =
     exitAnimation: AnimationSpec<Float>? = null,
     enterAnimation: AnimationSpec<Float>? = null,
     dragAnimation: AnimationSpec<Float>? = null,
-    immediateGestureHandoff: Boolean = false): PageMotion {
+    immediateGestureHandoff: Boolean = false,
+    sharedAnchorKeys: Set<String> = emptySet()): PageMotion {
     val scope = rememberCoroutineScope()
     return remember { PageMotion(scope, initialOpen, enterMillis, exitMillis, exitAnimation, enterAnimation,
-        dragAnimation, immediateGestureHandoff) }
+        dragAnimation, immediateGestureHandoff, sharedAnchorKeys) }
 }
 
 internal val LocalPlaylistMotion = staticCompositionLocalOf<PageMotion?> { null }

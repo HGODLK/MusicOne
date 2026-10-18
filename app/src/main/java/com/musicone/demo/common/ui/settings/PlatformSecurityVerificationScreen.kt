@@ -36,6 +36,10 @@ internal fun PlatformSecurityVerificationScreen(
     onComplete: (PlatformSecurityVerificationResult) -> Unit,
 ) {
     BackHandler(onBack = onCancel)
+    if (state.source == MusicSource.NETEASE && state.kind == PlatformSecurityVerificationKind.WEB) {
+        key(state.instanceId) { NeteaseOfficialLoginContent(working, errorMessage, onCancel, onComplete) }
+        return
+    }
     if (state.source == MusicSource.QQ && state.kind == PlatformSecurityVerificationKind.WEB &&
         qqVkeyVerificationPage(state.url)
     ) {

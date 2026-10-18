@@ -17,14 +17,18 @@ internal fun PlaybackSettings(source: MusicSource) {
     val preferred by remember(source) { preferences.observe(source) }.collectAsState(preferences.read(source))
     remember { PlaybackOptions.initialize(context); true }
     val usbStatus by UsbAudioOutputStatus.current.collectAsState()
+    val qualities = playerQualitiesForSource(source)
+    val dolby = DolbyPlaybackPolicy.eligibility
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("播放与音质", style = MaterialTheme.typography.titleLarge)
         PlaybackSettingsMenuButton(
             label = "首选音质 · ${preferred.displayLabel(source)}",
             title = "首选音质",
-            options = PLAYER_AUDIO_QUALITIES.map { quality ->
-                PlaybackSettingsMenuOption(quality.displayLabel(source), quality == preferred) {
-                    preferences.save(source, quality)
+            options = qualities.map { quality ->
+                PlaybackSettingsMenuOption(quality.displayLabel(source), quality == preferred,
+                    enabled = quality != AudioQuality.DOLBY || dolby.allowed,
+                    description = dolby.unavailableReason.takeIf { quality == AudioQuality.DOLBY }) {
+                    if (DolbyPlaybackPolicy.permits(quality)) preferences.save(source, quality)
                 }
             },
         )
@@ -33,9 +37,11 @@ internal fun PlaybackSettings(source: MusicSource) {
             title = "移动网络音质上限",
             options = listOf(PlaybackSettingsMenuOption("跟随首选", PlaybackOptions.mobileQuality == null) {
                 PlaybackOptions.mobile(null)
-            }) + PLAYER_AUDIO_QUALITIES.map { quality ->
-                PlaybackSettingsMenuOption(quality.displayLabel(source), quality == PlaybackOptions.mobileQuality) {
-                    PlaybackOptions.mobile(quality)
+            }) + qualities.map { quality ->
+                PlaybackSettingsMenuOption(quality.displayLabel(source), quality == PlaybackOptions.mobileQuality,
+                    enabled = quality != AudioQuality.DOLBY || dolby.allowed,
+                    description = dolby.unavailableReason.takeIf { quality == AudioQuality.DOLBY }) {
+                    if (DolbyPlaybackPolicy.permits(quality)) PlaybackOptions.mobile(quality)
                 }
             },
         )
@@ -61,6 +67,8 @@ internal fun PlaybackSettings(source: MusicSource) {
             Text("播放页播放时屏幕常亮", Modifier.weight(1f))
             MusicOneSettingsSwitch(PlaybackOptions.keepScreenOn)
         }
+        DevicePlaybackSettings()
+        if (source == MusicSource.QQ) DolbyPlaybackSettings()
         Row(
             Modifier.fillMaxWidth()
                 .toggleable(
@@ -98,7 +106,7 @@ private fun usbOutputDescription(enabled: Boolean, status: UsbAudioOutputSnapsho
     val device = status.deviceName?.takeIf(String::isNotBlank)
     val route = when (status.route) {
         UsbAudioOutputRoute.SYSTEM_BIT_PERFECT -> "系统 Bit-Perfect"
-        UsbAudioOutputRoute.DIRECT_UAC2 -> "UAC2 独占"
+        UsbAudioOutputRoute.DIRECT_UAC2 -> if (status.converted) "UAC2 独占（兼容转换）" else "UAC2 独占"
         UsbAudioOutputRoute.FALLBACK -> "系统兼容输出"
         UsbAudioOutputRoute.PERMISSION_REQUIRED -> "等待授权"
         UsbAudioOutputRoute.WAITING_FOR_DEVICE -> "等待设备"

@@ -106,6 +106,7 @@ internal fun BottomPlayerBar(
             layout(child.width, height) { child.placeRelative(0, (child.height * (1f - visibility)).roundToInt()) }
         }.graphicsLayer { alpha = if (navigationVisible) 1f - maxOf(playlistMotion.value, searchProgress()) else 0f }) {
             Box(Modifier.onSizeChanged { measurements.navigationHeight = with(density) { it.height.toDp() } }) {
+                val queueState = LocalPlayerQueueState.current
                 BottomCapsule(
                     page = state.page,
                     backdropLayer = backdropLayer,
@@ -115,6 +116,7 @@ internal fun BottomPlayerBar(
                     onPageChange = rootNavigation::animateTo,
                     onNavigationContact = rootNavigation::beginNavigationInteraction,
                     navigationDragBlocked = rootNavigation::isNavigationDragBlocked,
+                    queueState = queueState,
                     immersiveVisual = immersiveVisual,
                 )
             }

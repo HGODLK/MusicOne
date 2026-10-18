@@ -71,6 +71,10 @@ internal class PlaybackQualityController(
     fun select(track: MusicTrack, key: PlaybackRequestKey, quality: AudioQuality,
                active: AudioQuality?, available: List<AudioQuality>) {
         if (!isCurrent(key) || !quality.isAvailableInPlayer(available) || changing) return
+        if (!DolbyPlaybackPolicy.permits(quality)) {
+            publish(PlaybackQualityEvent.ChangeFailed(key, DolbyPlaybackPolicy.eligibility.unavailableReason.orEmpty()))
+            return
+        }
         upgrade.cancel()
         if (active?.playbackEquivalent() == quality.playbackEquivalent()) {
             savePreference(track.source, quality)
@@ -84,6 +88,7 @@ internal class PlaybackQualityController(
             try {
                 val source = resolve(track, quality.playbackEquivalent())
                 if (request != changeSequence || !isCurrent(key)) return@launch
+                DolbyPlaybackPolicy.requireAllowed(source.actualQuality)
                 savePreference(track.source, quality)
                 changing = false
                 publish(PlaybackQualityEvent.Selected(key, quality, source.url))

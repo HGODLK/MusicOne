@@ -3,6 +3,7 @@ package com.musicone.demo
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.translate
@@ -14,6 +15,9 @@ import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.unit.IntRect
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.yield
 
 private data class LyricTextRasterKey(
     val layoutInput: TextLayoutInput,
@@ -45,12 +49,27 @@ private class LyricTextRasterCache {
         return bitmap
     }
 
+    @Synchronized
+    fun preparationCandidates(): List<ImageBitmap> {
+        val recent = entries.values.toList().asReversed()
+        return lyricRasterPreparationIndices(recent.map { it.width.toLong() * it.height * 4L }).map(recent::get)
+    }
+
     private companion object {
         const val MAX_RETAINED_BYTES = 8L * 1024L * 1024L
     }
 }
 
 private val lyricTextRasterCache = LyricTextRasterCache()
+
+/** 仅向系统提交现有位图的准备请求，不录制或输出画面，也不宣称 GPU 已完成。 */
+internal suspend fun prepareCachedLyricRasters() {
+    for (raster in lyricTextRasterCache.preparationCandidates()) {
+        currentCoroutineContext().ensureActive()
+        try { raster.asAndroidBitmap().prepareToDraw() } catch (_: RuntimeException) { return }
+        yield()
+    }
+}
 
 /** 完整正文和外伸词段共用字节上限；播放时间与动画值不进入栅格缓存。 */
 internal fun lyricTextRaster(

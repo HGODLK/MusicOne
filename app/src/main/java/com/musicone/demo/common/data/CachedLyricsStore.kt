@@ -28,6 +28,15 @@ internal class CachedLyricsStore(private val context: Context) {
     }
 
     suspend fun save(track: MusicTrack, lyrics: List<TimedLyric>, namespace: String = namespace(track)) = withContext(Dispatchers.IO) {
-        if (hasReusableLyrics(track, lyrics)) MusicDiskCache.get(context).write(key(track, namespace), encodeCachedLyrics(lyrics).toByteArray())
+        val cache = MusicDiskCache.get(context)
+        if (!hasReusableLyrics(track, lyrics)) {
+            if (track.source !in setOf(MusicSource.NETEASE, MusicSource.KUGOU) || lyrics.isEmpty() || !validLyricTimeline(lyrics)) return@withContext
+            // 普通接口降级结果保留为离线后备，但不能覆盖已经确认的逐字或普通歌词。
+            val existing = cache.read(key(track, namespace))?.let { decodeCachedLyrics(it.toString(Charsets.UTF_8)) }.orEmpty()
+            if (hasReusableLyrics(track, existing) ||
+                (track.source == MusicSource.NETEASE && existing.any { it.words.isNotEmpty() } &&
+                    lyrics.none { it.words.isNotEmpty() })) return@withContext
+        }
+        cache.write(key(track, namespace), encodeCachedLyrics(lyrics).toByteArray())
     }
 }

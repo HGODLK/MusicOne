@@ -56,6 +56,7 @@ internal fun PrimaryPageHeader(
     contentColor: Color? = null,
 ) {
     val headerState = LocalPrimaryPageHeaderState.current
+    val localMode = LocalMusicLibraryUi.current.localMode
     val resolvedContentColor = contentColor ?: MaterialTheme.colorScheme.onSurface
     val immersiveContainer = if (resolvedContentColor.luminance() > .5f) {
         Color.Black.copy(alpha = .34f)
@@ -79,7 +80,7 @@ internal fun PrimaryPageHeader(
             Box(
                 Modifier.weight(1f).fillMaxHeight().semantics {
                     if (headerState.titleVisibility(page) > 0f) {
-                        contentDescription = page.primaryTitle
+                        contentDescription = if (localMode) "本地音乐" else page.primaryTitle
                     } else {
                         hideFromAccessibility()
                     }
@@ -88,7 +89,7 @@ internal fun PrimaryPageHeader(
             ) {
                 MusicOnePage.entries.forEach { targetPage ->
                     Text(
-                        targetPage.primaryTitle,
+                        if (localMode) "本地音乐" else targetPage.primaryTitle,
                         color = resolvedContentColor,
                         fontSize = 34.sp,
                         lineHeight = 38.sp,
@@ -109,9 +110,9 @@ internal fun PrimaryPageHeader(
                 backdropLayer = backdropLayer,
                 backdropBounds = backdropBounds,
                 // 搜索展开时由搜索层原位接管按钮，不能跟随首页标题上移。
-                modifier = Modifier.size(48.dp).onGloballyPositioned { if (page == MusicOnePage.MY) onSettingsBounds(it.boundsInRoot()) }
+                modifier = Modifier.size(48.dp).onGloballyPositioned { if (localMode || page == MusicOnePage.MY) onSettingsBounds(it.boundsInRoot()) }
                     .graphicsLayer {
-                        alpha = if (searchProgress() > 0f) 0f else if (page == MusicOnePage.MY) {
+                        alpha = if (searchProgress() > 0f) 0f else if (localMode || page == MusicOnePage.MY) {
                             playerGlassAlpha(settingsProgress())
                         } else 1f
                     },
@@ -122,20 +123,20 @@ internal fun PrimaryPageHeader(
                 fallbackColor = contentColor?.let { immersiveContainer }
                     ?: MaterialTheme.colorScheme.surfaceContainer,
                 // 设置页挂载期间保留展开前的真实玻璃，返回端点不重新采样即将卸载的页面。
-                backgroundSnapshot = settingsGlassSnapshot.takeIf { page == MusicOnePage.MY },
+                backgroundSnapshot = settingsGlassSnapshot.takeIf { localMode || page == MusicOnePage.MY },
                 captureBackgroundSnapshot = !settingsMounted(),
             ) {
                 IconButton(
-                    onClick = if (page == MusicOnePage.HOME) onSearch else onSettings,
+                    onClick = if (!localMode && page == MusicOnePage.HOME) onSearch else onSettings,
                     enabled = settingsProgress() == 0f,
                     modifier = Modifier.size(48.dp).semantics {
-                        contentDescription = if (page == MusicOnePage.HOME) "打开搜索" else "打开设置"
+                        contentDescription = if (!localMode && page == MusicOnePage.HOME) "打开搜索" else "打开设置"
                     },
                 ) {
                     Box(Modifier.size(24.dp)) {
                         MusicOnePage.entries.forEach { targetPage ->
                             Icon(
-                                imageVector = if (targetPage == MusicOnePage.HOME) {
+                                imageVector = if (!localMode && targetPage == MusicOnePage.HOME) {
                                     Icons.Default.Search
                                 } else {
                                     Icons.Default.Settings

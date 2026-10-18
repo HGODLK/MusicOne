@@ -4,9 +4,9 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LyricBoundaryVisibilityTest {
-    @Test fun partiallyClippedGlyphsAreHiddenAtBothEdges() {
+    @Test fun topProtectsWholeGlyphsWhileBottomAllowsSlidingIntoTheViewport() {
         assertEquals(0f, lyricBoundaryLineAlpha(-1f, 39f, 0f, 200f, 8f), 0f)
-        assertEquals(0f, lyricBoundaryLineAlpha(161f, 201f, 0f, 200f, 8f), 0f)
+        assertEquals(1f, lyricBoundaryLineAlpha(161f, 201f, 0f, 200f, 8f), 0f)
         assertEquals(1f, lyricBoundaryLineAlpha(20f, 60f, 0f, 200f, 8f), 0f)
     }
 
@@ -25,5 +25,16 @@ class LyricBoundaryVisibilityTest {
         assertEquals(0f, samples.first(), 0f)
         assertEquals(1f, samples.last(), 0f)
         assertTrue(samples.zipWithNext().all { (before, after) -> after >= before })
+    }
+
+    @Test fun bottomLineStartsEnteringBeforeTheWholeGlyphHasPassedTheEdge() {
+        val samples = (0..8).map { distance ->
+            lyricBoundaryLineAlpha(200f - distance, 240f - distance, 0f, 200f, 8f)
+        }
+        assertEquals(0f, samples.first(), 0f)
+        assertEquals(.5f, samples[4], 0f)
+        assertEquals(1f, samples.last(), 0f)
+        assertTrue(samples.zipWithNext().all { (before, after) -> after >= before })
+        assertEquals(0f, lyricBoundaryLineAlpha(201f, 241f, 0f, 200f, 8f), 0f)
     }
 }

@@ -52,7 +52,7 @@ internal class MusicDiskCache private constructor(context: Context) {
         val cached = CacheDataSource.Factory().setCache(audio)
         val streaming = CacheDataSource.Factory().setCache(audio).setUpstreamDataSourceFactory(upstream)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-        return DataSource.Factory { CachedPlaybackDataSource(cached, streaming, ::audioChanged) }
+        return DataSource.Factory { CachedPlaybackDataSource(cached, streaming, ::audioChanged, direct = upstream) }
     }
 
     fun audioChanged() { mutableAudioRevision.update { it + 1 } }
@@ -191,6 +191,7 @@ internal class MusicDiskCache private constructor(context: Context) {
 internal fun PlatformSession.cacheNamespace(): String = "${source.name}:${account?.userId ?: "guest"}"
 
 internal fun playbackCacheKey(context: Context, track: MusicTrack): String {
+    SupplementalPlaybackRequests.cacheKey(track.previewUrl)?.let { return it }
     offlinePlaybackKey(track.previewUrl)?.let { return it }
     val session = PlatformPreferences(context).readSession(track.source)
     // CDN 票据会过期，媒体路径区分音质及试听文件；仍由原播放流程先校验权限。

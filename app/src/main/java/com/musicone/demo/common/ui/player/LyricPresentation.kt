@@ -18,6 +18,7 @@ internal data class LyricPresentation(
     val source: MusicSource,
     val durationMs: Long,
     val lyrics: List<TimedLyric>,
+    val retryable: Boolean = false,
 )
 
 internal data class LyricPresentationRequest(
@@ -36,11 +37,14 @@ internal fun lyricPresentationRequest(
         LyricPresentation(track.id, track.source, track.durationMs, it)
     }
     LyricLoadState.UNAVAILABLE -> LyricPresentation(track.id, track.source, track.durationMs, emptyList())
+    LyricLoadState.RETRYABLE -> LyricPresentation(track.id, track.source, track.durationMs, emptyList(), retryable = true)
 }, direction)
 
 private fun RapidTrackSwitchPresentation.lyricRequest() = lyricPresentationRequest(
     track,
-    displayedLyricLoadState(true, lyricsAvailable, LyricLoadState.LOADING),
+    // 自定义音源读完本地资料后，空结果就是确定的无歌词，不再等在线缓存。
+    if (track.source.supportsLibraryEditing && lyricsResolved && !lyricsAvailable) LyricLoadState.UNAVAILABLE
+    else displayedLyricLoadState(true, lyricsAvailable, LyricLoadState.LOADING),
     direction,
 )
 

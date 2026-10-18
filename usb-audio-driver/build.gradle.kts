@@ -2,6 +2,10 @@ plugins {
     id("com.android.library")
 }
 
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+}
+
 android {
     namespace = "com.decent.usbaudio"
     compileSdk = 37

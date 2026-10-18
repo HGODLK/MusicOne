@@ -42,6 +42,7 @@ internal fun JSONObject.parseUserPlaylists(ownerUserId: String = ""): List<Music
             artworkUrl = value.optString("coverImgUrl").takeIf(String::isNotBlank)?.asNeteaseHttpsUrl(),
             isOwned = ownerUserId.isNotBlank() &&
                 value.optJSONObject("creator")?.optLong("userId")?.toString() == ownerUserId,
+            isPlatformFavorites = value.optInt("specialType") == 5,
         )
     }.orEmpty()
 
@@ -115,6 +116,7 @@ internal fun JSONObject.parsePlaylistShell(): Pair<MusicPlaylist, List<String>> 
         artworkMark = name.take(1),
         tracks = emptyList(),
         artworkUrl = value.optString("coverImgUrl").takeIf(String::isNotBlank)?.asNeteaseHttpsUrl(),
+        isPlatformFavorites = value.optInt("specialType") == 5,
     )
     val ids = value.optJSONArray("trackIds")?.mapObjects { it.optLong("id").toString() }.orEmpty()
     return playlist to ids
@@ -151,10 +153,10 @@ private fun JSONObject.toMusicTrack(
     val duration = optLong("dt").takeIf { it > 0L } ?: optLong("duration").coerceAtLeast(0L)
     val access = neteaseTrackAccess(
         fee = privilege?.optInt("fee", -1)?.takeIf { it >= 0 } ?: optInt("fee", 0),
-        playBitRate = privilege?.optInt("pl"),
+        playBitRate = privilege?.opt("pl")?.toString()?.toIntOrNull()?.takeIf { it >= 0 },
         trialBitRate = privilege?.optInt("fl") ?: 0,
         trialConsumable = privilege?.optJSONObject("freeTrialPrivilege")?.optBoolean("resConsumable") == true,
-        status = privilege?.optInt("st") ?: 0,
+        status = privilege?.optInt("st") ?: optInt("st", 0),
         hasVipAccess = hasVipAccess,
     )
     val colors = artworkColors(remoteId)

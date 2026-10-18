@@ -26,6 +26,11 @@ val releaseSigningProperties = Properties().apply {
 }
 val hasReleaseSigning = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
     .all { !releaseSigningProperties.getProperty(it).isNullOrBlank() }
+// 实验能力可独立构建对照，正式包默认启用资源预备与关闭态持续刷新。
+val musiconeAdpfHints = providers.gradleProperty("musiconeAdpfHints").map(String::toBoolean).getOrElse(false)
+val musiconeLyricResourcePrepare = providers.gradleProperty("musiconeLyricResourcePrepare").map(String::toBoolean).getOrElse(true)
+// 默认采用用户验收通过的持续刷新方案，按句更新仍可用于构建回退。
+val musiconeResidentLyricRefresh = providers.gradleProperty("musiconeResidentLyricRefresh").map(String::toBoolean).getOrElse(true)
 val musiconeTrace = providers.gradleProperty("musiconeTrace").map(String::toBoolean).getOrElse(false)
 
 android {
@@ -36,10 +41,14 @@ android {
         applicationId = "io.github.shuyunr.musicone"
         minSdk = 23
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        buildConfigField("boolean", "MUSICONE_ADPF_HINTS", musiconeAdpfHints.toString())
+        buildConfigField("boolean", "MUSICONE_LYRIC_RESOURCE_PREPARE", musiconeLyricResourcePrepare.toString())
+        buildConfigField("boolean", "MUSICONE_RESIDENT_LYRIC_REFRESH", musiconeResidentLyricRefresh.toString())
+        versionCode = 2
+        versionName = "0.2.0-麦乐鸡块"
         manifestPlaceholders["musiconeTrace"] = musiconeTrace.toString()
         vectorDrawables.useSupportLibrary = true
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     compileOptions {
@@ -47,7 +56,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
 
     signingConfigs {
         if (hasReleaseSigning) {
@@ -98,6 +107,7 @@ dependencies {
         implementation("androidx.tracing:tracing-perfetto-binary:1.0.1")
     }
     implementation(project(":usb-audio-driver"))
+    implementation(project(":native-audio"))
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
@@ -109,6 +119,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview:1.11.4")
     implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.media3:media3-exoplayer:1.10.1")
+    implementation("androidx.media3:media3-exoplayer-dash:1.10.1")
     implementation("androidx.media3:media3-session:1.10.1")
     // 非应用商店安装也能在首次运行后把内置 Profile 交给 ART。
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
@@ -117,6 +128,9 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling:1.11.4")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
 }
 
 // 与参考工程相同：中文路径下的测试类先打包，避免 Windows 测试进程无法加载散落的 class 文件。

@@ -23,8 +23,8 @@ class ImmersivePlayerTest {
         assertEquals(2, activeLyric(lines, 240_000))
     }
 
-    @Test fun lyricDisplayLeadsPlaybackAndTapSeeksSlightlyEarlier() {
-        assertEquals(21_000L, lyricDisplayPosition(20_000L))
+    @Test fun defaultLyricDisplayMatchesPlaybackAndTapSeeksSlightlyEarlier() {
+        assertEquals(20_000L, lyricDisplayPosition(20_000L))
         assertEquals(0f, lyricSeekFraction(200L, 10_000L))
         assertEquals(.165f, lyricSeekFraction(2_000L, 10_000L), .0001f)
     }

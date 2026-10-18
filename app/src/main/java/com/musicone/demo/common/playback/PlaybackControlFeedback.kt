@@ -23,7 +23,6 @@ import kotlinx.coroutines.launch
 
 @Composable
 internal fun PlaybackControlButton(
-    qqFeedback: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     horizontalMotion: Dp = 0.dp,
@@ -36,23 +35,19 @@ internal fun PlaybackControlButton(
     val motionPx = with(LocalDensity.current) { horizontalMotion.toPx() }
     IconButton(
         onClick = {
-            if (qqFeedback) {
-                haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                scope.launch {
-                    press.snapTo(1f)
-                    press.animateTo(0f, musicMotion(260))
-                }
+            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+            scope.launch {
+                press.snapTo(1f)
+                press.animateTo(0f, musicMotion(260))
             }
             onClick()
         },
         enabled = enabled,
         modifier = modifier.graphicsLayer {
-            if (qqFeedback) {
-                val scale = 1f - press.value * .16f
-                scaleX = scale
-                scaleY = scale
-                translationX = motionPx * press.value
-            }
+            val scale = 1f - press.value * .16f
+            scaleX = scale
+            scaleY = scale
+            translationX = motionPx * press.value
         },
         content = content,
     )
@@ -61,24 +56,15 @@ internal fun PlaybackControlButton(
 @Composable
 internal fun PlaybackStateIcon(
     isPlaying: Boolean,
-    qqFeedback: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    if (!qqFeedback) {
-        Icon(
-            if (isPlaying) PlayerControlIcons.Pause else PlayerControlIcons.Play,
-            if (isPlaying) "暂停" else "播放",
-            modifier,
-        )
-        return
-    }
     AnimatedContent(
         targetState = isPlaying,
         transitionSpec = {
             (fadeIn(musicMotion(150)) + scaleIn(musicMotion(180), initialScale = .68f)) togetherWith
                 (fadeOut(musicMotion(100)) + scaleOut(musicMotion(120), targetScale = .68f))
         },
-        label = "QQ 播放状态切换",
+        label = "播放状态切换",
     ) { playing ->
         Icon(
             if (playing) PlayerControlIcons.Pause else PlayerControlIcons.Play,

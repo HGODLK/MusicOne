@@ -42,7 +42,10 @@ internal fun PhoneExpandedPlayer(
     LaunchedEffect(lyrics, canHideControls) {
         if (!lyrics || !canHideControls) controls.show()
     }
-    Box(Modifier.fillMaxSize().playerControlsHintTouches(controls)) {
+    Box(Modifier.fillMaxSize().playerControlsHintTouches(controls)
+        .playerControlsRestoreGesture(controls,
+            enabled = lyrics && canHideControls && motion.phase == MotionPhase.SHOWN,
+            controlsHeightPx = { controlsHeightPx.toFloat() })) {
         PhonePlayerStage(
             state = state,
             track = track,

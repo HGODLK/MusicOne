@@ -30,7 +30,6 @@ private const val MINI_PLAYER_ACCESSORY_FADE_END = .6f
 
 @Composable
 internal fun FlyingMiniPlayerAccessories(motion: PageMotion, favorite: Boolean) {
-    if (!motion.moving) return
     val handoff = LocalPlayerControlHandoff.current
     Box(Modifier.fillMaxSize()) {
         FlyingMiniPlayerAccessory(
@@ -62,7 +61,8 @@ private fun FlyingMiniPlayerAccessory(
     tint: androidx.compose.ui.graphics.Color,
     iconSize: Int,
 ) {
-    val bounds = motion.sourceSnapshot[key] ?: return
+    // 与主控件一样提前挂载，运动开始时只切换绘制，避免收藏和下一首晚一帧出现。
+    val bounds = motion.sourceSnapshot[key] ?: motion.sources[key] ?: return
     val density = LocalDensity.current
     val localBounds = Rect(
         left = bounds.bounds.left - motion.hostBounds.left,
@@ -74,7 +74,17 @@ private fun FlyingMiniPlayerAccessory(
         Modifier
             .offset { IntOffset(localBounds.left.roundToInt(), localBounds.top.roundToInt()) }
             .size(with(density) { localBounds.width.toDp() }, with(density) { localBounds.height.toDp() })
-            .graphicsLayer { alpha = miniPlayerAccessoryAlpha(motion.value) },
+            .graphicsLayer {
+                val source = playerSourceAnchor(motion, key)
+                alpha = if (motion.moving && source != null) miniPlayerAccessoryAlpha(motion.value) else 0f
+                if (source != null) {
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+                    translationX = source.bounds.left - bounds.bounds.left
+                    translationY = source.bounds.top - bounds.bounds.top
+                    scaleX = source.bounds.width / bounds.bounds.width
+                    scaleY = source.bounds.height / bounds.bounds.height
+                }
+            },
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(iconSize.dp))

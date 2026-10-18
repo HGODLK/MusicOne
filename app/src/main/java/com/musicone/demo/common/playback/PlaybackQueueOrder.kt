@@ -3,7 +3,11 @@ package com.musicone.demo
 import kotlin.random.Random
 
 /** 播放列表就是实际播放顺序，另存原始身份顺序供退出随机模式时恢复。 */
-data class PlaybackQueueOrder(val originalIds: List<String> = emptyList()) {
+data class PlaybackQueueOrder(
+    val originalIds: List<String> = emptyList(),
+    val nextAfterId: String? = null,
+    val nextTrackId: String? = null,
+) {
     fun restore(queue: List<MusicTrack>): List<MusicTrack> {
         if (originalIds.isEmpty()) return queue
         val remaining = queue.associateByTo(linkedMapOf(), MusicTrack::id)
@@ -44,9 +48,10 @@ internal fun MusicOneUiState.withPlaylistQueue(
     tracks: List<MusicTrack>,
     shuffle: Boolean,
     random: Random = Random.Default,
+    resetRepeatMode: Boolean = false,
 ): MusicOneUiState {
-    val original = tracks.distinctBy(MusicTrack::id).take(1000)
+    val original = tracks.distinctBy(MusicTrack::id)
     return copy(queue = if (shuffle) original.shuffled(random) else original,
         queueOrder = PlaybackQueueOrder(original.map(MusicTrack::id)),
-        shuffle = shuffle, repeatMode = RepeatMode.ALL)
+        shuffle = shuffle, repeatMode = if (resetRepeatMode) RepeatMode.ALL else repeatMode)
 }

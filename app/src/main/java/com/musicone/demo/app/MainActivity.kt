@@ -13,8 +13,16 @@ import androidx.compose.ui.platform.AndroidUiDispatcher
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MonotonicFrameClock
 import androidx.lifecycle.withStarted
+import androidx.lifecycle.ViewModelProvider
 
 class MainActivity : ComponentActivity() {
+    private val updates by lazy { ViewModelProvider(this)[AppUpdateViewModel::class.java] }
+
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        updates.finishOpening()
+    }
+
     // ComponentActivity 将该平台回调标为库内 API，但 USB 独占音量键需要在 Compose 视图前优先处理。
     @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean =
@@ -22,6 +30,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        lifecycle.addObserver(AppUpdateLifecycle(updates))
         enableEdgeToEdge()
         if (android.os.Build.VERSION.SDK_INT >= 29) {
             // 三键导航透出应用背景；此开关不改变手势导航的透明效果。
@@ -40,7 +49,7 @@ class MainActivity : ComponentActivity() {
             MusicMotionDurationScale + uiClock, lifecycle)
         setContent(parent = composition) {
             CompositionLocalProvider(LocalLyricAnimationClock provides lyricClock) {
-                MusicOneTheme { MusicOneApp() }
+                MusicOneTheme { AppUpdateHost(updates) { MusicOneApp() } }
             }
         }
     }

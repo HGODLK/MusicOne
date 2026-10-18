@@ -25,6 +25,7 @@ internal fun FavoriteRemovalAction(
     onMore: () -> Unit,
     onUndo: () -> Unit,
     modifier: Modifier = Modifier,
+    undoLabel: String = "撤销取消收藏",
 ) {
     val progress by animateFloatAsState(
         if (pendingRemoval) 1f else 0f,
@@ -41,13 +42,13 @@ internal fun FavoriteRemovalAction(
         }) {
             Icon(Icons.Default.MoreHoriz, "更多操作", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        RemovedFavoriteIcon(progress)
+        RemovedFavoriteIcon(progress, undoLabel)
       }
     }
 }
 
 @Composable
-private fun RemovedFavoriteIcon(progress: Float) {
+private fun RemovedFavoriteIcon(progress: Float, undoLabel: String) {
     val red = Color(0xFFD32F2F)
     Box(modifier = Modifier.size(24.dp).graphicsLayer {
         alpha = progress
@@ -55,7 +56,7 @@ private fun RemovedFavoriteIcon(progress: Float) {
         scaleY = scaleX
         rotationZ = -24f * (1f - progress)
     }) {
-        Icon(Icons.Default.FavoriteBorder, "撤销取消收藏", tint = red,
+        Icon(Icons.Default.FavoriteBorder, undoLabel, tint = red,
             modifier = Modifier.size(24.dp).drawWithContent {
                 drawContent()
                 drawLine(red, Offset(size.width * .12f, size.height * .08f),

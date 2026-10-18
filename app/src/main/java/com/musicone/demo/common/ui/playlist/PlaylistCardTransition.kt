@@ -21,6 +21,10 @@ internal class PlaylistCardTransition(private val scope: CoroutineScope) {
     suspend fun releasePlaybackAfterReturn() = artworkSync.returned()
     var activeSourceKey by mutableStateOf<String?>(null)
         private set
+    var restoring by mutableStateOf(false)
+        private set
+    // 返回落位后只保留信息淡入，不能继续锁住双卡的横向堆叠动画。
+    val blocksCardSwipe get() = activeSourceKey != null && !restoring
     private val opacity = Animatable(1f)
     var busy by mutableStateOf(false)
         private set
@@ -31,6 +35,7 @@ internal class PlaylistCardTransition(private val scope: CoroutineScope) {
 
     fun open(sourceKey: String, artwork: Bitmap?, reveal: suspend () -> Unit, navigate: () -> Unit) {
         if (busy || activeSourceKey != null) return
+        restoring = false
         busy = true
         activeSourceKey = sourceKey
         activeArtwork = artwork
@@ -49,6 +54,8 @@ internal class PlaylistCardTransition(private val scope: CoroutineScope) {
     }
 
     fun restore() {
+        if (activeSourceKey == null) return
+        restoring = true
         scope.launch {
             // 飞回就位后缓缓恢复信息，不沿用位移动画前段较快的曲线。
             opacity.animateTo(1f, if (ExperiencePreferences.options.reduceMotion) snap() else
@@ -56,6 +63,7 @@ internal class PlaylistCardTransition(private val scope: CoroutineScope) {
             activeSourceKey = null
             activeArtwork = null
             activeArtworkLayers = null
+            restoring = false
         }
     }
 

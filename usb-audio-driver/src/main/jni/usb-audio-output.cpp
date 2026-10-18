@@ -11,6 +11,7 @@
 
 #include "usb-audio-output.h"
 #include "usb-pcm-packet-plan.h"
+#include "usb-pcm-layout.h"
 
 #include <jni.h>
 #include <android/log.h>
@@ -19,6 +20,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
+#include <algorithm>
 #include <unistd.h>
 #include <time.h>
 #include <sys/ioctl.h>
@@ -138,9 +140,11 @@ extern "C" {
 JNIEXPORT jlong JNICALL
 Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioCreate(
         JNIEnv *, jobject, jint fd, jint ifId, jint epOut, jint epFb,
-        jint rate, jint ch, jint bits, jint subslotBytes, jint maxPkt) {
+        jint rate, jint ch, jint bits, jint subslotBytes, jint maxPkt,
+        jint packetsPerSecond, jint busIntervalsPerSecond) {
     LOGI("Create: fd=%d ep=0x%02x rate=%d ch=%d bits=%d subslot=%d maxPkt=%d",
          fd, epOut, rate, ch, bits, subslotBytes, maxPkt);
+    if (packetsPerSecond <= 0 || busIntervalsPerSecond <= 0 || maxPkt <= 0) return 0;
     auto *ctx = new(std::nothrow) UsbAudioContext();
     if (!ctx) return 0;
     ctx->fd = fd;
@@ -153,6 +157,11 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioCreate(
     ctx->bytesPerSample = subslotBytes;
     ctx->bytesPerFrame = subslotBytes * ch;
     ctx->maxPacketSize = maxPkt;
+    ctx->packetsPerSecond = packetsPerSecond;
+    ctx->busIntervalsPerSecond = busIntervalsPerSecond;
+    ctx->packetsPerUrb = std::max(1, std::min(packetsPerSecond / 1000, USB_AUDIO_PACKETS_PER_URB));
+    ctx->feedbackBytes = busIntervalsPerSecond == 1000 ? 3 : 4;
+    ctx->feedbackFractionBits = busIntervalsPerSecond == 1000 ? 14 : 16;
     ctx->running.store(false);
     ctx->transferBuffer = nullptr;
     ctx->transferBufferCapacity = 0;
@@ -166,7 +175,7 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioCreate(
     ctx->failed = false;
     ctx->ringAllocated = false;
     ctx->frameAccumulator = 0.0;
-    ctx->calibratedFpmf = rate / 8000.0;
+    ctx->calibratedFpmf = static_cast<double>(rate) / packetsPerSecond;
     ctx->residualBytes = 0;
     memset(ctx->residualBuffer, 0, sizeof(ctx->residualBuffer));
     memset(ctx->ring, 0, sizeof(ctx->ring));
@@ -224,7 +233,7 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(
     ctx->frameAccumulator = 0.0;
     ctx->residualBytes = 0;
 
-    ctx->calibratedFpmf = ctx->sampleRate / 8000.0;
+    ctx->calibratedFpmf = static_cast<double>(ctx->sampleRate) / ctx->packetsPerSecond;
     // 复用持久反馈请求，完成之前不释放其缓冲。
     submitFeedbackUrb(ctx);
     // 保留起播前的反馈校准窗口，避免首批音频全按名义时钟排包。
@@ -292,7 +301,7 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioWrite(
     if (ctx->framesWritten % ctx->sampleRate < (int64_t)totalFrames) {
         LOGI("Write: %lld frames (~%.0f sec) inflight=%d fpmf=%.4f (%.1f Hz)",
              (long long)ctx->framesWritten, (double)ctx->framesWritten/ctx->sampleRate,
-             ctx->transfers.pending, ctx->calibratedFpmf, ctx->calibratedFpmf * 8000.0);
+             ctx->transfers.pending, ctx->calibratedFpmf, ctx->calibratedFpmf * ctx->packetsPerSecond);
     }
 }
 
@@ -347,18 +356,29 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeDrainUrbs(JNIEnv *, jobject, jlong
     return cancelUsbTransfers(ctx) ? pending : -1;
 }
 
-JNIEXPORT jboolean JNICALL
-Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioDestroy(JNIEnv *, jobject, jlong h) {
-    auto *ctx = reinterpret_cast<UsbAudioContext *>(h);
-    if (!ctx) return JNI_TRUE;
-    // 回收失败时保留缓冲，避免内核仍使用它们时释放内存。
-    if (!cancelUsbTransfers(ctx)) return JNI_FALSE;
+static void destroyUsbContext(UsbAudioContext *ctx) {
     freeRing(ctx);
     free(ctx->feedbackUrb);
     free(ctx->transferBuffer);
     free(ctx->mergedBuffer);
     delete ctx;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioDestroy(JNIEnv *, jobject, jlong h) {
+    auto *ctx = reinterpret_cast<UsbAudioContext *>(h);
+    if (!ctx) return JNI_TRUE;
+    // 连接尚未关闭时，回收失败必须保留内核可能引用的缓冲。
+    if (!cancelUsbTransfers(ctx)) return JNI_FALSE;
+    destroyUsbContext(ctx);
     return JNI_TRUE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_decent_usbaudio_UsbAudioStream_nativeDestroyAfterDeviceClosed(JNIEnv *, jobject, jlong h) {
+    auto *ctx = reinterpret_cast<UsbAudioContext *>(h);
+    // 调用前连接已关闭，usbfs 已同步终止其所有异步请求；不再对旧描述符发起 ioctl。
+    if (ctx) destroyUsbContext(ctx);
 }
 
 JNIEXPORT jboolean JNICALL
@@ -375,6 +395,12 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeGetCompletedFrames(
     auto *ctx = reinterpret_cast<UsbAudioContext *>(h);
     if (!ctx) return 0;
     return (jlong)ctx->completedFrames.load();
+}
+
+JNIEXPORT jint JNICALL
+Java_com_decent_usbaudio_UsbAudioStream_nativeGetSpeed(JNIEnv *, jclass, jint fd) {
+    // USBDEVFS_GET_SPEED 在旧版 NDK 头文件中可能缺少宏定义。
+    return ioctl(fd, _IO('U', 31));
 }
 
 JNIEXPORT jint JNICALL
@@ -493,27 +519,13 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioWriteRaw(
             validBitDepth == inputBitDepth) {
         memcpy(ctx->transferBuffer, rawData, inputBytes);
     } else {
-        const auto *input = reinterpret_cast<const uint8_t *>(rawData);
-        const int targetShift = targetContainerBits - validBitDepth;
-        if (validBitDepth > ctx->bitDepth || targetShift < 0 || inputBitDepth < validBitDepth) {
+        if (!convertUsbIntegerPcm(reinterpret_cast<const uint8_t *>(rawData), ctx->transferBuffer,
+                totalSamples, inputBitDepth, validBitDepth, ctx->bitDepth, ctx->bytesPerSample)) {
             LOGE("WriteRaw: unsupported PCM layout container=%d valid=%d target=%d/%d",
                  inputBitDepth, validBitDepth, ctx->bitDepth, targetContainerBits);
             env->ReleaseByteArrayElements(pcm, rawData, JNI_ABORT);
+            env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"), "USB PCM layout is unsupported");
             return;
-        }
-        for (int i = 0; i < totalSamples; i++) {
-            const uint8_t *sampleBytes = input + i * inputBps;
-            int64_t sample = 0;
-            for (int byte = 0; byte < inputBps; byte++) {
-                sample |= static_cast<int64_t>(sampleBytes[byte]) << (byte * 8);
-            }
-            const int64_t signBit = 1LL << (inputBitDepth - 1);
-            if ((sample & signBit) != 0) sample -= 1LL << inputBitDepth;
-            const int64_t aligned = sample * (1LL << targetShift);
-            uint8_t *output = ctx->transferBuffer + i * ctx->bytesPerSample;
-            for (int byte = 0; byte < ctx->bytesPerSample; byte++) {
-                output[byte] = static_cast<uint8_t>((aligned >> (byte * 8)) & 0xFF);
-            }
         }
     }
 

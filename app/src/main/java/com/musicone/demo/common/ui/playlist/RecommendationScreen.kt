@@ -49,6 +49,12 @@ internal fun RecommendationScreen(
 ) {
     val favoriteIds = LocalMusicFavorites.current.state.ids
     val menu = LocalQqPlaylistSongMenu.current
+    val selection = LocalPlaylistMultiSelection.current
+    val pagination = LocalPlaylistPagination.current
+    val selectionTracks = remember(pagination?.entry?.page, playlist.tracks, sort) {
+        pagination?.loadedSelectionTracks() ?: playlist.tracks
+    }
+    SideEffect { selection?.update(selectionTracks) }
     val menuAwareBack = { if (menu?.expanded == true) menu.back() else onBack() }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = usesTabletLandscape(maxWidth, maxHeight)
@@ -70,6 +76,9 @@ internal fun RecommendationScreen(
             }
             val informationScroll = rememberLazyListState()
             val tracksScroll = rememberLazyListState()
+            ObservePlaylistPagination(if (wide) tracksScroll else informationScroll,
+                enabled = contentMounted && LocalEntityActive.current && (motion == null || motion.phase == MotionPhase.SHOWN),
+                complete = search.query.isNotBlank() || sort != PlaylistSort.ADDED_DESC)
             val pull = LocalPlaylistPull.current
             val entityPage = LocalEntityFrame.current != null
             val revealShape = remember(motion, pull, entityPage) {
@@ -98,7 +107,7 @@ internal fun RecommendationScreen(
             val searchResults = rememberPlaylistSearchResults(visibleTracks, searchMotionActive)
             val imeBottomInset = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
             val contentBottomPadding = animateDpAsState(
-                playlistSearchResultsBottomPadding(bottomInset, imeBottomInset, search.expanded),
+                playlistSearchResultsBottomPadding(bottomInset, imeBottomInset, search.expanded) + 132.dp,
                 musicMotion(240),
                 label = "歌单搜索结果安全区",
             ).value
@@ -125,6 +134,8 @@ internal fun RecommendationScreen(
             val closeAfterScroll = {
                 if (menu?.expanded == true) {
                     menu.back()
+                } else if (selection?.active == true) {
+                    selection.close()
                 } else if (search.expanded) {
                     search.close()
                 } else if (!closing) {

@@ -25,11 +25,14 @@ internal suspend fun LazyListState.revealTopLineForEntrance() {
 internal class LyricTopLineAlignment {
     private var preparedAnchor: Int? = null
     private var preparationRevision = 0L
+    var followingPlayback by mutableStateOf(false)
+        private set
     var pending by mutableStateOf(false)
         private set
 
     fun prepare(anchor: Int? = null) {
         preparedAnchor = anchor
+        followingPlayback = false
         preparationRevision++
         pending = true
     }
@@ -38,18 +41,25 @@ internal class LyricTopLineAlignment {
         // 中间态 seek 已在同一位置驱动中完成，不再补播旧的首开锚点。
         preparationRevision++
         preparedAnchor = null
+        followingPlayback = true
         pending = false
     }
 
     suspend fun align(list: LazyListState, current: () -> Int, progress: () -> Float) {
-        val anchor = preparedAnchor
+        // 入场只移动起步时的句子，换句交给独立逐行弹簧，不能挤进剩余展开时间。
+        val anchor = preparedAnchor ?: current()
         val revision = preparationRevision
         pending = true
         try {
             list.scroll(MutatePriority.PreventUserInput) {
                 val session = LyricEntranceAlignmentSession()
                 // 首开定位只送入本次准备句，高亮换句由原行内动画继续呈现。
-                snapshotFlow { (anchor ?: current()) to progress().coerceIn(0f, 1f) }.takeWhile { (index, fraction) ->
+                snapshotFlow { current() to progress().coerceIn(0f, 1f) }.takeWhile { (latest, fraction) ->
+                    if (latest != anchor) {
+                        followingPlayback = true
+                        return@takeWhile false
+                    }
+                    val index = anchor
                     val viewport = list.layoutInfo
                     val item = viewport.visibleItemsInfo.firstOrNull { it.index == index }
                     val nearest = item ?: viewport.visibleItemsInfo.minByOrNull { abs(it.index - index) }
@@ -68,11 +78,10 @@ internal class LyricTopLineAlignment {
                 }.collect()
             }
             // 首开换句不在终点硬补新目标，释放滚动权后由正常逐句或多句跟随接续。
-            if (anchor == null && list.layoutInfo.visibleItemsInfo.none { it.index == current() }) list.scrollToItem(current())
             if (preparationRevision == revision) pending = false
         } finally {
             // 反向或重新准备时取消旧锚点，旧任务不能清除后来的准备结果。
-            if (preparationRevision == revision) preparedAnchor = null
+            if (preparationRevision == revision && !pending) preparedAnchor = null
         }
     }
 }
@@ -127,7 +136,7 @@ internal fun rememberLyricTopLineAlignment(
         if (enabled && active && !prepareWhileHidden && exitAlignment == null && !positionOwned) {
             openingAlignment?.await()
             while (true) {
-                snapshotFlow { alignment.pending || latestProgress() < 1f }.first { it }
+                snapshotFlow { alignment.pending || latestProgress() < 1f && !alignment.followingPlayback }.first { it }
                 // 首次打开仍需等屏外定位完成；手势反向不重置列表或重播准备阶段。
                 snapshotFlow { latestProgress() }.first { it > 0f }
                 alignment.align(list, { latestCurrent }, { latestProgress() })

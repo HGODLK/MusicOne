@@ -205,7 +205,6 @@ internal fun PlayerControlsRestoreHandle(
         enabled = visible,
         modifier = modifier
             .size(width = 64.dp, height = 48.dp)
-            .playerControlsDrag(state)
             .graphicsLayer { alpha = ((state.progress - .82f) / .18f).coerceIn(0f, 1f) * opacity },
     ) {
         Icon(

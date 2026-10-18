@@ -134,7 +134,7 @@ internal object PlatformHttp {
                     logPlaybackProbes(completedProbes, candidates.size)
                     return null
                 }
-                runCatching { completed.get() }.getOrNull()?.let { probe ->
+                runCatchingCancellable { completed.get() }.getOrNull()?.let { probe ->
                     completedProbes += probe
                     if (probe.readable) return probe.url
                 }
@@ -175,6 +175,8 @@ internal object PlatformHttp {
         } finally {
             connection.disconnect()
         }
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
     } catch (error: Throwable) {
         PlaybackProbe(url, errorType = error::class.java.simpleName)
     }

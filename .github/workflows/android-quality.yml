@@ -1,0 +1,84 @@
+name: Android 质量基线
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: 配置 JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: '25.0.2+10'
+
+      - name: 配置 Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+          dependency-graph: disabled
+          validate-wrappers: true
+
+      - name: 配置 Android 命令行工具
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+
+      - name: 安装 Android 工具链
+        run: |
+          sdkmanager --install \
+            "platforms;android-37.0" \
+            "build-tools;36.0.0" \
+            "ndk;27.1.12297006" \
+            "cmake;3.22.1"
+
+      - name: 记录构建环境
+        run: |
+          git rev-parse HEAD
+          java -version
+          ./gradlew --version
+          sdkmanager --list_installed | grep -E \
+            'platforms;android-37\.0|build-tools;36\.0\.0|ndk;27\.1\.12297006|cmake;3\.22\.1'
+
+      - name: 执行质量基线
+        run: |
+          ./gradlew \
+            :app:testDebugUnitTest \
+            :app:lintDebug \
+            :app:assembleRelease \
+            --continue \
+            --stacktrace \
+            --no-daemon
+
+      - name: 上传测试与 Lint 报告
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-quality-reports
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            app/build/test-results/testDebugUnitTest/**
+            app/build/reports/tests/testDebugUnitTest/**
+            app/build/reports/lint-results-debug.html
+            app/build/reports/lint-results-debug.txt
+            app/build/reports/lint-results-debug.xml
+            **/build/reports/problems/**

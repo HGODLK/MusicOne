@@ -36,6 +36,7 @@ internal fun QqPlaylistEditorOverlay(editor: QqPlaylistEditorState, host: Rect, 
             withFrameNanos { }
             withFrameNanos { }
             retained = false
+            editor.releaseArtwork()
             onClosed()
         }
     }
@@ -48,13 +49,14 @@ internal fun QqPlaylistEditorOverlay(editor: QqPlaylistEditorState, host: Rect, 
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = progress.value }
             .background(Color.Black.copy(alpha = .12f))
             .clickable(remember { MutableInteractionSource() }, null) { editor.back() })
-        val card = editor.anchor.translate(-host.left, -host.top)
+        val card = editor.currentAnchor.translate(-host.left, -host.top)
         val cardSize = with(density) { card.width.toDp() }
         val right = card.center.x < host.width / 2
         val wingWidth = 108.dp
         val x = with(density) { card.left.toDp() }
         val y = with(density) { card.top.toDp() }
-        val displayedMode = if (!editor.open && target != null) PlaylistEditMode.Actions else editor.mode
+        val deleting = !editor.open && editor.completedAction == PlaylistEditMode.Delete
+        val displayedMode = if (!editor.open && target != null && !deleting) PlaylistEditMode.Actions else editor.mode
         val actions = displayedMode == PlaylistEditMode.Actions
         val form by androidx.compose.animation.core.animateFloatAsState(if (actions) 0f else 1f, musicMotion(280), label = "歌单表单交接")
         val sideWidth = (cardSize + wingWidth * progress.value).coerceAtMost(maxWidth - 24.dp)
@@ -72,7 +74,7 @@ internal fun QqPlaylistEditorOverlay(editor: QqPlaylistEditorState, host: Rect, 
                 .then(if (target != null) Modifier.height(cardSize) else Modifier)
                 .graphicsLayer {
                     alpha = progress.value
-                }, RoundedCornerShape(24.dp), containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .44f)) {
+                }, RoundedCornerShape(24.dp), containerColor = playlistMenuContainer) {
             AnimatedContent(displayedMode, transitionSpec = {
                 (fadeIn(musicMotion(240)) + slideInHorizontally(musicMotion(300)) { it / 8 }) togetherWith
                     (fadeOut(musicMotion(160)) + slideOutHorizontally(musicMotion(220)) { -it / 8 })
@@ -80,16 +82,26 @@ internal fun QqPlaylistEditorOverlay(editor: QqPlaylistEditorState, host: Rect, 
                 if (mode == PlaylistEditMode.Actions && target != null) {
                     Row(Modifier.fillMaxWidth().height(cardSize), verticalAlignment = Alignment.CenterVertically) {
                         if (right) Spacer(Modifier.weight(1f))
-                        Column(Modifier.width(wingWidth).graphicsLayer {
+                        Column(Modifier.width(wingWidth).heightIn(max = cardSize).verticalScroll(rememberScrollState()).graphicsLayer {
                             translationX = (if (right) -1 else 1) * wingWidth.toPx() * (1f - progress.value)
                             alpha = progress.value
                         }, horizontalAlignment = Alignment.CenterHorizontally) {
-                            IconButton(onClick = { editor.mode = PlaylistEditMode.Rename }, Modifier.size(48.dp)) {
+                            IconButton(onClick = { editor.mode = PlaylistEditMode.Rename }, Modifier.size(48.dp), enabled = !editor.busy) {
                                 Icon(Icons.Rounded.Edit, "重命名歌单")
                             }
-                            IconButton(onClick = { editor.mode = PlaylistEditMode.Delete }, Modifier.size(48.dp)) {
+                            IconButton(onClick = { editor.mode = PlaylistEditMode.Delete }, Modifier.size(48.dp),
+                                enabled = !editor.busy && target.id != PHONE_STORAGE_PLAYLIST_ID) {
                                 Icon(Icons.Rounded.DeleteOutline, "删除歌单", tint = MaterialTheme.colorScheme.error)
                             }
+                            if (editor.subscribed) {
+                                IconButton(onClick = { editor.submit(onChanged, PlaylistEditMode.RefreshSubscription) },
+                                    modifier = Modifier.size(48.dp), enabled = !editor.busy) { Icon(Icons.Rounded.Refresh, "刷新订阅") }
+                                IconButton(onClick = { editor.submit(onChanged, PlaylistEditMode.StopSubscription) },
+                                    modifier = Modifier.size(48.dp), enabled = !editor.busy) { Icon(Icons.Rounded.LinkOff, "停止订阅并保留内容") }
+                            }
+                            if (editor.busy) Text("处理中…", style = MaterialTheme.typography.labelSmall)
+                            editor.error?.let { Text(it, color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(8.dp)) }
                         }
                         if (!right) Spacer(Modifier.weight(1f))
                     }
@@ -98,7 +110,9 @@ internal fun QqPlaylistEditorOverlay(editor: QqPlaylistEditorState, host: Rect, 
                         .verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         Text(when (mode) { PlaylistEditMode.Create -> "新建歌单"; PlaylistEditMode.Delete -> "删除歌单？"; else -> "重命名歌单" },
                             style = MaterialTheme.typography.titleLarge)
-                        if (mode == PlaylistEditMode.Delete) Text("将从 QQ 音乐删除「${target?.title}」，此操作无法撤销。", style = MaterialTheme.typography.bodyMedium)
+                        if (mode == PlaylistEditMode.Delete) Text(
+                            if (editor.local) "将删除本地歌单「${target?.title}」，原音乐文件会保留。"
+                            else "将从 QQ 音乐删除「${target?.title}」，此操作无法撤销。", style = MaterialTheme.typography.bodyMedium)
                         else OutlinedTextField(editor.name, { editor.name = it }, enabled = !editor.busy,
                             singleLine = true, label = { Text("歌单名称") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
                         editor.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -114,13 +128,14 @@ internal fun QqPlaylistEditorOverlay(editor: QqPlaylistEditorState, host: Rect, 
             }
         }
         if (target != null) {
-            val lifted = 1f - form
+            val lifted = if (deleting) 0f else 1f - form
             CompositionLocalProvider(LocalPlaylistMotion provides null, LocalPlaylistCardTransition provides null) {
-            QqPlaylistCard(target, {}, {}, Modifier.offset(x, y + (panelY - y) * progress.value).width(cardSize).graphicsLayer {
+            QqPlaylistCard(target, {}, {}, Modifier.offset(x, y + (animatedY - y) * progress.value).width(cardSize).graphicsLayer {
                 scaleX = 1f + .035f * progress.value; scaleY = scaleX
                 alpha = lifted; shadowElevation = 16.dp.toPx() * progress.value
                 shape = RoundedCornerShape(20.dp); clip = true
-            }, width = cardSize, sharedTransition = false, artworkVersion = editor.artworkVersion)
+            }, width = cardSize, sharedTransition = false, artworkVersion = editor.artworkVersion,
+                initialArtwork = editor.artworkLayers, freezeArtwork = true)
             }
         }
     }

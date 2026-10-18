@@ -42,11 +42,9 @@ internal fun navigationCapsuleSelectionBounds(width: Float, height: Float, posit
     return Rect(left, 0f, left + itemWidth, height)
 }
 
-internal fun navigationCapsuleSelectionColor(neutral: Boolean, container: Color, immersive: Color?): Color = when {
-    neutral -> container
-    immersive != null -> immersive.copy(alpha = .24f)
-    else -> container.copy(alpha = .56f)
-}
+/** 选中态跟随平台主题，不被“我的”页面用于背景对比度的黑白前景覆盖。 */
+internal fun navigationCapsuleSelectionColor(neutral: Boolean, container: Color): Color =
+    if (neutral) container else container.copy(alpha = .56f)
 
 /** 两层图标共享同一条圆角裁切边界；进度只在绘制时读取，点击和拖动都不会整枚跳色。 */
 @Composable

@@ -30,6 +30,7 @@ internal class PlayerControlHandoff {
 
     fun observeInk(key: String, color: Color) { liveInk[key] = color }
     fun sourceInk(key: String, fallback: Color): Color = frozenInk?.get(key) ?: liveInk[key] ?: fallback
+    fun currentInk(key: String, fallback: Color): Color = liveInk[key] ?: fallback
 
     fun begin(playing: Boolean) {
         if (frozenPlaying == null) {
@@ -147,8 +148,12 @@ private fun FlyingControl(motion: PageMotion, key: String, target: Boolean,
         IntOffset((endpoint.bounds.left - motion.hostBounds.left).roundToInt(),
             (endpoint.bounds.top - motion.hostBounds.top).roundToInt())
     }.size(with(density) { width.toDp() }, with(density) { height.toDp() }).graphicsLayer {
-        val activeSource = if (motion.sourceSnapshot[key] != null) geometry?.source ?: motion.sourceSnapshot[key] else null
-        val activeDestination = if (motion.targetSnapshot[key] != null) geometry?.target ?: motion.targetSnapshot[key] else null
+        val activeSource = motion.sourceSnapshot[key]?.let { captured ->
+            playerSourceAnchor(motion, key, geometry?.sourceFor(captured) ?: captured)
+        }
+        val activeDestination = motion.targetSnapshot[key]?.let { captured ->
+            geometry?.targetFor(captured) ?: captured
+        }
         if (!motion.moving || activeSource == null || activeDestination == null) {
             alpha = 0f
         } else {

@@ -38,7 +38,7 @@ class QqFeedDetailsReuseTest {
         assertEquals(1, requests)
     }
 
-    @Test fun wrongSongDetailCannotChangeMetadataOrKnownRestriction() {
+    @Test fun wrongSongDetailKeepsMetadataAndBadgeButCannotDisablePlayback() {
         val original = track().copy(qqAccess = QqTrackAccessInfo(payPlay = 1, payMonth = 0, trackPrice = 200),
             accessBadge = MusicAccessBadge.PAID, playable = false)
         val resolver = QqTrackAccessResolver(membership = { null }, details = { _, _ -> response("wrong-mid", "错误专辑", true) })
@@ -47,7 +47,7 @@ class QqFeedDetailsReuseTest {
         assertEquals(original.album, result.album)
         assertEquals(original.artworkUrl, result.artworkUrl)
         assertEquals(MusicAccessBadge.PAID, result.accessBadge)
-        assertFalse(result.playable)
+        assertTrue(result.playable)
     }
 
     @Test fun displayMetadataFailureKeepsExistingArtworkAndRestriction() {

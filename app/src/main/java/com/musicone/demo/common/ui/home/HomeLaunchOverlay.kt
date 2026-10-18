@@ -109,4 +109,5 @@ internal fun homeLaunchArtworkUrls(source: MusicSource, catalog: MusicCatalogUiS
     when (source) {
         MusicSource.QQ -> catalog.recommendedTracks.firstOrNull()?.artworkUrl?.let(::listOf).orEmpty()
         MusicSource.NETEASE, MusicSource.KUGOU -> catalog.recommendations.take(2).mapNotNull { it.artworkUrl }
+        MusicSource.LOCAL, MusicSource.BILIBILI -> emptyList()
     }.map(String::trim).filter(String::isNotBlank).distinct()

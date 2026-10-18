@@ -11,9 +11,11 @@ import org.json.JSONObject
 internal class OfflineMusicStore(private val context: Context) {
     private val store = context.getSharedPreferences("offline_music_index", Context.MODE_PRIVATE)
     private val preferences = PlatformPreferences(context)
+    private val supplemental = SupplementalOfflineMusicStore(context)
     private fun prefix(track: MusicTrack) = "${preferences.readSession(track.source).cacheNamespace()}|${track.id}|"
 
     fun remember(resolved: ResolvedPlayback, preferred: AudioQuality = resolved.source.requestedQuality) {
+        if (resolved.track.source == MusicSource.BILIBILI) { supplemental.remember(resolved); return }
         if (resolved.source.trial) return
         val track = resolved.track
         val key = playbackCacheKey(context, track)
@@ -41,7 +43,7 @@ internal class OfflineMusicStore(private val context: Context) {
         MusicDiskCache.get(context).audio.keys.asSequence()
             .filter { it.substringBefore('|') in namespaces }
             .filter { offlineRecordQuality(it, record(it)) != null && verifiedComplete(it) }
-            .map { it.substringAfter('|').substringBefore('|') }.toSet()
+            .map { it.substringAfter('|').substringBefore('|') }.toSet() + supplemental.completeTrackIds()
     }
 
     fun complete(key: String): Boolean {
@@ -62,7 +64,8 @@ internal class OfflineMusicStore(private val context: Context) {
         store.edit().putString(key, record.put("pending", false).put("trial", !full).toString()).apply()
     }
 
-    fun keys(track: MusicTrack): List<String> = MusicDiskCache.get(context).audio.keys.filter { it.startsWith(prefix(track)) }
+    fun keys(track: MusicTrack): List<String> = if (track.source == MusicSource.BILIBILI) supplemental.keys(track)
+        else MusicDiskCache.get(context).audio.keys.filter { it.startsWith(prefix(track)) }
 
     fun status(track: MusicTrack): String {
         val keys = keys(track)
@@ -74,20 +77,27 @@ internal class OfflineMusicStore(private val context: Context) {
     }
 
     suspend fun resolve(track: MusicTrack, preferred: AudioQuality, allowOtherQuality: Boolean): ResolvedPlayback? = withContext(Dispatchers.IO) {
+        if (track.source == MusicSource.BILIBILI) return@withContext supplemental.resolve(track, preferred, allowOtherQuality)
         val candidates = keys(track).mapNotNull { key ->
             val saved = record(key)
             val url = offlinePlaybackUrl(key)
-            val quality = offlineRecordQuality(key, saved) ?: return@mapNotNull null
+            val storedQuality = offlineRecordQuality(key, saved) ?: return@mapNotNull null
+            val neteaseInfo = if (track.source == MusicSource.NETEASE)
+                cachedNeteaseFlacInfo(MusicDiskCache.get(context).audio, key, url) else null
+            val quality = neteaseInfo?.let { neteaseAudioQuality("", "flac", 0, it) } ?: storedQuality
+            if (!DolbyPlaybackPolicy.permits(quality)) return@mapNotNull null
+            if (quality == AudioQuality.DOLBY && preferred != AudioQuality.DOLBY) return@mapNotNull null
             if ((!allowOtherQuality && quality != preferred) || !verifiedComplete(key)) return@mapNotNull null
             val restored = saved?.toQqStoredTrack() ?: track
             ResolvedPlayback(restored.copy(previewUrl = url, lyrics = track.lyrics), PlaybackSource(url, preferred, quality,
-                quality.bitRate, "", false))
+                quality.bitRate, "", false, actualFormat = neteaseInfo?.description))
         }
         candidates.firstOrNull { it.source.actualQuality == preferred }
             ?: candidates.maxByOrNull { it.source.actualQuality.ordinal }
     }
 
     fun remove(track: MusicTrack) {
+        if (track.source == MusicSource.BILIBILI) { supplemental.remove(track); return }
         keys(track).forEach { key ->
             MusicDiskCache.get(context).removeAudio(key)
             store.edit().remove(key).apply()
@@ -95,6 +105,7 @@ internal class OfflineMusicStore(private val context: Context) {
     }
 
     fun savedTracks(source: MusicSource): List<MusicTrack> {
+        if (source == MusicSource.BILIBILI) return supplemental.savedTracks()
         val namespace = preferences.readSession(source).cacheNamespace() + "|"
         return store.all.filterKeys { it.startsWith(namespace) }.values.mapNotNull { raw ->
             runCatching { JSONObject(raw as String).toQqStoredTrack() }.getOrNull()

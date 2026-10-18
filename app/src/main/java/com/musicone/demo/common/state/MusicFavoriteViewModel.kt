@@ -28,6 +28,7 @@ internal data class MusicFavoriteActions(
     val toggle: (MusicTrack) -> Unit = {},
     val toggleDeferredRemoval: (MusicTrack) -> Unit = {},
     val flushDeferredRemovals: (() -> Unit) -> Unit = { it() },
+    val currentState: () -> MusicFavoriteUiState = { state },
 )
 
 internal val LocalMusicFavorites = staticCompositionLocalOf { MusicFavoriteActions() }
@@ -38,19 +39,17 @@ internal class MusicFavoriteViewModel(application: Application) : AndroidViewMod
     val state: StateFlow<MusicFavoriteUiState> = _state.asStateFlow()
     private var configurationKey = ""
     private val refresh = MusicFavoriteRefresh(viewModelScope)
-    private var configuredSource = MusicSource.QQ
-    private val deferredRemovals = linkedMapOf<String, MusicTrack>()
+    private val deferredRemovals = DeferredRemovals<MusicTrack>(MusicTrack::id)
     private val deferredPreviousChanges = mutableMapOf<String, Pair<MusicTrack, Boolean>?>()
     private val deferredFlushMutex = Mutex()
     private val qqReconcileTracks = linkedMapOf<String, MusicTrack>()
     private var qqReconcileJob: Job? = null
 
-    fun configure(source: MusicSource, sessionRevision: Long) {
-        val key = "$source\n$sessionRevision"
+    fun configure(sessionRevision: Long) {
+        val key = "$sessionRevision"
         if (configurationKey == key) return
         flushDeferredRemovals()
         configurationKey = key
-        configuredSource = source
         refresh.cancel()
         qqReconcileJob?.cancel()
         qqReconcileJob = null
@@ -61,10 +60,9 @@ internal class MusicFavoriteViewModel(application: Application) : AndroidViewMod
 
     fun refresh() {
         val key = configurationKey
-        val source = configuredSource
         val started = _state.value
         val mutations = refresh.snapshot()
-        refresh.request({ repository.likedTrackIds(source) }) { ids ->
+        refresh.request({ repository.likedTrackIdsAcrossSources(started.ids) }) { ids ->
             if (configurationKey == key) _state.update { it.withRefreshedFavorites(ids, started, refresh.changedSince(mutations)) }
         }
     }
@@ -73,24 +71,23 @@ internal class MusicFavoriteViewModel(application: Application) : AndroidViewMod
         refresh.markChanged(track.id)
         cancelQqReconcile()
         if (track.id in _state.value.updating) return
-        if (deferredRemovals.remove(track.id) != null) {
+        if (deferredRemovals.undo(track.id) != null) {
             val previous = deferredPreviousChanges.remove(track.id)
             _state.update { state -> state.restoreFavoriteRemoval(track, previous) }
             return
         }
         deferredPreviousChanges[track.id] = _state.value.changes[track.id]
-        deferredRemovals[track.id] = track
+        deferredRemovals.stage(track)
         _state.update { state -> state.stageFavoriteRemoval(track) }
     }
 
     fun flushDeferredRemovals(onComplete: () -> Unit = {}) {
-        val removals = deferredRemovals.values.toList()
+        val removals = deferredRemovals.drain()
         if (removals.isEmpty()) {
             onComplete()
             return
         }
         val previousChanges = removals.associate { it.id to deferredPreviousChanges.remove(it.id) }
-        deferredRemovals.clear()
         val requestedKey = configurationKey
         val ids = removals.mapTo(linkedSetOf(), MusicTrack::id)
         _state.update { state ->

@@ -13,22 +13,30 @@ import androidx.compose.ui.unit.TextUnit
 internal fun PlaylistSyncedArtwork(bitmap: Bitmap?, awaitingArtwork: Boolean, start: Long, end: Long,
     mark: String, modifier: Modifier, markSize: TextUnit, shape: Shape,
     markAlignment: Alignment = Alignment.TopEnd, sourceKey: String, imageUrl: String? = null,
-    onDisplayedArtworkChange: ((Bitmap?) -> Unit)? = null) {
+    onDisplayedArtworkChange: ((Bitmap?) -> Unit)? = null,
+    initialArtwork: List<ArtworkBlendSnapshot>? = null,
+    freezeArtwork: Boolean = false,
+    onArtworkSnapshot: ((List<ArtworkBlendSnapshot>) -> Unit)? = null) {
     val cards = LocalPlaylistCardTransition.current
     val candidate = PlayerArtworkFrame(ArtworkIdentity(imageUrl, start, end, mark), bitmap)
-    val initial = remember { cards?.takeIf { it.activeSourceKey == sourceKey }?.activeArtworkLayers
+    val initial = remember { initialArtwork ?: cards?.takeIf { it.activeSourceKey == sourceKey }?.activeArtworkLayers
         ?: listOf(ArtworkBlendSnapshot(candidate, 1f)) }
     var prepared by remember { mutableStateOf(initial.last().frame) }
     LaunchedEffect(candidate, awaitingArtwork) { if (!awaitingArtwork) prepared = candidate }
     DisposableEffect(cards, sourceKey) { onDispose { cards?.artworkSync?.forget(sourceKey) } }
     ReadyArtworkCrossfade(prepared, if (ExperiencePreferences.options.reduceMotion) 180 else 360,
-        modifier, freezeBlend = cards?.artworkLocked(sourceKey) == true, initialBlend = initial,
+        modifier, freezeBlend = freezeArtwork || cards?.artworkLocked(sourceKey) == true, initialBlend = initial,
         respectReduceMotion = false,
         onDisplayed = {
-            cards?.artworkSync?.record(sourceKey, listOf(ArtworkBlendSnapshot(it, 1f)))
+            val snapshot = listOf(ArtworkBlendSnapshot(it, 1f))
+            cards?.artworkSync?.record(sourceKey, snapshot)
+            onArtworkSnapshot?.invoke(snapshot)
             onDisplayedArtworkChange?.invoke(it.bitmap)
         },
-        onBlendSnapshot = { cards?.artworkSync?.record(sourceKey, it) }) { frame ->
+        onBlendSnapshot = {
+            cards?.artworkSync?.record(sourceKey, it)
+            onArtworkSnapshot?.invoke(it)
+        }) { frame ->
         ArtworkBitmapOrPlaceholder(frame.bitmap, frame.identity.start, frame.identity.end, frame.identity.mark,
             Modifier.fillMaxSize(), markSize, shape, markAlignment)
     }

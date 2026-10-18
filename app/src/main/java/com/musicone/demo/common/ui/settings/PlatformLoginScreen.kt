@@ -52,6 +52,7 @@ internal fun PlatformLoginScreen(
             MusicSource.NETEASE -> NeteaseLoginScreen(state, actions)
             MusicSource.QQ -> QqLoginScreen(state, actions)
             MusicSource.KUGOU -> KugouLoginScreen(state, actions)
+            MusicSource.LOCAL, MusicSource.BILIBILI -> Unit
         }
     }
 }

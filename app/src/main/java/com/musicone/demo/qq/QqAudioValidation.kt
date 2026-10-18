@@ -17,7 +17,7 @@ internal object QqAudioValidation {
         val flac = if (cached == null && qqPlaybackQuality(url) in listOf(AudioQuality.LOSSLESS, AudioQuality.HI_RES)) {
             readQqFlacDuration(url)?.let { MediaInfo(it, "audio/flac") }
         } else null
-        val info = cached ?: flac ?: runCatching {
+        val info = cached ?: flac ?: runCatchingCancellable {
             val extractor = MediaExtractor()
             try {
                 extractor.setDataSource(url, emptyMap())
@@ -32,17 +32,24 @@ internal object QqAudioValidation {
             } finally {
                 extractor.release()
             }
+        }.onFailure { error ->
+            if (qqPlaybackQuality(url) == AudioQuality.DOLBY) {
+                qqDiagnostic("杜比媒体读取失败：track=${track.id}，error=${error::class.java.simpleName}")
+            }
         }.getOrNull() ?: return false
         synchronized(durations) { durations[url] = info }
         val formatMatches = when (qqPlaybackQuality(url)) {
             AudioQuality.LOSSLESS, AudioQuality.HI_RES -> info.mime == "audio/flac"
             AudioQuality.STANDARD, AudioQuality.HIGHER, AudioQuality.EXHIGH -> info.mime == "audio/mpeg"
-            AudioQuality.DOLBY -> info.mime == "audio/eac3" || info.mime == "audio/eac3-joc"
+            AudioQuality.DOLBY -> isDolbyAudioMime(info.mime)
             else -> false
         }
         val full = formatMatches && qqMediaDurationMatches(info.duration, track.durationMs)
         // 仅记录歌曲标识和时长，不输出签名地址或账号凭证。
         Log.d("QqAudioValidation", "track=${track.id} expected=${track.durationMs} actual=${info.duration} mime=${info.mime} full=$full")
+        if (qqPlaybackQuality(url) == AudioQuality.DOLBY) {
+            qqDiagnostic("杜比媒体验证：track=${track.id} expected=${track.durationMs} actual=${info.duration} mime=${info.mime} full=$full")
+        }
         return full
     }
 }

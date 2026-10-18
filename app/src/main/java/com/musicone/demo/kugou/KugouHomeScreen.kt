@@ -49,8 +49,9 @@ internal fun KugouHomeScreen(
         if (state.page == MusicOnePage.HOME) actions.onRefreshRecommendedTracks(false)
     }
     ReportPrimaryHeaderScroll(MusicOnePage.HOME, scroll)
+    BoxWithConstraints(Modifier.fillMaxSize()) {
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(160.dp),
+        columns = GridCells.Fixed(qqLibraryColumns(maxWidth)),
         state = scroll,
         modifier = Modifier.fillMaxSize(),
         userScrollEnabled = LocalPlayerMotion.current?.mounted != true &&
@@ -123,6 +124,7 @@ internal fun KugouHomeScreen(
             .distinct().forEachIndexed { index, message ->
                 item("message-$index", span = { GridItemSpan(maxLineSpan) }) { EmptyState(message) }
             }
+    }
     }
 }
 

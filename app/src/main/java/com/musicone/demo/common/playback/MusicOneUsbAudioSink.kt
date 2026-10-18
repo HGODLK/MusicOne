@@ -42,11 +42,13 @@ internal class MusicOneUsbAudioSink(
     private var stream: UsbAudioStream? = null
     private var streamingThread: DirectUsbStreamingThread? = null
     private var directInterfaceId: Int? = null
+    private var directSampleRate = 0
     private var currentSampleRate = 0
     private var currentChannelCount = 0
     private var currentEncoding = C.ENCODING_PCM_16BIT
     private var currentSourceBitDepth = 16
     @Volatile private var pendingSourceBitDepth = 16
+    @Volatile private var dolbySource = false
     private var directStartMediaTimeUs = 0L
     private var directPositionNeedsStart = true
     private var delegateMuted = false
@@ -66,15 +68,17 @@ internal class MusicOneUsbAudioSink(
 
     fun onDeviceChanged(): Deferred<Unit> = requestRouteChange()
 
-    fun setSourceBitDepth(bitDepth: Int) {
+    fun setSourceFormat(format: Format?) {
+        dolbySource = isDolbyAudioMime(format?.sampleMimeType)
+        val bitDepth = sourceAudioBitDepth(format)
         pendingSourceBitDepth = bitDepth.takeIf { it in SUPPORTED_BIT_DEPTHS } ?: 16
     }
 
     override fun configure(inputFormat: Format, specifiedBufferSize: Int, outputChannels: IntArray?) {
         val changingRoute = routeChangePending
         val nextEncoding = inputFormat.pcmEncoding.takeIf { it != Format.NO_VALUE } ?: C.ENCODING_PCM_16BIT
-        val nextSourceBitDepth = pendingSourceBitDepth
-        val reuseDirectOutput = !changingRoute && enabled && stream?.isAlive == true && streamingThread != null &&
+        val nextSourceBitDepth = usbPcmSourceBitDepth(inputFormat, pendingSourceBitDepth)
+        val reuseDirectOutput = !changingRoute && enabled && !dolbySource && stream?.isAlive == true && streamingThread != null &&
             currentSampleRate == inputFormat.sampleRate && currentChannelCount == inputFormat.channelCount &&
             currentEncoding == nextEncoding && currentSourceBitDepth == nextSourceBitDepth
         this.inputFormat = inputFormat
@@ -96,6 +100,8 @@ internal class MusicOneUsbAudioSink(
         if (routeChangePending) return false
         val activeStream = stream
         val worker = streamingThread
+        // 设置切换与解码器复用可能先于输出重建，旧独占流也不能接收杜比降混数据。
+        if (dolbySource && activeStream != null) return false
         if (activeStream != null && worker != null) {
             throwDirectWriteError()
             if (directPositionNeedsStart) {
@@ -119,8 +125,8 @@ internal class MusicOneUsbAudioSink(
     override fun getCurrentPositionUs(sourceEnded: Boolean): Long {
         val activeStream = stream
         if (activeStream != null) {
-            if (directPositionNeedsStart || currentSampleRate <= 0) return AudioSink.CURRENT_POSITION_NOT_SET
-            return directStartMediaTimeUs + (streamingThread?.completedFrames ?: 0L) * C.MICROS_PER_SECOND / currentSampleRate
+            if (directPositionNeedsStart || directSampleRate <= 0) return AudioSink.CURRENT_POSITION_NOT_SET
+            return directStartMediaTimeUs + (streamingThread?.completedFrames ?: 0L) * C.MICROS_PER_SECOND / directSampleRate
         }
         return super.getCurrentPositionUs(sourceEnded)
     }
@@ -140,7 +146,7 @@ internal class MusicOneUsbAudioSink(
 
     private fun throwDirectWriteError() {
         streamingThread?.error()?.let { cause ->
-            throw AudioSink.WriteException(-1, requireNotNull(inputFormat), false).apply { initCause(cause) }
+            throw AudioSink.WriteException(-1, requireNotNull(inputFormat), false).apply { initCause(UsbOutputException(cause)) }
         }
     }
 
@@ -221,7 +227,7 @@ internal class MusicOneUsbAudioSink(
             UsbAudioOutputStatus.publish(UsbAudioOutputSnapshot(UsbAudioOutputRoute.DISABLED))
             return
         }
-        if (!isSupportedPcm(format)) {
+        if (dolbySource || !isSupportedPcm(format)) {
             publishFallback("当前解码格式无法直通，继续使用安卓音频输出")
             return
         }
@@ -281,49 +287,20 @@ internal class MusicOneUsbAudioSink(
             publishFallback("无法接管 USB 音频接口")
             return
         }
-        val requestedBitDepth = currentSourceBitDepth
-        val streamProfile = usbDevice.findStreamProfileForBitDepth(requestedBitDepth)
-        if (streamProfile == null) {
+        val output = createDirectUsbPcmOutput(usbDevice, deviceInfo, format, currentSourceBitDepth)
+        if (output == null) {
             usbDevice.closeDevice()
-            publishFallback("USB 音频设备不支持不降位深的 ${requestedBitDepth}bit 输出")
+            publishFallback("USB 不接受源规格或 32bit／192kHz 兼容规格，继续使用系统输出")
             return
         }
-        val candidate = UsbAudioStream(
-            fd = deviceInfo.fd,
-            interfaceId = streamProfile.interfaceId,
-            endpointOut = streamProfile.endpointOutAddress,
-            endpointFeedback = streamProfile.endpointFeedbackAddress,
-            sampleRate = format.sampleRate,
-            channelCount = format.channelCount,
-            bitDepth = streamProfile.bitDepth,
-            subslotSizeBytes = streamProfile.subslotSizeBytes,
-            maxPacketSize = streamProfile.maxPacketSize,
-        )
-        if (!candidate.isReady) {
-            candidate.release()
-            usbDevice.closeDevice()
-            publishFallback("USB 等时传输初始化失败")
-            return
-        }
-        val configured = runCatching {
-            usbDevice.setAltSetting(0, streamProfile.interfaceId)
-            usbDevice.setSampleRate(format.sampleRate)
-            usbDevice.setAltSetting(0, streamProfile.interfaceId)
-            val altSelected = usbDevice.setAltSetting(streamProfile.altSetting, streamProfile.interfaceId)
-            if (altSelected) Thread.sleep(50)
-            altSelected && candidate.start()
-        }.getOrDefault(false)
-        if (!configured) {
-            candidate.stop()
-            candidate.release()
-            usbDevice.closeDevice()
-            publishFallback("USB 音频设备拒绝了当前采样率或位深")
-            return
-        }
+        val candidate = output.stream
+        val streamProfile = output.profile
         stream = candidate
         directInterfaceId = streamProfile.interfaceId
+        directSampleRate = output.sampleRate
         UsbExclusiveVolumeKeys.activeGain = systemMediaVolume
-        streamingThread = DirectUsbStreamingThread(candidate, format.sampleRate, format.channelCount) {
+        streamingThread = DirectUsbStreamingThread(candidate, format.sampleRate, format.channelCount,
+            output.sampleRate, output.resampler) {
             (pendingVolume * systemMediaVolume.current()).coerceIn(0f, 1f)
         }.also {
             if (!playbackStarted) it.pause()
@@ -336,9 +313,11 @@ internal class MusicOneUsbAudioSink(
             UsbAudioOutputSnapshot(
                 UsbAudioOutputRoute.DIRECT_UAC2,
                 deviceInfo.deviceName,
-                format.sampleRate,
+                output.sampleRate,
                 streamProfile.bitDepth,
-                "已绕过安卓混音与 SRC，并通过软件增益跟随系统媒体音量",
+                if (output.converted) "已转换为兼容的 32bit／192kHz PCM，并跟随系统媒体音量"
+                else "已绕过安卓混音与 SRC，并通过软件增益跟随系统媒体音量",
+                converted = output.converted,
             ),
         )
     }
@@ -347,26 +326,35 @@ internal class MusicOneUsbAudioSink(
         if (UsbExclusiveVolumeKeys.activeGain === systemMediaVolume) UsbExclusiveVolumeKeys.activeGain = null
         val activeStream = stream
         stream = null
+        directSampleRate = 0
         updateDirectPlaybackWakeLock()
-        if (activeStream != null) {
-            activeStream.stop()
-            streamingThread?.stop()
-            streamingThread = null
-            activeStream.release()
-            runCatching { usbDevice.setAltSetting(0, directInterfaceId) }
-            directInterfaceId = null
-            usbDevice.closeDevice()
-        } else {
-            streamingThread?.stop()
-            streamingThread = null
-            directInterfaceId = null
+        try {
+            if (activeStream != null) {
+                activeStream.stop()
+                streamingThread?.stop()
+                streamingThread = null
+                releaseUsbStream(activeStream::release, {
+                    runCatching { usbDevice.setAltSetting(0, directInterfaceId) }
+                    usbDevice.closeDevice()
+                }, activeStream::releaseAfterDeviceClosed)
+                directInterfaceId = null
+            } else {
+                streamingThread?.stop()
+                streamingThread = null
+                directInterfaceId = null
+            }
+        } finally {
+            clearDelegateRoute()
+            unmuteDelegate()
         }
-        clearDelegateRoute()
-        unmuteDelegate()
     }
 
     private fun flushDirectOutput() {
-        streamingThread?.flush()
+        try {
+            streamingThread?.flush()
+        } catch (failure: IllegalStateException) {
+            throw UsbOutputException(failure)
+        }
         directPositionNeedsStart = true
     }
 

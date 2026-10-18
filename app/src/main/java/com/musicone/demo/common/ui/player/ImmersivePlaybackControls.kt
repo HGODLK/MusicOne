@@ -32,9 +32,8 @@ internal fun ImmersivePlaybackControls(state: MusicOneUiState, track: MusicTrack
     viewModel: MusicPlaybackRuntime, tablet: Boolean, lyrics: Boolean, onLyrics: () -> Unit,
     onQueue: () -> Unit, modifier: Modifier = Modifier,
     lyricsProgress: () -> Float = { if (lyrics) 1f else 0f }) {
-    val qqFeedback = track.source == MusicSource.QQ
     Column(modifier.fillMaxWidth()) {
-        PlayerProgressTimeline(viewModel, Modifier.playerDetailReveal(motion))
+        PlayerProgressTimeline(viewModel, motion, Modifier.playerDetailReveal(motion))
         Row(Modifier.fillMaxWidth().height(if (tablet) 80.dp else 100.dp),
             horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
             AudioQualityButton(
@@ -45,7 +44,6 @@ internal fun ImmersivePlaybackControls(state: MusicOneUiState, track: MusicTrack
                 Modifier.size(48.dp).playerDetailReveal(motion),
             )
             PlaybackControlButton(
-                qqFeedback = qqFeedback,
                 onClick = viewModel::requestPrevious,
                 modifier = Modifier.size(56.dp).playerDetailReveal(motion),
                 horizontalMotion = (-7).dp,
@@ -53,14 +51,12 @@ internal fun ImmersivePlaybackControls(state: MusicOneUiState, track: MusicTrack
                 Icon(PlayerControlIcons.FastRewind, "上一首", Modifier.size(38.dp))
             }
             PlaybackControlButton(
-                qqFeedback = qqFeedback,
                 onClick = viewModel::togglePlay,
                 modifier = Modifier.size(70.dp).motionAnchor(motion, "play", true),
             ) {
-                PlaybackStateIcon(state.isPlaying, qqFeedback, Modifier.size(54.dp))
+                PlaybackStateIcon(state.isPlaying, Modifier.size(54.dp))
             }
             PlaybackControlButton(
-                qqFeedback = qqFeedback,
                 onClick = viewModel::requestNext,
                 modifier = Modifier.size(56.dp).playerDetailReveal(motion),
                 horizontalMotion = 7.dp,
@@ -85,9 +81,11 @@ internal fun ImmersivePlaybackControls(state: MusicOneUiState, track: MusicTrack
             Row(Modifier.fillMaxWidth().height(58.dp), horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically) {
                 if (!tablet) {
-                    IconButton(onLyrics, Modifier.size(width = 64.dp, height = 56.dp).semantics {
-                        contentDescription = if (lyrics) "关闭歌词" else "开启歌词"
-                    }) {
+                    val retryLyrics = state.lyricLoadState == LyricLoadState.RETRYABLE && track.lyrics.isEmpty()
+                    IconButton({ if (retryLyrics && !lyrics) viewModel.retryLyrics() else onLyrics() }, Modifier.size(width = 64.dp, height = 56.dp).semantics {
+                        contentDescription = if (lyrics) "关闭歌词" else if (retryLyrics) "重试加载歌词" else "开启歌词"
+                    }, enabled = lyrics || track.source.supportsLibraryEditing || track.lyrics.isNotEmpty() || retryLyrics, colors = IconButtonDefaults.iconButtonColors(
+                        disabledContentColor = LocalContentColor.current.copy(alpha = .28f))) {
                         LyricsToggleIcon(lyricsProgress, Modifier.size(28.dp))
                     }
                 } else Spacer(Modifier.size(48.dp))
@@ -101,12 +99,13 @@ internal fun ImmersivePlaybackControls(state: MusicOneUiState, track: MusicTrack
 }
 
 @Composable
-private fun PlayerProgressTimeline(viewModel: MusicPlaybackRuntime, modifier: Modifier) {
+private fun PlayerProgressTimeline(viewModel: MusicPlaybackRuntime, motion: PageMotion, modifier: Modifier) {
     val ink = LocalContentColor.current
     val visible = LocalPlayerVisible.current
     val timeline by rememberPlayerTimelineSnapshot(viewModel)
     val switching = timeline.switching
     val lyricSeek by viewModel.seekPreview.lyricSeek.collectAsStateWithLifecycle()
+    val entrance = rememberPlayerProgressEntrance(motion, timeline.trackId, switching, lyricSeek?.revision)
     val position = timeline.positionMs
     val progressMotion = rememberPlayerProgressMotion(
         trackId = timeline.trackId,
@@ -127,6 +126,7 @@ private fun PlayerProgressTimeline(viewModel: MusicPlaybackRuntime, modifier: Mo
     val progress = seeking ?: if (switching) 0f else playerProgressFraction(position, timeline.durationMs)
     Column(modifier) {
         PlayerThinSlider(progress, {
+            entrance.cancel()
             if (seeking == null) userDragged = dragging
             if (dragging) {
                 tapSeekJob?.cancel()
@@ -170,7 +170,7 @@ private fun PlayerProgressTimeline(viewModel: MusicPlaybackRuntime, modifier: Mo
                 }
             }
         }, enabled = !switching, interactionSource = sliderInteraction,
-            visualValue = { playerProgressVisualValue(seeking, userDragged, progressMotion.value) })
+            visualValue = { playerProgressVisualValue(seeking, userDragged, progressMotion.value) * entrance.value })
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(formatDuration((progress * timeline.durationMs).toLong()), color = ink.copy(alpha = .48f), fontSize = 11.sp)
             Text("−" + formatDuration(((1f - progress) * timeline.durationMs).toLong()), color = ink.copy(alpha = .48f), fontSize = 11.sp)
@@ -191,7 +191,8 @@ private fun PlayerThinSlider(value: Float, onValue: (Float) -> Unit, label: Stri
     interactionSource: MutableInteractionSource,
     visualValue: () -> Float = { value }) {
     val ink = LocalContentColor.current
-    Slider(value, onValue, modifier.height(48.dp).semantics { contentDescription = label }, enabled = enabled,
+    // 扩大上下触摸空间，细线绘制与原有点击、拖动判定保持独立。
+    Slider(value, onValue, modifier.height(64.dp).semantics { contentDescription = label }, enabled = enabled,
         onValueChangeFinished = onFinished, interactionSource = interactionSource,
         thumb = { Spacer(Modifier.size(0.dp)) },
         track = { slider ->

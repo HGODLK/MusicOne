@@ -58,6 +58,8 @@ import androidx.compose.ui.unit.sp
 internal data class PlaybackSettingsMenuOption(
     val label: String,
     val selected: Boolean,
+    val enabled: Boolean = true,
+    val description: String? = null,
     val select: () -> Unit,
 )
 
@@ -84,6 +86,7 @@ internal class PlaybackSettingsMenuState {
     }
 
     fun select(option: PlaybackSettingsMenuOption) {
+        if (!option.enabled) return
         option.select()
         dismiss()
     }
@@ -192,10 +195,14 @@ internal fun PlaybackSettingsMenuHost(content: @Composable () -> Unit) {
 private fun PlaybackSettingsMenuRow(option: PlaybackSettingsMenuOption, onClick: () -> Unit) {
     Box(
         Modifier.fillMaxWidth().heightIn(min = 54.dp)
-            .selectable(option.selected, role = Role.RadioButton, onClick = onClick)
+            .selectable(option.selected, enabled = option.enabled, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 15.dp),
     ) {
-        Text(option.label, fontSize = 14.sp, modifier = Modifier.align(Alignment.CenterStart).padding(end = 36.dp))
+        Column(Modifier.align(Alignment.CenterStart).padding(end = 36.dp)) {
+            val color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (option.enabled) 1f else .38f)
+            Text(option.label, fontSize = 14.sp, color = color)
+            option.description?.let { Text(it, fontSize = 11.sp, color = color) }
+        }
         if (option.selected) {
             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.align(Alignment.CenterEnd))
         }

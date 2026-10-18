@@ -34,12 +34,13 @@ internal fun JSONObject.parseKugouSearchAlbums(): List<MusicPlaylist> =
     }.orEmpty()
 
 internal fun JSONObject.toKugouTrack(hasVipAccess: Boolean): MusicTrack {
-    val standardHash = firstKugouString("FileHash", "filehash", "hash", "Hash")
-    val hqHash = firstKugouString("HQFileHash", "hqfilehash", "320hash")
-    val sqHash = firstKugouString("SQFileHash", "sqfilehash", "sqhash")
-    val resHash = firstKugouString("ResFileHash", "resfilehash", "res_hash")
-    val fallbackHash = listOf(standardHash, hqHash, sqHash, resHash).firstOrNull(String::isNotBlank).orEmpty()
-    if (fallbackHash.isBlank()) throw PlatformApiException("酷狗音乐返回了无效歌曲")
+    val qualities = kugouQualityHashes()
+    val fallbackHash = qualities.values.firstOrNull().orEmpty()
+    // 保持已有歌曲身份，资源档位补齐不能使收藏和缓存变成另一首歌。
+    val identityHash = firstKugouString("FileHash", "filehash", "hash", "Hash")
+        .takeIf { value -> qualities.values.any { it.equals(value, ignoreCase = true) } } ?: fallbackHash
+    val songId = firstKugouString("MixSongID", "mixsongid", "album_audio_id", "audio_id", "audioid", "ID", "id")
+    if (fallbackHash.isBlank() && songId.isBlank()) throw PlatformApiException("酷狗音乐返回了无效歌曲")
     val fileName = firstKugouString("FileName", "filename", "name")
     val explicitTitle = firstKugouString("SongName", "songname", "song_name")
     val explicitArtist = firstKugouString("SingerName", "singername", "author_name")
@@ -57,25 +58,22 @@ internal fun JSONObject.toKugouTrack(hasVipAccess: Boolean): MusicTrack {
         trans?.optString("clip_hash").orEmpty().isNotBlank() ||
         firstKugouInt("FailProcess", "failprocess", "fail_process") == 4 || privilege == 8
     val access = kugouTrackAccess(purchased, paidOnly, needsVip, hasVipAccess, trialAvailable)
-    val albumAudioId = firstKugouString("MixSongID", "mixsongid", "album_audio_id", "ID", "id")
+    // 云收藏的 ID/fileid 是收藏项编号，不能送入播放接口冒充歌曲编号。
+    val albumAudioId = firstKugouString("MixSongID", "mixsongid", "album_audio_id", "audio_id", "audioid")
     val albumId = firstKugouString("AlbumID", "album_id", "albumid")
+        .ifBlank { optJSONObject("albuminfo")?.opt("id")?.toString().orEmpty() }
     val artwork = firstKugouString("Image", "image", "cover", "imgurl")
         .ifBlank { trans?.firstKugouString("union_cover").orEmpty() }
         .kugouArtworkUrl()
     val colors = kugouArtworkColors(fallbackHash)
-    val qualities = buildMap {
-        if (standardHash.isNotBlank()) put(AudioQuality.STANDARD, standardHash)
-        if (hqHash.isNotBlank()) put(AudioQuality.EXHIGH, hqHash)
-        if (sqHash.isNotBlank()) put(AudioQuality.LOSSLESS, sqHash)
-        if (resHash.isNotBlank()) put(AudioQuality.HI_RES, resHash)
-    }
     return MusicTrack(
-        id = "kugou-${standardHash.ifBlank { fallbackHash }}",
+        id = "kugou-${identityHash.ifBlank { "missing-$songId" }}",
         source = MusicSource.KUGOU,
         title = title.ifBlank { "未知歌曲" },
         artists = artist,
         album = cleanKugouText(firstKugouString("AlbumName", "albumname", "album_name", "remark")),
-        durationMs = firstKugouLong("Duration", "duration", "timelen").let { if (it in 1..99_999) it * 1_000 else it },
+        durationMs = if (has("timelen")) firstKugouLong("timelen") else
+            firstKugouLong("Duration", "duration").let { if (it in 1..99_999) it * 1_000 else it },
         artworkStart = colors.first,
         artworkEnd = colors.second,
         artworkMark = title.take(1),
@@ -86,8 +84,7 @@ internal fun JSONObject.toKugouTrack(hasVipAccess: Boolean): MusicTrack {
         qualityIds = qualities,
         accessBadge = access.badge,
         trialAvailable = access.trialAvailable,
-        playable = access.playable,
-        unavailableReason = if (!access.playable) "当前账号无权播放这首歌曲" else null,
+        playable = true,
     )
 }
 
@@ -104,7 +101,7 @@ internal fun kugouTrackAccess(
         needsVip && !hasVipAccess -> MusicAccessBadge.VIP
         else -> null
     }
-    return MusicTrackAccess(badge, badge != null && trialAvailable, badge == null || trialAvailable)
+    return MusicTrackAccess(badge, badge != null && trialAvailable, true)
 }
 
 private fun JSONObject.toKugouPlaylist(hasVipAccess: Boolean): MusicPlaylist {

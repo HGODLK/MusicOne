@@ -23,8 +23,9 @@ internal fun KugouMyScreen(
     val scroll = rememberLazyGridState()
     val playlists = if (created) library.createdPlaylists else library.collectedPlaylists
     ReportPrimaryHeaderScroll(MusicOnePage.MY, scroll)
+    BoxWithConstraints(Modifier.fillMaxSize()) {
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(164.dp), state = scroll, modifier = Modifier.fillMaxSize(),
+        columns = GridCells.Fixed(qqLibraryColumns(maxWidth)), state = scroll, modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 88.dp, bottom = bottomInset + 28.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
@@ -59,5 +60,6 @@ internal fun KugouMyScreen(
                 else -> "还没有收藏的歌单"
             })
         }
+    }
     }
 }

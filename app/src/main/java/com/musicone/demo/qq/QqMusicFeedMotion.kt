@@ -24,7 +24,7 @@ internal suspend fun preloadQqArtwork(
     val pending = urls.filterNotNull().filter(String::isNotBlank).distinct()
         .filter { ArtworkRepository.peek(it) == null }
         .map { url ->
-            scope.async(Dispatchers.IO) { runCatching { ArtworkRepository.load(url) }.getOrNull() }
+            scope.async(Dispatchers.IO) { runCatchingCancellable { ArtworkRepository.load(url) }.getOrNull() }
         }
     if (pending.isEmpty()) return
     withTimeoutOrNull(waitLimitMs) { pending.awaitAll() }

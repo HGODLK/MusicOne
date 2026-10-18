@@ -14,7 +14,7 @@ struct PacketResult {
 
 // 同一段音频无论按 MP3、FLAC 或零碎网络解码块输入，传输包序列都必须一致。
 PacketResult packetize(int totalFrames, int bytesPerFrame, double rate,
-                       const std::vector<int> &chunks) {
+                       const std::vector<int> &chunks, int packetsPerSecond = 8000) {
     PacketResult result;
     int consumedFrames = 0;
     unsigned chunk = 0;
@@ -26,10 +26,11 @@ PacketResult packetize(int totalFrames, int bytesPerFrame, double rate,
         for (;;) {
             int packets[8];
             double nextPhase = result.phase;
-            const int bytes = planUsbPcmPackets(result.residual, bytesPerFrame, rate / 8000.0,
-                                               8, result.phase, packets, nextPhase);
+            const int perUrb = std::max(1, std::min(8, packetsPerSecond / 1000));
+            const int bytes = planUsbPcmPackets(result.residual, bytesPerFrame, rate / packetsPerSecond,
+                                               perUrb, result.phase, packets, nextPhase);
             if (bytes == 0) break;
-            result.packets.insert(result.packets.end(), packets, packets + 8);
+            result.packets.insert(result.packets.end(), packets, packets + perUrb);
             result.residual -= bytes;
             result.phase = nextPhase;
         }
@@ -44,7 +45,7 @@ PacketResult packetize(int totalFrames, int bytesPerFrame, double rate,
 }
 
 int main() {
-    for (double rate : {44100.0, 44101.6, 48000.0, 96000.0, 192000.0, 384000.0}) {
+    for (double rate : {44100.0, 44101.6, 48000.0, 96000.0, 176400.0, 192000.0, 384000.0}) {
         for (int bytesPerFrame : {2, 4, 6, 8}) {
             const int frames = static_cast<int>(rate) * 3 + 17;
             const auto baseline = packetize(frames, bytesPerFrame, rate, {frames});
@@ -56,6 +57,14 @@ int main() {
                 assert(std::abs(split.phase - baseline.phase) < 1e-12);
             }
         }
+    }
+    // 不同端点服务间隔仍必须按真实采样率供数，不能固定假定每秒八千包。
+    for (int packetRate : {1000, 2000, 4000, 8000}) {
+        const auto whole = packetize(192017, 8, 192000.0, {192017}, packetRate);
+        const auto split = packetize(192017, 8, 192000.0, {1, 576, 4096, 17}, packetRate);
+        assert(whole.packets == split.packets);
+        assert(whole.residual == split.residual);
+        for (int length : whole.packets) assert(length == 192000 / packetRate * 8);
     }
     int packets[8];
     double phase = .25;
@@ -89,5 +98,5 @@ int main() {
     assert(transfers.complete(0, 192, 4, true));
     assert(transfers.completedFrames == 48 && transfers.pending == 0);
     assert(transfers.reset() && transfers.completedFrames == 0);
-    std::cout << "USB packetization: 120 chunk/rate/layout comparisons, tail and transfer lifecycle checks passed\n";
+    std::cout << "USB packetization: 140 chunk/rate/layout comparisons, four service intervals, tail and lifecycle passed\n";
 }

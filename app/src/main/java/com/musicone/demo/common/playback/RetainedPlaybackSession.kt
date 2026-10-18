@@ -10,7 +10,7 @@ internal class RetainedPlaybackState {
 
     fun restore(source: MusicSource, playerTrackId: String?, base: MusicOneUiState, playing: Boolean): MusicOneUiState? {
         val saved = snapshot?.takeIf {
-            it.currentTrack?.source == source && it.currentTrack.id == playerTrackId
+            it.currentTrack != null && it.currentTrack.id == playerTrackId
         } ?: return null
         return saved.copy(
             page = base.page, playerExpanded = base.playerExpanded, isPlaying = playing,

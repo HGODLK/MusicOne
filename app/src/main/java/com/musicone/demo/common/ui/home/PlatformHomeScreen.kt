@@ -48,5 +48,6 @@ internal fun PlatformHomeScreen(
         MusicSource.NETEASE -> NeteaseHomeScreen(state, catalog, viewModel, bottomInset, actions)
         MusicSource.QQ -> QqHomeScreen(state, catalog, viewModel, sessionRevision, bottomInset, actions)
         MusicSource.KUGOU -> KugouHomeScreen(state, catalog, viewModel, bottomInset, actions)
+        MusicSource.LOCAL, MusicSource.BILIBILI -> Unit
     }
 }

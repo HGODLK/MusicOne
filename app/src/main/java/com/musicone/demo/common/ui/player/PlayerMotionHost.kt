@@ -103,7 +103,8 @@ private fun PlayerMotionContent(motion: PageMotion, state: MusicOneUiState,
                             shape = revealShape
                             clip = true
                         }
-                        else -> Modifier
+                        // 隐藏阶段也保留绘制门控，不能在父布局撤下前露出已复位的标题。
+                        else -> Modifier.graphicsLayer { alpha = if (motion.mounted) 1f else 0f }
                     }
                     Box(Modifier.fillMaxSize().then(surfaceModifier)) {
                         PlayerVisualContent(displayedState, track, motion, viewModel, dismiss, contentActivated)
@@ -143,7 +144,7 @@ internal fun playerSurfaceReveal(progress: Float): Float {
 private class PlayerRevealShape(private val motion: PageMotion) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val target = motion.targetSnapshot["surface"]?.bounds ?: motion.targets["surface"]?.bounds
-        val source = motion.sourceSnapshot["surface"]?.bounds
+        val source = playerSourceAnchor(motion, "surface")?.bounds
         val p = motion.value
         val rect = if (motion.moving && source != null && target != null) {
             motionRect(source, target, p).translate(-target.left, -target.top)

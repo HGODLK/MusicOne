@@ -74,7 +74,7 @@ internal class QqPlaylistArtworkAliasResolver(
         val aliased = aliases.apply(playlist)
         val first = aliased.tracks.firstOrNull()
         if (!aliased.needsQqFirstTrackArtworkAlias() || first == null) return aliased
-        val resolved = runCatching { api.enrichTrackMetadata(first, cookie) }.getOrNull()
+        val resolved = runCatchingCancellable { api.enrichTrackMetadata(first, cookie) }.getOrNull()
             ?.let { aliases.remember(first, it) }
             ?: return aliased
         return aliased.withResolvedTrackArtwork(

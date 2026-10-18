@@ -11,7 +11,8 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 internal fun SettingsHomeScreen(state: PlatformSettingsUiState, onBack: () -> Unit, onOpenSources: () -> Unit,
-    bottomInset: androidx.compose.ui.unit.Dp = 0.dp, onOpenCachedMusic: () -> Unit = {}) {
+    bottomInset: androidx.compose.ui.unit.Dp = 0.dp, onOpenCachedMusic: () -> Unit = {},
+    onOpenLibrary: () -> Unit = {}, onOpenSupplemental: () -> Unit = {}) {
     PlaybackSettingsMenuHost {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             LazyColumn(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
@@ -24,6 +25,8 @@ internal fun SettingsHomeScreen(state: PlatformSettingsUiState, onBack: () -> Un
                         modifier = Modifier.clickable(onClick = onOpenSources))
                 }
                 item { PlaybackSettings(state.selectedSource) }
+                item { LibraryActionRow("本地音乐库", "文件、关联目录与 .msco 备份", onClick = onOpenLibrary) }
+                item { LibraryActionRow("补充音源", "B站账号、分 P 导入与收藏夹订阅", onClick = onOpenSupplemental) }
                 item { DisplaySettings() }
                 item { CacheSettings() }
                 item {
@@ -31,6 +34,7 @@ internal fun SettingsHomeScreen(state: PlatformSettingsUiState, onBack: () -> Un
                         trailingContent = { Text("›") }, modifier = Modifier.clickable(onClick = onOpenCachedMusic))
                 }
                 item { AboutSettings() }
+                item { VersionUpdateSettings() }
             }
         }
     }

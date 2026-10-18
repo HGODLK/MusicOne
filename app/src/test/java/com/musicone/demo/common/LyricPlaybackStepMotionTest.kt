@@ -7,6 +7,29 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LyricPlaybackStepMotionTest {
+    @Test fun resumingTheDriverDoesNotAdvanceByTheTimeSpentClosed() = runBlocking {
+        val clock = BroadcastFrameClock()
+        withContext(clock) {
+            var time = 0L
+            val motion = LyricPlaybackStepMotion(0) { time }
+            var driver = launch(start = CoroutineStart.UNDISPATCHED) { motion.run() }
+            motion.emphasize(1, 1, animate = true, playback = true)
+            repeat(6) {
+                yield(); time += 16_666_667L; clock.sendFrame(time); yield()
+            }
+            driver.cancelAndJoin()
+            val before = motion.row(1).focus.value
+            assertTrue(before > 0f && before < .99f)
+            time += 60_000_000_000L
+            driver = launch(start = CoroutineStart.UNDISPATCHED) { motion.run() }
+            motion.emphasize(1, 1, animate = true, playback = true)
+            yield(); time += 16_666_667L; clock.sendFrame(time); yield()
+            assertTrue(motion.row(1).focus.value >= before)
+            assertTrue("恢复首帧不能一口气跳到动画终点", motion.row(1).focus.value < .99f)
+            driver.cancelAndJoin()
+        }
+    }
+
     @Test fun naturalRowsUseRequestedStaggerStrength() {
         assertEquals(200f, lyricPlaybackRowStiffness(-1), 0f)
         assertEquals(200f, lyricPlaybackRowStiffness(0), 0f)

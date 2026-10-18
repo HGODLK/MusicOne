@@ -29,6 +29,7 @@ internal interface PlatformAuthAdapter {
     val source: MusicSource
     fun createQrCode(): PlatformQrChallenge
     fun checkQrCode(challenge: PlatformQrChallenge): PlatformQrResult
+    fun prepareCaptchaCredential(session: PlatformSession, credentialSeed: String): String = credentialSeed
     fun sendCaptcha(
         phone: String,
         countryCode: String,
@@ -61,6 +62,9 @@ internal class PlatformAuthRepository {
     fun createQrCode(source: MusicSource): PlatformQrChallenge = adapter(source).createQrCode()
 
     fun checkQrCode(challenge: PlatformQrChallenge): PlatformQrResult = adapter(challenge.source).checkQrCode(challenge)
+
+    fun prepareCaptchaCredential(source: MusicSource, session: PlatformSession, credentialSeed: String): String =
+        adapter(source).prepareCaptchaCredential(session, credentialSeed)
 
     fun sendCaptcha(
         source: MusicSource,
@@ -101,6 +105,9 @@ private class KugouAuthAdapter(
     private val sms: KugouSmsLoginClient = KugouSmsLoginClient(),
 ) : PlatformAuthAdapter {
     override val source = MusicSource.KUGOU
+
+    override fun prepareCaptchaCredential(session: PlatformSession, credentialSeed: String): String =
+        kugouLoginDeviceCookie(credentialSeed.ifBlank { session.credential })
 
     override fun createQrCode(): PlatformQrChallenge = api.createQrCode().let {
         PlatformQrChallenge(source, it.key, url = it.url, credentialSeed = it.deviceCookie)
@@ -163,7 +170,7 @@ private class NeteaseAuthAdapter(private val api: NeteaseApiClient) : PlatformAu
         phone,
         countryCode,
         session.deviceId,
-        mergePlatformCredentials(session.credential, credentialSeed),
+        credentialSeed,
     ).let { PlatformCaptchaChallenge(it.message, it.cookie) }
 
     override fun loginByCaptcha(
@@ -214,7 +221,7 @@ private class QqAuthAdapter(
         session: PlatformSession,
         credentialSeed: String,
     ): PlatformSmsLoginResult = sms.loginByCaptcha(phone, captcha, session.deviceId, credentialSeed).let { result ->
-        PlatformSmsLoginResult(result.cookie, runCatching { api.account(result.cookie) }.getOrDefault(result.account))
+        PlatformSmsLoginResult(result.cookie, runCatchingCancellable { api.account(result.cookie) }.getOrDefault(result.account))
     }
 
     override fun account(credential: String): MusicAccount = api.account(credential)

@@ -114,7 +114,7 @@ internal class KugouSessionClient {
         if (liked) addFavorite(session, listId, track) else deleteFavorite(session, listId, track)
     }
 
-    fun library(cookie: String): KugouLibrary {
+    fun library(cookie: String, loadFavoriteTracks: Boolean = true): KugouLibrary {
         val session = cookie.requiredKugouSession()
         val body = JSONObject()
             .put("userid", session.userId).put("token", session.token).put("total_ver", 979)
@@ -136,24 +136,34 @@ internal class KugouSessionClient {
             it.playlist.title.contains("喜欢") && it.owned
         }
         return KugouLibrary(
-            favorite = favorite?.playlist,
+            favorite = favorite?.playlist?.let {
+                if (loadFavoriteTracks) cloudPlaylistDetail(it, cookie, hasVipAccess = true, newestFirst = true) else it
+            },
             created = playlists.filter { it.owned && !it.isFavorite && !it.isSystem }.map { it.playlist },
             collected = playlists.filterNot { it.owned }.map { it.playlist },
         )
     }
 
-    fun cloudPlaylistDetail(playlist: MusicPlaylist, cookie: String, hasVipAccess: Boolean): MusicPlaylist {
+    fun cloudPlaylistDetail(playlist: MusicPlaylist, cookie: String, hasVipAccess: Boolean,
+        newestFirst: Boolean = false): MusicPlaylist {
         val session = cookie.requiredKugouSession()
         val listId = playlist.remoteId().removePrefix("cloudlist:")
         if (listId.isBlank()) throw PlatformApiException("酷狗音乐歌单标识无效")
-        val body = JSONObject()
-            .put("listid", listId).put("userid", session.userId).put("area_code", 1)
-            .put("show_relate_goods", 1).put("pagesize", 300).put("allplatform", 1)
-            .put("show_cover", 1).put("type", 0).put("token", session.token).put("page", 1)
-        val response = androidPost("https://gateway.kugou.com/v4/get_list_all_file", session, body)
-        response.requireKugouSuccess("酷狗音乐歌单歌曲加载失败")
-        val tracks = response.parseKugouPlaylistTracks(hasVipAccess)
-        return playlist.copy(tracks = tracks, count = tracks.size.takeIf { it > 0 } ?: playlist.count)
+        val entries = cloudPlaylistEntries(session, listId, "酷狗音乐歌单歌曲加载失败")
+        // 按收藏项 ID 全局倒序，让最近收藏歌曲与“我喜欢”封面保持一致。
+        val ordered = if (newestFirst) entries.sortedByDescending {
+            it.optLong("ID", it.optLong("fileid"))
+        } else entries
+        val tracks = ordered.mapNotNull { runCatching { it.toKugouTrack(hasVipAccess) }.getOrNull() }
+        return playlist.copy(tracks = tracks, count = tracks.size,
+            artworkUrl = if (newestFirst) tracks.firstOrNull()?.artworkUrl else playlist.artworkUrl)
+    }
+
+    fun changePlaylistTrack(cookie: String, playlist: MusicPlaylist, track: MusicTrack, add: Boolean) {
+        require(track.source == MusicSource.KUGOU) { "此歌单只接受酷狗音乐歌曲" }
+        val session = cookie.requiredKugouSession()
+        val listId = playlist.remoteId().removePrefix("cloudlist:")
+        if (add) addFavorite(session, listId, track) else deleteFavorite(session, listId, track)
     }
 
     private fun addFavorite(session: KugouSession, listId: String, track: MusicTrack) {
@@ -179,11 +189,17 @@ internal class KugouSessionClient {
 
     private fun deleteFavorite(session: KugouSession, listId: String, track: MusicTrack) {
         val hashes = (track.qualityIds.values + track.remoteId()).map(String::lowercase).toSet()
-        val entry = favoriteEntries(session.cookie)
-            .firstOrNull { it.hash.lowercase() in hashes } ?: return
+        // 收藏项编号属于目标歌单，不能拿“我喜欢”的编号删除另一歌单中的歌曲。
+        val entry = cloudPlaylistEntries(session, listId, "酷狗音乐歌单歌曲加载失败")
+            .firstOrNull { item -> listOf("FileHash", "hash", "Hash").any {
+                item.optString(it).lowercase() in hashes
+            } } ?: return
+        val fileId = entry.opt("ID")?.toString()?.toLongOrNull()
+            ?: entry.opt("fileid")?.toString()?.toLongOrNull()
+            ?: throw PlatformApiException("酷狗音乐没有返回歌曲收藏编号")
         val body = JSONObject()
             .put("listid", listId).put("userid", session.userId).put("token", session.token)
-            .put("data", JSONArray().put(JSONObject().put("fileid", entry.fileId)))
+            .put("data", JSONArray().put(JSONObject().put("fileid", fileId)))
             .put("type", 0).put("list_ver", 0)
         androidPost("https://gateway.kugou.com/v4/delete_songs", session, body)
             .requireKugouSuccess("酷狗音乐我喜欢操作失败")
@@ -191,23 +207,22 @@ internal class KugouSessionClient {
 
     private fun favoriteEntries(cookie: String): List<KugouFavoriteEntry> {
         val session = cookie.requiredKugouSession()
-        val body = JSONObject()
-            .put("listid", favoriteListId(session)).put("userid", session.userId).put("area_code", 1)
-            .put("show_relate_goods", 1).put("pagesize", 300).put("allplatform", 1)
-            .put("show_cover", 1).put("type", 0).put("token", session.token).put("page", 1)
-        val response = androidPost("https://gateway.kugou.com/v4/get_list_all_file", session, body)
-        response.requireKugouSuccess("酷狗音乐我喜欢加载失败")
-        val values = response.optJSONObject("data")?.optJSONArray("info") ?: JSONArray()
-        return buildList {
-            for (index in 0 until values.length()) values.optJSONObject(index)?.let { item ->
-                val hash = listOf("FileHash", "hash", "Hash").firstNotNullOfOrNull {
-                    item.optString(it).takeIf(String::isNotBlank)
-                }.orEmpty()
-                val fileId = item.opt("ID")?.toString()?.toLongOrNull()
-                if (hash.isNotBlank() && fileId != null) add(KugouFavoriteEntry(hash, fileId))
-            }
-        }
+        val entries = cloudPlaylistEntries(session, favoriteListId(session), "酷狗音乐我喜欢加载失败")
+        // 收藏项编号只服务删除；回读状态只依赖一个档位 hash，缺编号不能吞掉整条收藏。
+        return entries.mapNotNull { item -> item.kugouFavoriteHash()?.let(::KugouFavoriteEntry) }
     }
+
+    private fun cloudPlaylistEntries(session: KugouSession, listId: String, errorMessage: String): List<JSONObject> =
+        collectKugouPages(KUGOU_CLOUD_LIST_PAGE_SIZE, JSONObject::kugouCloudPageIdentity) { page, pageSize ->
+            val body = JSONObject()
+                .put("listid", listId).put("userid", session.userId).put("area_code", 1)
+                .put("show_relate_goods", 1).put("pagesize", pageSize).put("allplatform", 1)
+                .put("show_cover", 1).put("type", 0).put("token", session.token).put("page", page)
+            val response = androidPost("https://gateway.kugou.com/v4/get_list_all_file", session, body)
+            response.requireKugouSuccess(errorMessage)
+            val values = response.optJSONObject("data")?.optJSONArray("info") ?: JSONArray()
+            (0 until values.length()).mapNotNull(values::optJSONObject)
+        }
 
     private fun favoriteListId(session: KugouSession): String {
         val body = JSONObject()
@@ -248,7 +263,8 @@ internal class KugouSessionClient {
             KugouProtocol.signedAndroidUrl(baseUrl, params, body.toString()),
             body.toString(),
             session.cookie,
-            kugouAndroidHeaders(params, "cloudlist.service.kugou.com"),
+            // 路径首段已带 xxx.service 的接口不能再带 x-router，否则网关二次拼接服务前缀并返回 404。
+            kugouAndroidHeaders(params, kugouGatewayRouter(baseUrl)),
         )
         return JSONObject(response.text)
     }
@@ -273,7 +289,16 @@ internal class KugouSessionClient {
     }
 }
 
-private data class KugouFavoriteEntry(val hash: String, val fileId: Long)
+private data class KugouFavoriteEntry(val hash: String)
+
+private const val KUGOU_CLOUD_LIST_PAGE_SIZE = 300
+
+private fun JSONObject.kugouCloudPageIdentity(): String {
+    val fileId = opt("ID")?.toString()?.takeIf(String::isNotBlank)
+        ?: opt("fileid")?.toString()?.takeIf(String::isNotBlank)
+    if (fileId != null) return fileId
+    return KugouProtocol.md5(toString())
+}
 
 private data class KugouCloudPlaylist(
     val playlist: MusicPlaylist,
@@ -303,9 +328,11 @@ private fun JSONObject.toKugouCloudPlaylist(userId: String): KugouCloudPlaylist?
             artworkMark = title.take(1),
             tracks = emptyList(),
             artworkUrl = optString("pic").kugouCloudArtworkUrl(),
+            isOwned = owned && isDef != 1,
+            isPlatformFavorites = owned && isDef == 2,
         ),
         owned = owned,
-        isFavorite = owned && (isDef == 2 || title.contains("喜欢")),
+        isFavorite = owned && isDef == 2,
         isSystem = owned && isDef == 1,
     )
 }

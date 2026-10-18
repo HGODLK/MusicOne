@@ -11,6 +11,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PageMotionTest {
+    @Test fun resizingPlayerDuringReturnPreservesTheAnimationAndRetargetsSnapshots() = runBlocking {
+        val clock = BroadcastFrameClock()
+        val motion = PageMotion(CoroutineScope(coroutineContext + clock), true, 320, 280,
+            sharedAnchorKeys = setOf("cover"))
+        motion.updateHost(Rect(0f, 0f, 1000f, 2000f))
+        motion.sources["cover"] = MotionAnchor(Rect(100f, 100f, 300f, 300f))
+        motion.targets["cover"] = MotionAnchor(Rect(200f, 400f, 800f, 1000f))
+        motion.request(false)
+        repeat(4) { yield(); clock.sendFrame(it * 16_000_000L) }
+        val phase = motion.phase
+        val progress = motion.value
+        motion.updateHost(Rect(0f, 0f, 500f, 1000f))
+        yield()
+        assertEquals(phase, motion.phase)
+        assertEquals(progress, motion.value, 0f)
+        assertEquals(Rect(50f, 50f, 150f, 150f), motion.sourceSnapshot["cover"]?.bounds)
+        repeat(100) { yield(); clock.sendFrame((it + 4) * 16_000_000L) }
+        assertEquals(MotionPhase.HIDDEN, motion.phase)
+        coroutineContext.cancelChildren()
+    }
+
     @Test fun openingDragRetainsDistanceDuringPreparationAndCanSettleImmediately() = runBlocking {
         val clock = BroadcastFrameClock()
         val motion = PageMotion(CoroutineScope(coroutineContext + clock), false, 480, 360,
@@ -47,11 +68,12 @@ class PageMotionTest {
 
     @Test fun miniPlayerReleaseDistinguishesFlingReversalAndCancellation() {
         assertFalse(shouldOpenPlayer(.2f, 0f, true))
-        assertTrue(shouldOpenPlayer(.4f, 0f, true))
-        assertTrue(shouldOpenPlayer(.1f, -1500f, true))
-        assertTrue(shouldOpenPlayer(.01f, -1500f, true, -24f))
+        assertFalse(shouldOpenPlayer(.4f, 0f, true))
+        assertTrue(shouldOpenPlayer(.6f, 0f, true))
+        assertTrue(shouldOpenPlayer(.1f, -1500f, true, -32f))
+        assertTrue(shouldOpenPlayer(.01f, -1500f, true, -32f))
         assertFalse(shouldOpenPlayer(.01f, -1500f, true, -4f))
-        assertFalse(shouldOpenPlayer(.6f, 1500f, true))
+        assertFalse(shouldOpenPlayer(.4f, 1500f, true))
         assertFalse(shouldOpenPlayer(.8f, -1500f, false))
     }
 

@@ -48,6 +48,7 @@ internal fun BalancedTabletPlayer(
                     visualTrack.id in favorites.state.ids,
                     motion,
                     actionTrack = actionTrack,
+                    lyricsOpened = contentActivated,
                 ) { favorites.toggle(actionTrack) }
                 ImmersivePlaybackControls(
                     state,
@@ -95,7 +96,7 @@ private fun TabletLyricsEntrance(
         else if (visible && motion.phase == MotionPhase.SHOWN) entrance.animateTo(1f, musicMotion(360))
     }
     // 歌词列表常驻，仅移动外层；预热时在遮罩后真实绘制，进入时保留原上滑效果；外层隔离避免文字绘制到左栏。
-    if (visible) Box(Modifier.fillMaxSize().clipToBounds().graphicsLayer {
+    if (visible) Box(Modifier.fillMaxSize().clipToBounds().tabletLyricsTopFade().graphicsLayer {
         translationY = if (prewarming) 0f else size.height * (1f - entrance.value)
     }) {
         PlayerSyncedLyrics(

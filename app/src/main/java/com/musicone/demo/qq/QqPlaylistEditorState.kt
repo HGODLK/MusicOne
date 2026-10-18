@@ -5,41 +5,74 @@ import androidx.compose.ui.geometry.Rect
 import kotlinx.coroutines.*
 import org.json.JSONObject
 
-internal enum class PlaylistEditMode { Actions, Create, Rename, Delete }
+internal enum class PlaylistEditMode { Actions, Create, Rename, Delete, RefreshSubscription, StopSubscription }
 
 /** 编辑窗口独立持有状态，写入前重新核对当前账号的目录归属。 */
-internal class QqPlaylistEditorState(private val preferences: PlatformPreferences, private val scope: CoroutineScope) {
+internal class QqPlaylistEditorState(private val preferences: PlatformPreferences, private val scope: CoroutineScope,
+    private val library: MusicLibraryStore? = null, private val libraryContext: android.content.Context? = null) {
     var open by mutableStateOf(false)
     var playlist by mutableStateOf<MusicPlaylist?>(null)
     var anchor by mutableStateOf(Rect.Zero)
+        private set
+    private var currentBounds: (() -> Rect)? = null
+    // 原卡片即使透明仍持续测量，布局改变后浮层返回实际位置。
+    val currentAnchor get() = currentBounds?.invoke() ?: anchor
     var artworkVersion: Long? = null
+    var artworkLayers: List<ArtworkBlendSnapshot>? = null
+        private set
+    var completedAction by mutableStateOf<PlaylistEditMode?>(null)
+        private set
     var mode by mutableStateOf(PlaylistEditMode.Actions)
     var name by mutableStateOf("")
     var busy by mutableStateOf(false)
         private set
     var error by mutableStateOf<String?>(null)
         private set
-    fun show(target: MusicPlaylist?, bounds: Rect, version: Long? = null) {
+    var local by mutableStateOf(false)
+        private set
+    val subscribed get() = library?.state?.value?.subscriptions?.any { it.playlistId == playlist?.id } == true
+    fun show(target: MusicPlaylist?, bounds: Rect, version: Long? = null,
+        artwork: List<ArtworkBlendSnapshot>? = null, local: Boolean = target?.isManagedLibrary == true,
+        currentBounds: (() -> Rect)? = null) {
         if (busy) return
+        completedAction = null
         playlist = target; anchor = bounds; artworkVersion = version; name = target?.title.orEmpty(); error = null
+        this.currentBounds = currentBounds
+        artworkLayers = artwork
+        this.local = local
         mode = if (target == null) PlaylistEditMode.Create else PlaylistEditMode.Actions
         open = true
     }
     fun close() { if (!busy) open = false }
+    fun releaseArtwork() { artworkLayers = null; currentBounds = null }
     fun back() {
         if (busy) return
         if (playlist != null && mode != PlaylistEditMode.Actions) mode = PlaylistEditMode.Actions else close()
     }
-    fun submit(onChanged: (PlaylistEditMode, MusicPlaylist?) -> Unit) {
+    fun submit(onChanged: (PlaylistEditMode, MusicPlaylist?) -> Unit, action: PlaylistEditMode = mode) {
         if (busy) return
-        val action = mode
         val target = playlist
         val title = name.trim()
-        if (action != PlaylistEditMode.Delete && title.isBlank()) { error = "请输入歌单名称"; return }
+        if ((action == PlaylistEditMode.Create || action == PlaylistEditMode.Rename) && title.isBlank()) { error = "请输入歌单名称"; return }
         val session = preferences.readSession(MusicSource.QQ)
         busy = true; error = null
         scope.launch {
             try {
+                if (local) {
+                    val store = requireNotNull(library)
+                    when (action) {
+                        PlaylistEditMode.Create -> store.createPlaylist(title)
+                        PlaylistEditMode.Rename -> store.renamePlaylist(requireNotNull(target).id, title)
+                        PlaylistEditMode.Delete -> store.deletePlaylist(requireNotNull(target).id)
+                        PlaylistEditMode.RefreshSubscription -> refreshLibrarySubscription(requireNotNull(libraryContext), store, requireNotNull(target).id)
+                        PlaylistEditMode.StopSubscription -> store.stopSubscription(requireNotNull(target).id)
+                        PlaylistEditMode.Actions -> error("请选择操作")
+                    }
+                    completedAction = action
+                    open = false
+                    onChanged(action, target)
+                    return@launch
+                }
                 withContext(Dispatchers.IO) {
                     val account = session.account ?: throw PlatformApiException("请先登录 QQ 音乐")
                     val owned = target?.let { selected ->
@@ -56,6 +89,7 @@ internal class QqPlaylistEditorState(private val preferences: PlatformPreference
                     val ret = data?.optInt("retCode", -1) ?: -1
                     if (code != 0 || ret != 0) throw PlatformApiException("歌单操作失败（${if (code != 0) code else ret}）")
                 }
+                completedAction = action
                 open = false
                 if (preferences.readSession(MusicSource.QQ).account?.userId == session.account?.userId) {
                     onChanged(action, target)
@@ -80,7 +114,7 @@ internal fun qqPlaylistEditRequest(cookie: String, action: PlaylistEditMode, pla
             if (action == PlaylistEditMode.Rename) { param.put("mask", 1).put("dirNewName", name); "EditPlaylist" }
             else { param.put("dirName", playlist.title); "DelPlaylist" }
         }
-        PlaylistEditMode.Actions -> error("请选择操作")
+        else -> error("请选择操作")
     }
     return JSONObject().put("comm", comm).put("req_0", JSONObject().put("module", "music.musicasset.PlaylistBaseWrite")
         .put("method", method).put("param", param))

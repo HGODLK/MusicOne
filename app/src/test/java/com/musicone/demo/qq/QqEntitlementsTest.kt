@@ -165,11 +165,11 @@ class QqEntitlementsTest {
         assertEquals(MusicAccessBadge.PAID, resolver.resolve(listOf(track), cookie).single().accessBadge)
     }
 
-    @Test fun incompleteDetailsCannotEraseExistingRestriction() {
+    @Test fun incompleteDetailsKeepPaymentBadgeButDoNotProvePlaybackDenial() {
         val track = song("""{"pay_play":1,"pay_month":0,"price_track":200}""")
         val merged = track.mergeQqTrackMetadata(song("{}"))
         assertEquals(MusicAccessBadge.PAID, merged.accessBadge)
-        assertFalse(merged.playable)
+        assertTrue(merged.playable)
         assertEquals(track.qqAccess, merged.qqAccess)
     }
 

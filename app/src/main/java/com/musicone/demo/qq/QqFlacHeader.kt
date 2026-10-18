@@ -13,14 +13,15 @@ internal data class QqFlacInfo(val durationMs: Long, val sampleRate: Int, val bi
 
 internal fun readQqFlacInfo(url: String): QqFlacInfo? = readQqFlacInfo(url, timeoutMs = 4_000)
 
-internal fun readQqFlacInfo(url: String, timeoutMs: Int): QqFlacInfo? = runCatching {
+internal fun readQqFlacInfo(url: String, timeoutMs: Int, headers: Map<String, String> = emptyMap()): QqFlacInfo? = runCatchingCancellable {
     val connection = URI.create(url).toURL().openConnection() as HttpURLConnection
     try {
         connection.connectTimeout = timeoutMs
         connection.readTimeout = timeoutMs
+        headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
         connection.setRequestProperty("Range", "bytes=0-41")
         connection.setRequestProperty("Accept-Encoding", "identity")
-        if (connection.responseCode !in 200..299) return@runCatching null
+        if (connection.responseCode !in 200..299) return@runCatchingCancellable null
         connection.inputStream.use { stream ->
             val header = ByteArray(42)
             var count = 0

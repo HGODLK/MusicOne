@@ -18,3 +18,4 @@ rootProject.name = "MusicOneAndroid"
 include(":app")
 include(":baselineprofile")
 include(":usb-audio-driver")
+include(":native-audio")

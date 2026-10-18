@@ -43,7 +43,9 @@ class UsbAudioStream(
         channelCount: Int,
         bitDepth: Int,
         subslotSizeBytes: Int,
-        maxPacketSize: Int
+        maxPacketSize: Int,
+        packetsPerSecond: Int,
+        busIntervalsPerSecond: Int,
 ) {
 
     /** Native UsbAudioContext pointer. Exposed for NativeAudioEngine which
@@ -54,7 +56,8 @@ class UsbAudioStream(
     init {
         nativeHandle = nativeUsbAudioCreate(
                 fd, interfaceId, endpointOut, endpointFeedback,
-                sampleRate, channelCount, bitDepth, subslotSizeBytes, maxPacketSize
+                sampleRate, channelCount, bitDepth, subslotSizeBytes, maxPacketSize,
+                packetsPerSecond, busIntervalsPerSecond,
         )
         if (nativeHandle == 0L) {
             Log.e(TAG, "nativeUsbAudioCreate returned 0 — check logcat for native errors")
@@ -190,12 +193,19 @@ class UsbAudioStream(
         Log.i(TAG, "UsbAudioStream released")
     }
 
+    /** 仅在写线程退出且 UsbDeviceConnection 已关闭后调用，不能继续访问原文件描述符。 */
+    fun releaseAfterDeviceClosed() {
+        if (nativeHandle == 0L) return
+        nativeDestroyAfterDeviceClosed(nativeHandle)
+        nativeHandle = 0L
+    }
+
     // JNI declarations
 
     private external fun nativeUsbAudioCreate(
             fd: Int, interfaceId: Int, endpointOut: Int, endpointFeedback: Int,
             sampleRate: Int, channelCount: Int, bitDepth: Int, subslotSizeBytes: Int,
-            maxPacketSize: Int
+            maxPacketSize: Int, packetsPerSecond: Int, busIntervalsPerSecond: Int,
     ): Long
 
     private external fun nativeUsbAudioSetAltSetting(handle: Long, altSetting: Int): Boolean
@@ -208,6 +218,7 @@ class UsbAudioStream(
         inputBitDepth: Int,
         validBitDepth: Int,
     )
+    private external fun nativeDestroyAfterDeviceClosed(handle: Long)
     private external fun nativeUsbAudioStop(handle: Long)
     private external fun nativeFlush(handle: Long): Boolean
     private external fun nativePollPending(handle: Long): Int
@@ -232,5 +243,8 @@ class UsbAudioStream(
          */
         @JvmStatic
         external fun nativeUsbReset(fd: Int): Int
+
+        @JvmStatic
+        external fun nativeGetSpeed(fd: Int): Int
     }
 }

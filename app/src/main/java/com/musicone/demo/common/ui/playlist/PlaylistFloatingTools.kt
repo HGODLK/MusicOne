@@ -49,6 +49,7 @@ internal fun PlaylistFloatingTools(
     bottomInset: Dp,
     motionProgress: () -> Float,
     modifier: Modifier = Modifier,
+    showLocate: Boolean = true,
 ) {
     val locateAlpha = animateFloatAsState(if (canLocate) 1f else .38f, musicMotion(220), label = "定位可用状态")
     val searchExpansion = remember { Animatable(if (state.expanded) 1f else 0f) }
@@ -88,7 +89,7 @@ internal fun PlaylistFloatingTools(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         AnimatedVisibility(
-            visible = !state.expanded,
+            visible = showLocate && !state.expanded,
             enter = fadeIn(musicMotion(180)) + expandVertically(musicMotion(220), expandFrom = Alignment.Bottom),
             exit = fadeOut(musicMotion(140)) + shrinkVertically(musicMotion(180), shrinkTowards = Alignment.Bottom),
         ) {

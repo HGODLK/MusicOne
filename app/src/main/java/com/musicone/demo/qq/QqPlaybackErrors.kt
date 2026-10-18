@@ -37,6 +37,7 @@ internal class QqPlaybackItemUnavailableException(
 
 internal fun Throwable.stopsPlaybackFallback(): Boolean =
     this is PlatformSecurityVerificationRequired ||
+        this is KugouPlaybackBlocked ||
         this is QqSessionRequestException ||
         (this is PlatformApiException && apiCode in setOf(301, 401, 403, 429))
 

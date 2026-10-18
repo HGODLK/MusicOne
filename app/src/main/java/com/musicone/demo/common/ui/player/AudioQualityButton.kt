@@ -100,11 +100,11 @@ internal fun AudioQualityButton(trackId: String, source: MusicSource, current: A
                 }
             }
             .semantics {
-                contentDescription = "当前${current?.displayLabel(source) ?: "音质未知"}，点击选择音质"
+                contentDescription = if (source == MusicSource.LOCAL) "查看本地文件实际音频规格" else "当前${current?.displayLabel(source) ?: "音质未知"}，点击选择音质"
             },
     ) {
         Crossfade(
-            targetState = current?.displayCompactLabel(source) ?: "音质",
+            targetState = if (source == MusicSource.LOCAL) "原始" else current?.displayCompactLabel(source) ?: "音质",
             modifier = Modifier.width(44.dp),
             animationSpec = musicMotion(280),
             label = "音质标签切换",
@@ -120,14 +120,15 @@ internal fun AudioQualityButton(trackId: String, source: MusicSource, current: A
 internal fun PlayerQualityMenuOverlay(state: PlayerQualityMenuState, player: MusicOneUiState,
     onRetry: () -> Unit, motion: PageMotion, backdropLayer: GraphicsLayer) {
     val track = player.currentTrack
-    LaunchedEffect(state.expanded, track?.id) { if (state.expanded && track != null) onRetry() }
+    val dolby = DolbyPlaybackPolicy.eligibility
+    LaunchedEffect(state.expanded, track?.id, dolby.allowed) { if (state.expanded && track != null && track.source != MusicSource.LOCAL) onRetry() }
     LaunchedEffect(track?.id) { if (state.expanded && state.trackId != track?.id) state.dismiss() }
     if (state.expanded) BackHandler(onBack = state::dismiss)
     BoxWithConstraints(Modifier.fillMaxSize()) {
             var retainedQualities by remember(track?.id) { mutableStateOf(listOfNotNull(player.activeQuality)) }
             val resolvedQualities = visiblePlayerQualities(player.availableQualities)
             if (resolvedQualities.isNotEmpty()) retainedQualities = resolvedQualities
-            val visibleQualities = resolvedQualities.ifEmpty { if (player.qualityLoading) retainedQualities else emptyList() }
+            val visibleQualities = resolvedQualities.ifEmpty { if (player.qualityLoading || player.qualityError != null) retainedQualities else emptyList() }
             val density = androidx.compose.ui.platform.LocalDensity.current
             val maximumMenuHeight = maxHeight - 24.dp
             val menuWidth = minOf(292.dp, maxWidth - 24.dp)
@@ -165,7 +166,7 @@ internal fun PlayerQualityMenuOverlay(state: PlayerQualityMenuState, player: Mus
                     border = BorderStroke(1.dp, Color.White.copy(alpha = .2f)),
                 ) {
                     Column(Modifier.heightIn(max = maximumMenuHeight).verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 16.dp)) {
-                        Text("选择音质", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                        Text(if (track?.source == MusicSource.LOCAL) "本地音频规格" else "选择音质", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
                         Spacer(Modifier.height(6.dp))
                         player.qualityError?.let { error ->
@@ -173,22 +174,30 @@ internal fun PlayerQualityMenuOverlay(state: PlayerQualityMenuState, player: Mus
                                 modifier = Modifier.padding(horizontal = 10.dp).clickable(onClick = onRetry))
                         }
                         val actualAudio by PlaybackAudioInfo.current.collectAsState()
+                        if (track?.source == MusicSource.LOCAL) Text(
+                            actualAudio?.takeIf { it.first == track.previewUrl }?.second ?: "播放后显示解码器报告的实际参数",
+                            color = Color.White.copy(alpha = .8f), fontSize = 12.sp, modifier = Modifier.padding(10.dp))
                         val usbOutput by UsbAudioOutputStatus.current.collectAsState()
                         val bluetoothDevice by BluetoothAudioRoute.deviceName.collectAsState()
-                        PLAYER_AUDIO_QUALITIES.forEach { quality ->
+                        PLAYER_AUDIO_QUALITIES.filter { track?.source != MusicSource.LOCAL }.forEach { quality ->
                             AnimatedVisibility(quality in visibleQualities,
                                 enter = expandVertically(musicMotion(300)) + fadeIn(musicMotion(240)) + slideInVertically(musicMotion(300)) { it / 5 },
                                 exit = shrinkVertically(musicMotion(260)) + fadeOut(musicMotion(180)) + slideOutVertically(musicMotion(260)) { -it / 5 }) {
                             QualityMenuRow(
                                 quality, track?.source ?: MusicSource.QQ,
                                 selected = quality == player.activeQuality,
-                                enabled = !player.qualityChanging && quality in resolvedQualities,
+                                enabled = !player.qualityChanging && quality in resolvedQualities && DolbyPlaybackPolicy.permits(quality),
                                 deviceName = qualityOutputDeviceName(usbOutput, bluetoothDevice)
                                     ?.takeIf { quality == player.activeQuality },
                                 status = when {
+                                    quality == AudioQuality.DOLBY && !dolby.allowed -> dolby.unavailableReason.orEmpty()
                                     player.qualityChanging && player.qualityTarget == quality -> "正在切换…"
-                                    quality == player.activeQuality ->
-                                        actualAudio?.takeIf { it.first == track?.previewUrl }?.second.orEmpty()
+                                    quality == player.activeQuality -> {
+                                        val actual = actualAudio?.takeIf { it.first == track?.previewUrl }?.second
+                                        if (!actual.isNullOrBlank()) actual
+                                        else if (track?.source == MusicSource.BILIBILI) "正在读取音轨规格…"
+                                        else quality.displayDescription()
+                                    }
                                     else -> quality.displayDescription()
                                 },
                             ) { state.select(quality) }

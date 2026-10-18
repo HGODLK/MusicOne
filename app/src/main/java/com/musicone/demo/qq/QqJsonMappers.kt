@@ -55,7 +55,8 @@ internal fun qqPlaylistDetailArtwork(
 internal fun JSONObject.toQqTrack(hasVipAccess: Boolean = false): MusicTrack {
     val mid = firstQqString("songmid", "mid")
     val songId = firstQqLong("songid", "id").takeIf { it > 0 }?.toString().orEmpty()
-    if (!isValidQqTrackMid(mid)) throw PlatformApiException("QQ 音乐返回了无效歌曲")
+    val missingSource = !isValidQqTrackMid(mid)
+    if (missingSource && songId.isBlank()) throw PlatformApiException("QQ 音乐返回了无效歌曲")
     val title = decodeQqPlaylistDescription(firstQqString("songname", "name")).ifBlank { "未知歌曲" }
     val albumObject = optJSONObject("album")
     val album = firstQqString("albumname").ifBlank { albumObject?.optString("name").orEmpty() }
@@ -77,8 +78,8 @@ internal fun JSONObject.toQqTrack(hasVipAccess: Boolean = false): MusicTrack {
     val access = rawAccess.access("", hasVipAccess)
     val colors = qqArtworkColors(title)
     return MusicTrack(
-        id = "qq-$mid",
-        songMid = mid,
+        id = if (missingSource) "qq-$songId" else "qq-$mid",
+        songMid = mid.takeUnless { missingSource }.orEmpty(),
         artistRefs = optJSONArray("singer")?.qqObjects {
             MusicArtist(it.searchText("mid", "singerMid"), it.searchText("name", "singerName"))
         }.orEmpty().filter { it.mid.isNotBlank() && it.name.isNotBlank() },
@@ -102,6 +103,7 @@ internal fun JSONObject.toQqTrack(hasVipAccess: Boolean = false): MusicTrack {
         qqAccess = rawAccess,
         accessBadge = access.badge,
         trialAvailable = access.trialAvailable,
+        // 只有数字歌曲 ID 的记录仍可补详情，缺 MID 本身不能证明音源失效。
         playable = access.playable,
         unavailableReason = if (!access.playable) "当前账号无权播放这首歌曲" else null,
     )
@@ -113,6 +115,9 @@ private fun qqTrackQualityIds(track: JSONObject, file: JSONObject?, mediaMid: St
         file?.firstQqLong(*names) ?: 0L,
         track.firstQqLong(*names),
     )
+    val dolbyMidNames = arrayOf("dolby_ajoc_448_media_mid", "dolby_media_mid")
+    val dolbyMid = file?.firstQqString(*dolbyMidNames).orEmpty()
+        .ifBlank { track.firstQqString(*dolbyMidNames) }
     return qqQualityIdsFromFileSizes(
         mediaMid,
         mapOf(
@@ -124,7 +129,10 @@ private fun qqTrackQualityIds(track: JSONObject, file: JSONObject?, mediaMid: St
             AudioQuality.LOSSLESS to size("size_flac", "sizeflac"),
             AudioQuality.DOLBY to size("size_dolby", "sizeDolby", "sizedolby"),
         ),
-    )
+    ).toMutableMap().apply {
+        // 独立 MID 只用于取票；是否可用仍以完整音源查询为准。
+        if (dolbyMid.isNotBlank()) put(AudioQuality.DOLBY, dolbyMid)
+    }
 }
 
 internal fun qqQualityIdsFromFileSizes(

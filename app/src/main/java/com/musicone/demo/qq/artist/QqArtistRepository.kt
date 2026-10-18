@@ -84,13 +84,13 @@ internal class QqArtistRepository(
     }
 
     fun introduction(singer: QqSearchSinger): String {
-        val full = runCatching {
+        val full = runCatchingCancellable {
             val mid = java.net.URLEncoder.encode(singer.id, "UTF-8")
             artistBiography(PlatformHttp.get("https://c.y.qq.com/splcloud/fcgi-bin/fcg_get_singer_desc.fcg?singermid=$mid&utf8=1&outCharset=utf-8&format=xml",
                 headers = mapOf("Referer" to "https://y.qq.com/")).text)
         }.getOrNull()
         if (!full.isNullOrBlank()) return full
-        val data = runCatching { request("music.UnifiedHomepage.UnifiedHomepageSrv", "GetHomepageTabDetail",
+        val data = runCatchingCancellable { request("music.UnifiedHomepage.UnifiedHomepageSrv", "GetHomepageTabDetail",
             JSONObject().put("SingerMid", singer.id).put("IsQueryTabDetail", 1).put("TabID", "wiki")
                 .put("PageNum", 0).put("PageSize", 10).put("Order", 0)) }.getOrDefault(JSONObject())
         return data.optJSONObject("IntroductionTab")?.optJSONArray("List")?.searchObjects().orEmpty()

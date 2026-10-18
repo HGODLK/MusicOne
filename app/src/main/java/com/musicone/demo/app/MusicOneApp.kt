@@ -29,6 +29,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
 fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>().playback) {
+    MusicLibraryHost(viewModel) { MusicOneContent(viewModel) }
+}
+
+@Composable
+private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
     PlaybackPresentationLifecycle(viewModel)
     val pageBackground = androidx.compose.material3.MaterialTheme.colorScheme.background
     ExperiencePreferences.initialize(androidx.compose.ui.platform.LocalContext.current)
@@ -41,10 +46,13 @@ fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>()
     val backdropLayer = rememberGraphicsLayer()
     val entitySceneLayer = rememberGraphicsLayer()
     val qqSearchMotion = rememberQqSearchMotion(qqSearchState, backdropLayer)
+    val qqSearchMounted by rememberQqSearchMounted(qqSearchMotion)
     val favoriteViewModel: MusicFavoriteViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val qqLibraryViewModel: QqLibraryViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val kugouLibraryViewModel: KugouLibraryViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val platformState by platformViewModel.state.collectAsStateWithLifecycle()
+    val musicLibraryUi = LocalMusicLibraryUi.current
+    androidx.compose.runtime.SideEffect { musicLibraryUi.localMode = platformState.selectedSource == MusicSource.LOCAL }
     QqEntitlementLifecycle(platformState.selectedSource, platformViewModel::refreshQqSessionIfDue)
     val catalogState by catalogViewModel.state.collectAsStateWithLifecycle()
     val searchState by searchViewModel.state.collectAsStateWithLifecycle()
@@ -67,7 +75,8 @@ fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>()
     val barMeasurements = remember { BottomBarMeasurements() }
     val playerMotion = rememberPageMotion(navigation.playerExpanded,
         enterAnimation = PlayerEnterAnimation, exitAnimation = PlayerReturnAnimation,
-        dragAnimation = PlayerGestureSettlementAnimation, immediateGestureHandoff = true)
+        dragAnimation = PlayerGestureSettlementAnimation, immediateGestureHandoff = true,
+        sharedAnchorKeys = PlayerSharedAnchorKeys)
     val state by rememberPagePlaybackState(viewModel.state, playerMotion)
     val playerControlHandoff = rememberPlayerControlHandoff()
     val homeLaunch = rememberHomeLaunchState()
@@ -102,7 +111,7 @@ fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>()
         searchViewModel.configure(platformState.selectedSource, platformState.sessionRevision)
         if (platformState.selectedSource == MusicSource.QQ) qqSearchViewModel.configure(platformState.sessionRevision)
         else qqSearchViewModel.deactivate()
-        favoriteViewModel.configure(platformState.selectedSource, platformState.sessionRevision)
+        favoriteViewModel.configure(platformState.sessionRevision)
         qqLibraryViewModel.configure(platformState.selectedSource, platformState.sessionRevision)
         kugouLibraryViewModel.configure(platformState.selectedSource, platformState.sessionRevision)
     }
@@ -114,6 +123,7 @@ fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>()
     }
     LaunchedEffect(favoriteState.changes) {
         qqLibraryViewModel.syncFavoriteChanges(favoriteState.changes)
+        kugouLibraryViewModel.syncFavoriteChanges(favoriteState.changes)
     }
     val rootVisible = !recommendationNavigation.motion.mounted && !playerMotion.mounted &&
         !settingsMotion.mounted && entityNavigation.pages.isEmpty()
@@ -124,12 +134,17 @@ fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>()
                 MusicSource.QQ -> qqLibraryViewModel.refresh()
                 MusicSource.KUGOU -> kugouLibraryViewModel.refresh()
                 MusicSource.NETEASE -> catalogViewModel.refreshLibrary()
+                MusicSource.LOCAL, MusicSource.BILIBILI -> Unit
             }
         }, recommendationNavigation.cards,
         rootVisible)
 
+    val queueState = rememberPlayerQueueState()
+
     androidx.compose.runtime.CompositionLocalProvider(
         LocalMyPageVisible provides myVisible,
+        LocalPlayerQueueState provides queueState,
+        LocalPlaybackQueueActions provides rememberPlaybackQueueActions(viewModel),
         LocalPlaylistMotion provides recommendationNavigation.motion,
         LocalPlaylistCardTransition provides recommendationNavigation.cards,
         LocalPlayerMotion provides playerMotion,
@@ -139,7 +154,7 @@ fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>()
         LocalPageInteraction provides pageInteraction,
         LocalEntityActive provides entityNavigation.pages.isEmpty(),
         LocalRecommendationVisible provides (settingsNavigation.destination == SettingsDestination.CLOSED &&
-            !searchNavigation.opened && !qqSearchMotion.mounted && !recommendationNavigation.motion.mounted && entityNavigation.pages.isEmpty()),
+            !searchNavigation.opened && !qqSearchMounted && !recommendationNavigation.motion.mounted && entityNavigation.pages.isEmpty()),
         LocalPlayerSurfaceTexture provides playerSurfaceTexture,
         LocalPlayerAtmosphereMotion provides playerAtmosphereMotion,
         LocalPlayerBackdropTexture provides backdropLayer,
@@ -147,12 +162,13 @@ fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>()
         LocalPlayerBackdropBounds provides backdropBounds,
         LocalPrimaryPageHeaderState provides primaryHeaderState,
         LocalNeteaseGlobalVisual provides neteaseProfileVisual.takeIf { globalNeteaseBackground },
-        LocalMusicFavorites provides MusicFavoriteActions(
+        LocalMusicFavorites provides libraryFavoriteActions(MusicFavoriteActions(
             favoriteState,
             favoriteViewModel::toggle,
             favoriteViewModel::toggleDeferredRemoval,
             favoriteViewModel::flushDeferredRemovals,
-        ),
+            currentState = { favoriteViewModel.state.value },
+        )),
     ) {
         PlatformMusicTheme(
             platformState.selectedSource,
@@ -199,7 +215,12 @@ fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>()
                 run {
                     NeteaseAdaptiveForeground(neteaseProfileVisual.takeIf { globalNeteaseBackground }) {
                     Column(Modifier.fillMaxSize()) {
-                        HorizontalPager(
+                        if (platformState.selectedSource == MusicSource.LOCAL) {
+                            LocalMusicScreen(state, barMeasurements.detailInset, recommendationNavigation::open, viewModel::playPlaylist) {
+                                settingsNavigation.origin = it
+                                settingsNavigation.openLibrary()
+                            }
+                        } else HorizontalPager(
                             state = rootNavigation.pagerState,
                             modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds(),
                             beyondViewportPageCount = 1,
@@ -226,7 +247,6 @@ fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>()
                                         onChooseSource = { settingsNavigation.choosingSource = true },
                                         onOpenRecommendation = { playlist ->
                                             recommendationNavigation.open(playlist)
-                                            catalogViewModel.loadPlaylist(playlist, recommendationNavigation::update)
                                         },
                                         onOpenLoadedPlaylist = recommendationNavigation::open,
                                         onPlayRecommendation = { playlist ->
@@ -247,9 +267,6 @@ fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>()
                                         settingsNavigation::openSettings,
                                         { playlist ->
                                             recommendationNavigation.open(playlist)
-                                            if (playlist.id != QQ_FAVORITES_PLAYLIST_ID) {
-                                                catalogViewModel.loadPlaylist(playlist, recommendationNavigation::update)
-                                            }
                                         },
                                         catalogViewModel::refreshLibrary,
                                         neteaseBackground.hasCustomGlobal,
@@ -258,7 +275,7 @@ fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>()
                                         if (platformState.selectedSource == MusicSource.KUGOU)
                                             kugouLibraryViewModel::refresh else qqLibraryViewModel::refresh,
                                         { playlist ->
-                                            if (playlist.id == QQ_FAVORITES_PLAYLIST_ID) viewModel.playPlaylist(playlist)
+                                            if (playlist.isManagedLibrary) viewModel.playPlaylist(playlist)
                                             else catalogViewModel.loadPlaylist(playlist, viewModel::playPlaylist)
                                         },
                                         { settingsNavigation.choosingSource = true },
@@ -273,7 +290,6 @@ fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>()
                         viewModel::playTrackNext,
                         { playlist ->
                             recommendationNavigation.open(playlist)
-                            catalogViewModel.loadPlaylist(playlist, recommendationNavigation::update)
                         },
                         recommendationNavigation.motion.mounted || playerMotion.mounted,
                     )
@@ -285,7 +301,12 @@ fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>()
                         qqLibraryViewModel::toggleCollected,
                         { playlist, contentChanged ->
                             if (contentChanged) catalogViewModel.invalidatePlaylist(playlist.id)
-                            qqLibraryViewModel.refreshAfterPlaylistReturn(playlist.id, contentChanged)
+                            when (playlist.source) {
+                                MusicSource.QQ -> qqLibraryViewModel.refreshAfterPlaylistReturn(playlist.id, contentChanged)
+                                MusicSource.NETEASE -> catalogViewModel.refreshLibrary()
+                                MusicSource.KUGOU -> kugouLibraryViewModel.refresh()
+                                else -> Unit
+                            }
                         },
                         playlistToolbarState,
                         playlistFloatingToolsState,
@@ -316,7 +337,6 @@ fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>()
                                 onCollectionClick = { playlist ->
                                     searchNavigation.close()
                                     recommendationNavigation.open(playlist)
-                                    catalogViewModel.loadPlaylist(playlist, recommendationNavigation::update)
                                 },
                             )
                         }
@@ -377,7 +397,7 @@ fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>()
                     viewModel, recommendationNavigation.motion, playerMotion, barMeasurements,
                     backdropLayer, backdropBounds, playerControlHandoff, rootNavigation, entityNavigation,
                     entitySceneLayer, entitySceneBounds,
-                    (platformState.selectedSource == MusicSource.KUGOU || !searchNavigation.opened) && entityNavigation.pages.isEmpty(),
+                    platformState.selectedSource != MusicSource.LOCAL && (platformState.selectedSource == MusicSource.KUGOU || !searchNavigation.opened) && entityNavigation.pages.isEmpty(),
                     animateQqPlayer = platformState.selectedSource == MusicSource.QQ,
                     immersiveVisual = neteaseProfileVisual.takeIf { immersiveNeteaseSurface },
                     searchProgress = { maxOf(qqSearchMotion.full.value, kugouSearchMotion.reveal.value, settingsMotion.value) },
@@ -415,6 +435,7 @@ fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>()
             }
             UnifiedBackButton(entityNavigation, settingsNavigation, recommendationNavigation, playlistToolbarState,
                 qqSearchState, qqSearchViewModel, qqSearchMotion, playerMotion, backdropLayer, backdropBounds)
+            PlayerQueueHost(queueState, viewModel)
             HomeLaunchOverlay(
                 source = platformState.selectedSource,
                 sessionRevision = platformState.sessionRevision,

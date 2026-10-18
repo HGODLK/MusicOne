@@ -192,7 +192,7 @@ class GestureReleaseVelocityTest {
         val clock = BroadcastFrameClock()
         val motion = PageMotion(CoroutineScope(coroutineContext + clock), true, 320, 280,
             PlayerReturnAnimation, PlayerEnterAnimation, musicSpring(stiffness = 320f),
-            immediateGestureHandoff = true)
+            immediateGestureHandoff = true).apply { waitForTarget = false }
         var time = 0L
         suspend fun frames(count: Int) {
             repeat(count) { yield(); time += 16_666_667L; clock.sendFrame(time); yield() }

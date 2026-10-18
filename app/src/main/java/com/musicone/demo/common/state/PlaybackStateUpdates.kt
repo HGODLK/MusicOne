@@ -51,10 +51,17 @@ internal fun MusicOneUiState.withResolvedPlayback(event: PlaybackTrackEvent.Read
         ?: resolved.track.lyrics.ifEmpty { loadedLyrics }
     val track = resolved.track.copy(lyrics = preferredLyrics)
     val verifiedSource = resolved.source.takeUnless { it.trial || it.verificationPending }
+    resolved.source.actualFormat?.let { PlaybackAudioInfo.remember(resolved.source.url, it,
+        mergeDecoded = resolved.track.source == MusicSource.BILIBILI, bitrate = resolved.source.bitRate) }
     return copy(currentTrack = track, queue = queue.map { if (it.id == track.id) track else it },
-        lyricLoadState = if (track.lyrics.isEmpty()) LyricLoadState.LOADING else LyricLoadState.READY,
+        lyricLoadState = when {
+            track.lyrics.isNotEmpty() -> LyricLoadState.READY
+            track.source.supportsLibraryEditing -> lyricLoadState
+            else -> LyricLoadState.LOADING
+        },
         activeQuality = verifiedSource?.let { playerDisplayedQuality(event.preferred, it.actualQuality) },
-        availableQualities = verifiedSource?.let { listOf(it.actualQuality) }.orEmpty(), playbackMessage = null)
+        availableQualities = verifiedSource?.let { listOf(it.actualQuality) }.orEmpty(),
+        qualityChanging = false, qualityTarget = null, playbackMessage = null)
 }
 
 internal fun MusicOneUiState.withPlaybackMetadata(event: PlaybackTrackEvent.Metadata): MusicOneUiState {

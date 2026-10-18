@@ -48,10 +48,11 @@ internal fun MusicTrackRow(
     favoriteContent: (@Composable () -> Unit)? = null,
     showSource: Boolean = true,
 ) {
+    val displayed = displayedPlaybackTrack(track)
     val menu = LocalQqPlaylistSongMenu.current
     var anchor by remember { mutableStateOf(Rect.Zero) }
     Row(
-        modifier = Modifier.clickable(onClickLabel = "播放${track.title}", onClick = onClick)
+        modifier = Modifier.clickable(enabled = displayed.playable, onClickLabel = "播放${track.title}", onClick = onClick)
             .semantics { contentDescription = "播放歌曲：${track.title}" }
             .padding(vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -70,10 +71,11 @@ internal fun MusicTrackRow(
         }
         Column(Modifier.weight(1f).padding(horizontal = 13.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             TrackTitle(
-                track,
+                displayed,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (current) trackPlaybackColor(track.source) else MaterialTheme.colorScheme.onSurface,
+                color = if (!displayed.playable) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .5f)
+                    else if (current) trackPlaybackColor(track.source) else MaterialTheme.colorScheme.onSurface,
             )
             Text("${track.artists} · ${track.album}", color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)

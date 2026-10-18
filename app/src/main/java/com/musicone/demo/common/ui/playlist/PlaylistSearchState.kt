@@ -26,7 +26,10 @@ internal class PlaylistSearchState {
 
 @Composable
 internal fun rememberPlaylistSearchState(playlistId: String): PlaylistSearchState =
-    remember(playlistId) { PlaylistSearchState() }
+    androidx.compose.runtime.saveable.rememberSaveable(playlistId, saver = androidx.compose.runtime.saveable.listSaver<PlaylistSearchState, Any>(
+        save = { listOf(it.expanded, it.query) },
+        restore = { values -> PlaylistSearchState().apply { expanded = values[0] as Boolean; query = values[1] as String } },
+    )) { PlaylistSearchState() }
 
 internal fun List<MusicTrack>.matchingPlaylistQuery(query: String): List<MusicTrack> {
     val keyword = query.trim()

@@ -8,6 +8,40 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LyricOpeningContextTest {
+    @Test fun closedWindowCanStandByButClosingAndReversingKeepTheirCoordinates() {
+        assertTrue(phoneLyricsStandby(true, false, 0f, 0f, false))
+        assertFalse(phoneLyricsStandby(false, false, 0f, 0f, false))
+        assertFalse(phoneLyricsStandby(true, true, 0f, 0f, false))
+        assertFalse(phoneLyricsStandby(true, false, .0001f, 0f, false))
+        assertFalse(phoneLyricsStandby(true, false, 0f, .0001f, false))
+        assertFalse(phoneLyricsStandby(true, false, 0f, 0f, true))
+    }
+
+    @Test fun preparedOpeningSurvivesLayoutSnapshotReplacementWithoutRepositioning() {
+        val rows = (4..8).map { row(it, (it - 8) * 70, 52) }
+        val original = layout(-268, rows)
+        val context = LyricOpeningContext(5, original)
+        val standby = LyricOpeningStandby()
+        assertFalse(standby.matches(8, original, context))
+        standby.record(8, original, context)
+        assertTrue(standby.matches(8, layout(-268, rows), context))
+        standby.invalidate()
+        assertFalse(standby.matches(8, original, context))
+    }
+
+    @Test fun changedFocusScrollWrappingViewportOrHistoryRequiresFreshPreparation() {
+        val rows = (4..8).map { row(it, (it - 8) * 70, 52) }
+        val original = layout(-268, rows)
+        val context = LyricOpeningContext(5, original)
+        val standby = LyricOpeningStandby().apply { record(8, original, context) }
+        assertFalse(standby.matches(7, original, context))
+        assertFalse(standby.matches(8, layout(-268, rows.map { row(it.index, it.offset + 1, it.size) }), context))
+        assertFalse(standby.matches(8, layout(-268, rows.map { row(it.index, it.offset, it.size + 20) }), context))
+        assertFalse(standby.matches(8, layout(-240, rows), context))
+        assertFalse(standby.matches(8, original, null))
+        assertFalse(standby.matches(8, original, context.copy()))
+    }
+
     @Test fun threeShortParagraphsArePreparedWhenTheTargetHasRoom() {
         val target = layout(-268, listOf(row(4, -280, 52), row(5, -210, 52),
             row(6, -140, 52), row(7, -70, 52), row(8, 0, 52)))
@@ -45,24 +79,23 @@ class LyricOpeningContextTest {
         assertEquals(0, lyricOpeningHistoryStart(layout(-268, listOf(row(0, 0, 140))), 0, 108f, 6f))
     }
 
-    @Test fun theLastFrameRestoresNoAdditionalVisibleParagraphAndClosingKeepsTheVisibleWindow() {
+    @Test fun endpointOnlyReleasesThePreparationSnapshotAndClosingKeepsItsGeometry() {
         val target = layout(-268, (4..8).map { row(it, (it - 8) * 70, 52) })
         val first = lyricOpeningHistoryStart(target, 8, 108f, 6f)
         val history = LyricTransitionHistory()
-        history.prepareOpening(LyricOpeningContext(first, target))
+        val context = LyricOpeningContext(first, target)
+        history.prepareOpening(context)
         for (progress in listOf(.01f, .5f, .999f, .4f)) {
-            history.update({ target }, 8, Density(1f), progress, true)
-            assertEquals((5..8).toList(), (4..8).filter(history::draws))
+            history.update(progress, true)
+            assertSame(context, history.openingContext)
         }
-        val lastVisible = (first..8).filter(history::draws)
-        history.update({ target }, 8, Density(1f), 1f, true)
-        assertEquals(lastVisible, (first..8).filter(history::draws))
+        history.update(1f, true)
         assertNull(history.openingContext)
-        history.update({ target }, 8, Density(1f), .9f, true, closingWindow = true)
-        assertTrue((4..8).all(history::draws))
-        history.update({ target }, 8, Density(1f), .4f, true)
-        assertTrue((4..8).all(history::draws))
-        history.update({ target }, 8, Density(1f), 1f, true)
+        history.update(.9f, true, closingWindow = true)
+        assertTrue(history.preservingCloseWindow)
+        history.update(.4f, true)
+        assertTrue(history.preservingCloseWindow)
+        history.update(1f, true)
         assertFalse(history.preservingCloseWindow)
     }
 
@@ -83,7 +116,7 @@ class LyricOpeningContextTest {
     private fun layout(start: Int, rows: List<LazyListItemInfo>): LazyListLayoutInfo = proxy(mapOf(
         "getVisibleItemsInfo" to rows, "getViewportStartOffset" to start,
         "getViewportEndOffset" to 900, "getViewportSize-YbymL2g" to ((390L shl 32) or 900L),
-        "getMainAxisItemSpacing" to 18))
+        "getMainAxisItemSpacing" to 18, "getTotalItemsCount" to 20))
 
     private inline fun <reified T> proxy(values: Map<String, Any>): T =
         Proxy.newProxyInstance(T::class.java.classLoader, arrayOf(T::class.java)) { _, method, _ ->

@@ -123,7 +123,7 @@ private class HiResMediaCodecAudioRenderer(
     audioSink,
 ) {
     override fun onInputFormatChanged(formatHolder: FormatHolder): DecoderReuseEvaluation? {
-        usbAudioSink?.setSourceBitDepth(sourceAudioBitDepth(formatHolder.format))
+        usbAudioSink?.setSourceFormat(formatHolder.format)
         return super.onInputFormatChanged(formatHolder)
     }
 
@@ -154,9 +154,22 @@ internal fun hiResCodecMaxInputSize(sampleMimeType: String?, defaultMaxInputSize
     }
 
 /** 使用提取器报告的有效位深，避免把解码器的 32-bit PCM 容器误当成源文件位深。 */
-internal fun sourceAudioBitDepth(format: Format?): Int = when (format?.pcmEncoding) {
-    C.ENCODING_PCM_16BIT -> 16
-    C.ENCODING_PCM_24BIT -> 24
-    C.ENCODING_PCM_32BIT, C.ENCODING_PCM_FLOAT -> 32
-    else -> 16
+internal fun sourceAudioBitDepth(format: Format?): Int {
+    val label = format?.label
+    if (label != null && label.startsWith("effective-depth:")) {
+        val depth = label.removePrefix("effective-depth:").toIntOrNull()
+        if (depth != null && depth in setOf(16, 24, 32)) {
+            return depth
+        }
+    }
+    if (format?.sampleMimeType == MimeTypes.AUDIO_FLAC) {
+        format.initializationData.firstNotNullOfOrNull { qqFlacInfo(it)?.bitDepth }
+            ?.takeIf { it in setOf(16, 24, 32) }?.let { return it }
+    }
+    return when (format?.pcmEncoding) {
+        C.ENCODING_PCM_16BIT -> 16
+        C.ENCODING_PCM_24BIT -> 24
+        C.ENCODING_PCM_32BIT, C.ENCODING_PCM_FLOAT -> 32
+        else -> 16
+    }
 }

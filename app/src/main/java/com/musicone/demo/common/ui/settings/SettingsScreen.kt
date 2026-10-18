@@ -56,30 +56,20 @@ internal fun SourceSettingsScreen(
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("音乐平台", style = MaterialTheme.typography.headlineSmall)
-                    Text("首页、搜索、播放和我喜欢使用这里选择的平台。", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Text("选择浏览入口，正在播放的歌曲与队列会保留。", color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall)
-                    PlatformChoice(
-                        source = MusicSource.NETEASE,
-                        selected = state.sourceSelected && state.selectedSource == MusicSource.NETEASE,
-                        enabled = true,
-                        status = label(MusicSource.NETEASE),
-                        onClick = { onSelectSource(MusicSource.NETEASE) },
-                    )
-                    PlatformChoice(
-                        MusicSource.QQ,
-                        state.sourceSelected && state.selectedSource == MusicSource.QQ,
-                        true,
-                        label(MusicSource.QQ),
-                        { onSelectSource(MusicSource.QQ) },
-                    )
-                    PlatformChoice(
-                        MusicSource.KUGOU,
-                        state.sourceSelected && state.selectedSource == MusicSource.KUGOU,
-                        true,
-                        label(MusicSource.KUGOU),
-                        { onSelectSource(MusicSource.KUGOU) },
-                    )
-                    if (state.sessionStatus == SessionStatus.CONNECTED) {
+                    MAIN_MUSIC_SOURCES.forEach { source ->
+                        PlatformChoice(
+                            source,
+                            state.sourceSelected && state.selectedSource == source,
+                            true,
+                            if (source == MusicSource.LOCAL) "无需账号 · 导入音乐即可使用" else label(source),
+                            { onSelectSource(source) },
+                        )
+                    }
+                    if (!state.selectedSource.requiresAccount) {
+                        Text("本地音乐无需登录", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else if (state.sessionStatus == SessionStatus.CONNECTED) {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             OutlinedButton(onClick = onOpenLogin) { Text("重新登录") }
                             OutlinedButton(onClick = onLogout) { Text("退出登录") }
@@ -140,11 +130,13 @@ private fun PlatformChoice(
 }
 
 @Composable
-internal fun SettingsHeader(title: String, onBack: () -> Unit) {
+internal fun SettingsHeader(title: String, onBack: () -> Unit, singleLine: Boolean = false) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         if (LocalUnifiedBack.current) Spacer(Modifier.size(48.dp)) else
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") }
-        Text(title, style = MaterialTheme.typography.displayMedium.copy(fontSize = 30.sp), modifier = Modifier.padding(start = 5.dp))
+        Text(title, style = MaterialTheme.typography.displayMedium.copy(fontSize = 30.sp),
+            modifier = Modifier.padding(start = 5.dp).then(if (singleLine) Modifier.weight(1f) else Modifier),
+            maxLines = if (singleLine) 1 else Int.MAX_VALUE, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         Spacer(Modifier.weight(1f))
     }
 }

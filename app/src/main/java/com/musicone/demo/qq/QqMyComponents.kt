@@ -144,7 +144,7 @@ internal fun QqPlaylistSegment(
 }
 
 @Composable
-private fun QqSegmentButton(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
+internal fun QqSegmentButton(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier, enabled: Boolean = true) {
     val background by androidx.compose.animation.animateColorAsState(
         if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.surfaceContainer,
         musicMotion(320), label = "歌单分区底色")
@@ -153,6 +153,7 @@ private fun QqSegmentButton(label: String, selected: Boolean, onClick: () -> Uni
         musicMotion(320), label = "歌单分区文字")
     Surface(
         onClick = onClick,
+        enabled = enabled,
         modifier = modifier.heightIn(min = 46.dp),
         shape = RoundedCornerShape(16.dp),
         color = background,

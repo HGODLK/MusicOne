@@ -34,8 +34,8 @@ internal fun AccountEntryHost(
                                 indication = null) {}, shape = RoundedCornerShape(28.dp)) {
                         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("选择主音源", style = MaterialTheme.typography.headlineSmall)
-                            Text("选择后登录对应平台", style = MaterialTheme.typography.bodySmall)
-                            MusicSource.entries.forEach { source ->
+                            Text("本地音乐无需登录", style = MaterialTheme.typography.bodySmall)
+                            MAIN_MUSIC_SOURCES.forEach { source ->
                                 val account = remember(source, state.sessionRevision) { preferences.readSession(source).account }
                                 ListItem(headlineContent = {
                                     Row(verticalAlignment = Alignment.CenterVertically,
@@ -44,12 +44,12 @@ internal fun AccountEntryHost(
                                         PlatformAvailabilityBadge(source)
                                     }
                                 },
-                                    supportingContent = { Text(account?.nickname ?: "未登录") },
+                                    supportingContent = { Text(if (!source.requiresAccount) "无需账号" else account?.nickname ?: "未登录") },
                                     colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                                     modifier = Modifier.clickable {
                                         select(source)
                                         navigation.choosingSource = false
-                                        if (account == null) {
+                                        if (source.requiresAccount && account == null) {
                                             login(source)
                                             navigation.openPlatformLogin(fromAvatar = true)
                                         }

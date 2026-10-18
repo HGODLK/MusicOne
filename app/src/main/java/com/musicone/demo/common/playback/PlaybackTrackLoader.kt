@@ -15,7 +15,8 @@ internal sealed interface PlaybackTrackEvent {
         val playWhenReady: Boolean) : PlaybackTrackEvent
     data class Metadata(override val key: PlaybackRequestKey, val original: MusicTrack,
         val enriched: MusicTrack) : PlaybackTrackEvent
-    data class Failed(override val key: PlaybackRequestKey, val message: String) : PlaybackTrackEvent
+    data class Failed(override val key: PlaybackRequestKey, val message: String,
+        val maySkip: Boolean = true) : PlaybackTrackEvent
 }
 
 /** 音源和后补元数据共用请求身份，切歌后旧任务不能继续起播或覆盖详情。 */
@@ -65,13 +66,15 @@ internal class PlaybackTrackLoader(
             } catch (timeout: TimeoutCancellationException) {
                 if (current()) {
                     PlaybackPipelineDiagnostics.stage("解析超时", key.generation)
-                    publish(PlaybackTrackEvent.Failed(key, "音源加载超时，请重试"))
+                    publish(PlaybackTrackEvent.Failed(key, "音源加载超时，请重试", track.source != MusicSource.KUGOU))
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
                 PlaybackPipelineDiagnostics.stage("解析失败", key.generation, (System.nanoTime() - started) / 1_000_000)
-                if (current()) publish(PlaybackTrackEvent.Failed(key, error.asUserMessage()))
+                if (current()) publish(PlaybackTrackEvent.Failed(key,
+                    if (track.source == MusicSource.KUGOU) error.kugouPlaybackMessage() else error.asUserMessage(),
+                    track.source != MusicSource.KUGOU || kugouMaySkipFailedTrack(error)))
             } finally { releaseWake?.invoke() }
         }
     }

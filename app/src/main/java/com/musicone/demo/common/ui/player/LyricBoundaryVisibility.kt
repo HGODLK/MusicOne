@@ -26,7 +26,9 @@ internal class LyricBoundaryWindow(
 
 internal fun lyricBoundaryLineAlpha(top: Float, bottom: Float, viewportTop: Float,
     viewportBottom: Float, fadePx: Float): Float {
-    val clearance = min(top - viewportTop, viewportBottom - bottom)
+    if (bottom <= viewportTop || top >= viewportBottom) return 0f
+    // 顶部仍保护完整字形；底部从文字上缘进入时开始显现，让原列表位移连续滑入。
+    val clearance = min(top - viewportTop, viewportBottom - top)
     val p = (clearance / fadePx.coerceAtLeast(1f)).coerceIn(0f, 1f)
     return p * p * (3f - 2f * p)
 }

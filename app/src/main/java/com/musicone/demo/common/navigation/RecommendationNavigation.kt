@@ -78,8 +78,13 @@ internal fun RecommendationDestination(
     val context = LocalContext.current
     val favorites = LocalMusicFavorites.current
     val inheritedNeteaseVisual = LocalNeteaseGlobalVisual.current
+    val libraryPageState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+    val catalog: MusicCatalogViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val savedPlaylistIds by viewModel.playlistLibrary.ids.collectAsStateWithLifecycle()
-    navigation.playlist?.let { playlist ->
+    ObserveLibraryPlaylist(navigation)
+    navigation.playlist?.let { original ->
+        val paging = catalog.playlists.entry(original)
+        val playlist = paging.page?.playlist ?: original
         val customPlaylistBackground = remember(playlist.id, neteasePlaylistBackgroundRevision) {
             if (playlist.source == MusicSource.NETEASE) {
                 NeteaseProfileBackgroundStore.playlistUri(context, playlist.id)
@@ -102,18 +107,29 @@ internal fun RecommendationDestination(
             else -> generatedVisual
         }
         val sort = rememberPlaylistSortSelection(playlist, qqAccountId, qqLibrary.createdPlaylists)
+        val pageActions = rememberPlaylistPageActions(catalog.playlists, paging, playlist, sort.value, viewModel) {
+            navigation.cards.preparePlayback(navigation.motion.coverKey)
+        }
+        androidx.compose.runtime.LaunchedEffect(pageActions) { pageActions.first() }
+        androidx.compose.runtime.LaunchedEffect(paging.page) { paging.page?.playlist?.let(navigation::update) }
+        androidx.compose.runtime.DisposableEffect(paging) {
+            onDispose { catalog.playlists.release(playlist.id, paging) }
+        }
         val sorted = remember(playlist, sort.value) {
             if (playlist.isQqSearchAlbum) playlist else playlist.copy(tracks = sortedPlaylistTracks(playlist.tracks, sort.value))
         }
         val contentActivation = rememberPlaylistContentActivation(playlist.id, navigation.motion)
-        val showCollection = !playlist.isQqSearchAlbum && (playlist.source != MusicSource.QQ || !playlist.isOwnedQqPlaylist(qqLibrary.createdPlaylists))
-        val deferFavoriteRemovals = playlist.source == MusicSource.QQ && playlist.isQqFavoritesShortcut()
+        val showCollection = !playlist.isManagedLibrary && !playlist.isQqSearchAlbum && (playlist.source != MusicSource.QQ || !playlist.isOwnedQqPlaylist(qqLibrary.createdPlaylists))
+        val deferFavoriteRemovals = playlist.isAccountFavorites()
         androidx.compose.runtime.DisposableEffect(playlist.id, deferFavoriteRemovals) {
             onDispose { if (deferFavoriteRemovals) favorites.flushDeferredRemovals {} }
         }
         val closePlaylist = {
             navigation.close {
-                if (shouldSyncQqLibraryAfterPlaylistReturn(playlist)) {
+                if (playlist.source in listOf(MusicSource.NETEASE, MusicSource.KUGOU)) {
+                    val contentChanged = favorites.currentState().deferredRemovalIds.isNotEmpty()
+                    favorites.flushDeferredRemovals { onReturnFromQqPlaylist(playlist, contentChanged) }
+                } else if (shouldSyncQqLibraryAfterPlaylistReturn(playlist)) {
                     if (deferFavoriteRemovals) {
                         val contentChanged = favorites.state.deferredRemovalIds.isNotEmpty()
                         favorites.flushDeferredRemovals { onReturnFromQqPlaylist(playlist, contentChanged) }
@@ -128,6 +144,7 @@ internal fun RecommendationDestination(
             createdPlaylists = qqLibrary.createdPlaylists,
             bottomInset = bottomInset,
             onRemoved = { removed -> navigation.playlist?.let { current ->
+                paging.remove(removed.id)
                 navigation.update(current.copy(tracks = current.tracks.filterNot { it.id == removed.id },
                     count = (current.count - 1).coerceAtLeast(0)))
             } },
@@ -137,13 +154,17 @@ internal fun RecommendationDestination(
         PlaylistMotionHost(navigation.motion, playlist, playlistVisual) {
             NeteaseAdaptiveForeground(playlistVisual) {
             val entranceProgress = remember(contentActivation) { { contentActivation.entrance.value } }
-            androidx.compose.runtime.CompositionLocalProvider(LocalPlaylistContentEntrance provides entranceProgress) {
+            androidx.compose.runtime.CompositionLocalProvider(
+                LocalPlaylistContentEntrance provides entranceProgress,
+                LocalPlaylistPagination provides pageActions,
+            ) {
+                libraryPageState.SaveableStateProvider(playlist.id) {
                 RecommendationScreen(
                     playlist = sorted,
                     state = state,
                     bottomInset = bottomInset,
-                    loading = loadingPlaylistId == playlist.id,
-                    loadMessage = loadMessage,
+                    loading = paging.loading || loadingPlaylistId == playlist.id,
+                    loadMessage = paging.error ?: loadMessage,
                     onBack = closePlaylist,
                     saved = if (playlist.source == MusicSource.QQ) qqLibrary.collectedPlaylists.any { it.id == playlist.id } else playlist.id in savedPlaylistIds,
                     updatingCollection = playlist.id in qqLibrary.updatingCollections,
@@ -152,9 +173,9 @@ internal fun RecommendationDestination(
                     sort = sort.value,
                     onSort = sort.select,
                     onToggleSaved = { if (playlist.source == MusicSource.QQ) onToggleQqCollection(playlist) else viewModel.playlistLibrary.toggle(playlist) },
-                    onPlay = { navigation.cards.preparePlayback(navigation.motion.coverKey); viewModel.playPlaylist(sorted) },
-                    onShuffle = { navigation.cards.preparePlayback(navigation.motion.coverKey); viewModel.playPlaylist(sorted, shuffle = true) },
-                    onTrackClick = { navigation.cards.preparePlayback(navigation.motion.coverKey); viewModel.playTrackNext(it) },
+                    onPlay = { pageActions.play(shuffle = false) },
+                    onShuffle = { pageActions.play(shuffle = true) },
+                    onTrackClick = { pageActions.play(track = it) },
                     onFavorite = if (deferFavoriteRemovals) favorites.toggleDeferredRemoval else favorites.toggle,
                     toolbarState = toolbarState,
                     floatingToolsState = floatingToolsState,
@@ -168,6 +189,7 @@ internal fun RecommendationDestination(
                         { onRestoreNeteasePlaylistBackground(playlist) }
                     } else null,
                 )
+                }
             }
             if (playlistVisual == null) {
                 val cover = sorted.tracks.firstOrNull()

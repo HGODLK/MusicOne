@@ -7,6 +7,37 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PlaylistCardTransitionTest {
+    @Test fun immediateStackSwipeAndReturnFadeAdvanceIndependently() = runBlocking {
+        val clock = BroadcastFrameClock()
+        val scope = CoroutineScope(coroutineContext + clock)
+        val cards = PlaylistCardTransition(scope)
+        val swipe = LibraryCardSwipeState(0, scope) {}
+        var time = 0L
+        suspend fun frames(count: Int) { repeat(count) { yield(); time += 16_666_667L; clock.sendFrame(time); yield() } }
+        cards.open("library-pair:unified", null, {}) {}
+        frames(20)
+        assertTrue(cards.blocksCardSwipe)
+        cards.restore()
+        assertFalse(cards.blocksCardSwipe)
+        swipe.begin()
+        swipe.move(-120f, 400f)
+        assertEquals(.3f, swipe.value, .0001f)
+        frames(5)
+        assertTrue(cards.alphaFor("library-pair:unified") > 0f)
+        assertTrue(cards.alphaFor("library-pair:unified") < 1f)
+        assertEquals(.3f, swipe.value, .0001f)
+        swipe.select(1)
+        frames(6)
+        assertTrue(swipe.value > .3f && swipe.value < 1f)
+        assertTrue(cards.alphaFor("library-pair:unified") > 0f)
+        frames(40)
+        assertEquals(1f, swipe.value, .0001f)
+        assertEquals(1f, cards.alphaFor("library-pair:unified"))
+        assertNull(cards.activeSourceKey)
+        assertFalse(swipe.moving)
+        coroutineContext.cancelChildren()
+    }
+
     @Test fun duplicatePlaylistUsesClickedSourceForEnteringReturningAndInformation() = runBlocking {
         val clock = BroadcastFrameClock()
         val scope = CoroutineScope(coroutineContext + clock)

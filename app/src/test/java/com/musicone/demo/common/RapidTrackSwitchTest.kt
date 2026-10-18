@@ -214,6 +214,22 @@ class RapidTrackSwitchTest {
         }
     }
 
+    @Test fun emptyLibraryLyricsAreResolvedDuringPreviewWithoutWaitingForOnlinePlayback() = runBlocking {
+        for (source in listOf(MusicSource.LOCAL, MusicSource.BILIBILI)) {
+            withFixture(cached = false) {
+                val custom = state.queue.map { it.copy(source = source) }
+                state = state.copy(currentTrack = custom.first(), queue = custom)
+                begin()
+                val final = awaitSettling()
+                assertTrue(final.lyricsResolved)
+                assertFalse(final.lyricsAvailable)
+                assertEquals(emptyList<TimedLyric>(), currentLyricPresentationRequest(state, final)?.presentation?.lyrics)
+                switch.lyricsSettled(owner, final.token)
+                awaitCommit()
+            }
+        }
+    }
+
     @Test fun missingCachedLyricsRemainUnavailableWithoutCreatingAnEmptyPresentation() = runBlocking {
         withFixture(cached = false) {
             begin()

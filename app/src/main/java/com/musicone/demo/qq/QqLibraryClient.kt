@@ -3,21 +3,31 @@ package com.musicone.demo
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal class QqLibraryClient {
-    fun favoritePlaylist(cookie: String, userId: String, hasVipAccess: Boolean): MusicPlaylist {
+internal class QqLibraryClient(
+    private val favoriteGet: (String, String, Map<String, String>) -> String =
+        { url, cookie, headers -> PlatformHttp.get(url, cookie, headers).text },
+) {
+    fun favoritePlaylist(cookie: String, userId: String, hasVipAccess: Boolean): MusicPlaylist =
+        collectPlaylistTrackPages { favoritePlaylistPage(cookie, userId, hasVipAccess, it?.offset ?: 0) }
+
+    private fun favoriteData(cookie: String, userId: String, offset: Int): JSONObject {
         requireLogin(cookie, userId)
-        val response = JSONObject(PlatformHttp.get(
-            "$PROFILE_ASSET_API?${profileAssetQuery(userId, "1", 0, 500)}",
+        val response = JSONObject(favoriteGet(
+            "$PROFILE_ASSET_API?${profileAssetQuery(userId, "1", offset, PLAYLIST_TRACK_PAGE_SIZE)}",
             cookie,
             webHeaders(),
-        ).text.qqLibraryJson())
+        ).qqLibraryJson())
         requireSuccess(response, "我喜欢的音乐加载失败")
-        val data = response.optJSONObject("data") ?: JSONObject()
+        return response.optJSONObject("data") ?: throw PlatformApiException("QQ 音乐没有返回收藏内容")
+    }
+
+    fun favoritePlaylistPage(cookie: String, userId: String, hasVipAccess: Boolean, offset: Int = 0): PlaylistTrackPage {
+        val data = favoriteData(cookie, userId, offset)
         val tracks = data.optJSONArray("songlist").qqLibraryObjects { item ->
             (item.optJSONObject("data") ?: item).toQqTrack(hasVipAccess)
         }
         val first = tracks.firstOrNull()
-        return MusicPlaylist(
+        val playlist = MusicPlaylist(
             id = FAVORITES_ID,
             source = MusicSource.QQ,
             title = "我喜欢的音乐",
@@ -30,6 +40,31 @@ internal class QqLibraryClient {
             tracks = QqTrackAccessResolver().resolve(tracks, cookie),
             artworkUrl = data.qqCoverUrl() ?: first?.artworkUrl,
         )
+        return PlaylistTrackPage(playlist, nextPlaylistTrackCursor(offset,
+            data.optJSONArray("songlist")?.length() ?: 0, data.optInt("totalsong")))
+    }
+
+    fun likedTrackIds(cookie: String, userId: String): Set<String> {
+        var offset = 0
+        val seen = mutableSetOf<List<String>>()
+        return buildSet {
+            do {
+                val data = favoriteData(cookie, userId, offset)
+                val raw = data.optJSONArray("songlist") ?: JSONArray()
+                val identities = mutableListOf<String>()
+                for (index in 0 until raw.length()) {
+                    val item = raw.optJSONObject(index)?.let { it.optJSONObject("data") ?: it } ?: continue
+                    val mid = item.optString("songmid").ifBlank { item.optString("mid") }
+                    val id = item.optString("songid").ifBlank { item.optString("id") }
+                    identities += mid.ifBlank { id }
+                    mid.takeIf(String::isNotBlank)?.let { add("qq-$it") }
+                    id.toLongOrNull()?.takeIf { it > 0 }?.let { add("qq-$it") }
+                }
+                check(identities.isEmpty() || seen.add(identities)) { "收藏分页返回了重复内容，请重试" }
+                val next = nextPlaylistTrackCursor(offset, raw.length(), data.optInt("totalsong"))
+                offset = next?.offset ?: break
+            } while (true)
+        }
     }
 
     fun createdPlaylists(cookie: String, userId: String): List<MusicPlaylist> {
@@ -78,7 +113,13 @@ internal class QqLibraryClient {
         playlist: MusicPlaylist,
         cookie: String,
         hasVipAccess: Boolean,
-    ): MusicPlaylist {
+    ): MusicPlaylist = collectPlaylistTrackPages {
+        profileDirectoryPage(playlist, cookie, hasVipAccess, it?.offset ?: 0)
+    }
+
+    fun profileDirectoryPage(
+        playlist: MusicPlaylist, cookie: String, hasVipAccess: Boolean, offset: Int = 0, resolveAccess: Boolean = true,
+    ): PlaylistTrackPage {
         val dirId = playlist.remoteId().removePrefix(PROFILE_DIRECTORY_PREFIX)
         val values = cookie.cookieValues()
         val uin = values["euin"].orEmpty().ifBlank {
@@ -93,8 +134,8 @@ internal class QqLibraryClient {
             "miniportal" to "1",
             "fromDir2Diss" to "1",
             "mobile" to "1",
-            "from" to "0",
-            "to" to "500",
+            "from" to offset.toString(),
+            "to" to (offset + PLAYLIST_TRACK_PAGE_SIZE - 1).toString(),
             "format" to "json",
             "g_tk" to "5381",
         ).asQuery()
@@ -103,20 +144,22 @@ internal class QqLibraryClient {
         val tracks = response.optJSONArray("SongList").qqLibraryObjects { item ->
             profileDirectoryTrack(item, hasVipAccess)
         }
-        return playlist.copy(
+        val detail = playlist.copy(
             title = response.optString("Title").ifBlank { playlist.title },
             subtitle = response.optString("NickName").ifBlank { playlist.subtitle },
             description = response.optString("Desc").ifBlank { playlist.description },
             count = response.optInt("SongCount").takeIf { it > 0 }
                 ?: response.optInt("TotalSongNum").takeIf { it > 0 }
                 ?: tracks.size,
-            tracks = QqTrackAccessResolver().resolve(tracks, cookie),
+            tracks = if (resolveAccess) QqTrackAccessResolver().resolve(tracks, cookie) else tracks,
             artworkUrl = qqPlaylistDetailArtwork(
                 playlist.artworkUrl,
                 response.qqCoverUrl(),
                 tracks.isNotEmpty(),
             ),
         )
+        return PlaylistTrackPage(detail, nextPlaylistTrackCursor(offset,
+            response.optJSONArray("SongList")?.length() ?: 0, detail.count))
     }
 
     private fun createdPlaylist(item: JSONObject, userId: String): MusicPlaylist {

@@ -67,7 +67,7 @@ internal fun String.requiredKugouSession(): KugouSession {
 }
 
 internal fun MusicTrack.kugouHashFor(quality: AudioQuality): String? = when (quality) {
-    AudioQuality.STANDARD -> qualityIds[AudioQuality.STANDARD] ?: remoteId()
+    AudioQuality.STANDARD -> qualityIds[AudioQuality.STANDARD] ?: remoteId().takeIf { qualityIds.isEmpty() }
     AudioQuality.HIGHER -> null
     else -> qualityIds[quality]
 }?.takeIf(String::isNotBlank)
@@ -95,11 +95,24 @@ internal fun JSONObject.pickKugouUrl(): String {
         names.forEach { name -> addAll(values(opt(name))) }
         optJSONObject("data")?.let { data -> names.forEach { name -> addAll(values(data.opt(name))) } }
     }
-    return pickKugouHttpsPlaybackUrl(candidates)
+    return pickKugouPlaybackUrl(candidates)
 }
 
-internal fun pickKugouHttpsPlaybackUrl(candidates: List<String>): String =
-    candidates.firstNotNullOfOrNull(String::toKugouHttpsPlaybackUrlOrNull).orEmpty()
+internal fun pickKugouPlaybackUrl(candidates: List<String>): String =
+    // 优先使用明确的 HTTPS 地址；旧多级媒体域名保留原协议，避免强制升级后证书不匹配。
+    candidates.firstNotNullOfOrNull { value ->
+        value.trim().replace("\\/", "/").takeIf { it.startsWith("https://", ignoreCase = true) }
+    } ?: candidates.firstNotNullOfOrNull(String::toKugouHttpsPlaybackUrlOrNull)
+        ?: candidates.firstNotNullOfOrNull { value ->
+            val normalized = value.trim().replace("\\/", "/")
+            val uri = runCatching { URI.create(normalized) }.getOrNull()
+            normalized.takeIf {
+                uri?.scheme.equals("http", ignoreCase = true) && uri?.host.orEmpty().isKugouMediaHost()
+            }
+        }.orEmpty()
+
+internal fun String.isKugouMediaHost(): Boolean =
+    equals("kugou.com", ignoreCase = true) || endsWith(".kugou.com", ignoreCase = true)
 
 internal fun String.toKugouHttpsPlaybackUrlOrNull(): String? {
     val normalized = trim().replace("\\/", "/")
@@ -131,6 +144,18 @@ internal fun kugouPcHeaders(): Map<String, String> = mapOf(
     "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Referer" to "https://www.kugou.com/",
 )
+
+/**
+ * 网关路由：路径首段带 `xxx.service` 的接口由网关按路径转发，再带 `x-router` 会被二次拼接服务前缀并返回 404；
+ * 没有服务前缀的接口（如 `/v4/delete_songs`）必须显式带上云歌单路由。
+ */
+internal fun kugouGatewayRouter(url: String): String? {
+    val path = url.substringAfter("gateway.kugou.com", url).substringBefore('?')
+    val first = path.trimStart('/').substringBefore('/')
+    return if (first.endsWith(".service")) null else KUGOU_CLOUD_LIST_ROUTER
+}
+
+internal const val KUGOU_CLOUD_LIST_ROUTER = "cloudlist.service.kugou.com"
 
 internal fun kugouAndroidHeaders(params: Map<String, String>, router: String?): Map<String, String> = buildMap {
     put("User-Agent", "Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi")

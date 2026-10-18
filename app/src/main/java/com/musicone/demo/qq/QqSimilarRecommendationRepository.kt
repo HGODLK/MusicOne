@@ -60,7 +60,7 @@ internal class QqSimilarRecommendationRepository(
                     val aliased = artworkAliases.apply(song.track)
                     val resolved = if (aliased.artworkUrl.isNullOrBlank()) {
                         artworkLimiter.withPermit {
-                            runCatching {
+                            runCatchingCancellable {
                                 api.resolveTrackArtwork(
                                     aliased,
                                     session.credential,

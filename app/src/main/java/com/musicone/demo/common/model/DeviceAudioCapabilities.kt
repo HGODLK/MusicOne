@@ -3,7 +3,7 @@ package com.musicone.demo
 import android.media.MediaCodecList
 
 internal data class DeviceAudioCapabilities(
-    val supportsDolbyAtmos: Boolean,
+    val supportsDolbyPlayback: Boolean,
 ) {
     companion object {
         fun detect(): DeviceAudioCapabilities = runCatching {
@@ -12,12 +12,10 @@ internal data class DeviceAudioCapabilities(
                 .filterNot { it.isEncoder }
                 .flatMap { it.supportedTypes.asSequence() }
                 .toList()
-            DeviceAudioCapabilities(supportsDolbyAtmos = decoderTypes.supportsDolbyAtmos())
-        }.getOrDefault(DeviceAudioCapabilities(supportsDolbyAtmos = false))
+            DeviceAudioCapabilities(supportsDolbyPlayback = decoderTypes.supportsDolbyPlayback())
+        }.getOrDefault(DeviceAudioCapabilities(supportsDolbyPlayback = false))
     }
 }
 
-internal fun Iterable<String>.supportsDolbyAtmos(): Boolean =
-    any { it.equals(DOLBY_ATMOS_MIME, ignoreCase = true) }
-
-private const val DOLBY_ATMOS_MIME = "audio/eac3-joc"
+/** Media3 允许 E-AC-3 解码器兼容 JOC 音源；可解码不代表当前输出已启用全景声。 */
+internal fun Iterable<String>.supportsDolbyPlayback(): Boolean = any(::isDolbyAudioMime)

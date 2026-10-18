@@ -28,4 +28,9 @@ data class UsbAudioStreamProfile(
     val endpointOutAddress: Int,
     val endpointFeedbackAddress: Int,
     val maxPacketSize: Int,
+    val packetsPerSecond: Int,
+    val busIntervalsPerSecond: Int,
+    val controlInterfaceId: Int,
+    val clockSourceId: Int,
+    val clockValidityReadable: Boolean,
 )

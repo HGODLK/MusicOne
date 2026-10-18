@@ -31,16 +31,28 @@ class RetainedPlaybackSessionTest {
         assertFalse(requireNotNull(store.restore(MusicSource.QQ, song.id, freshPage, false)).isPlaying)
     }
 
-    @Test fun staleOrDifferentPlatformStateCannotReplaceActualServiceTrack() {
+    @Test fun staleServiceTrackIsRejectedWhileBrowsingSourceDoesNotDiscardLivePlayback() {
         val store = RetainedPlaybackState()
         val song = track("qq-current")
         store.remember(MusicOneUiState(currentTrack = song), song.id)
         store.remember(MusicOneUiState(currentTrack = track("qq-loading")), song.id)
         assertEquals(song, store.restore(MusicSource.QQ, song.id, MusicOneUiState(), true)?.currentTrack)
-        assertNull(store.restore(MusicSource.NETEASE, song.id, MusicOneUiState(), true))
+        assertSame(song, store.restore(MusicSource.LOCAL, song.id, MusicOneUiState(), true)?.currentTrack)
+        assertSame(song, store.restore(MusicSource.NETEASE, song.id, MusicOneUiState(), true)?.currentTrack)
         assertNull(store.restore(MusicSource.QQ, null, MusicOneUiState(), true))
         assertNull(store.restore(MusicSource.QQ, "qq-next", MusicOneUiState(), true))
         store.clear()
         assertNull(store.restore(MusicSource.QQ, song.id, MusicOneUiState(), true))
+    }
+
+    @Test fun localBrowserRestoresBiliTrackAndEntireMixedQueue() {
+        val store = RetainedPlaybackState()
+        val song = track("bilibili-video-part").copy(source = MusicSource.BILIBILI)
+        val queue = listOf(song, track("local-file").copy(source = MusicSource.LOCAL), track("qq-next"))
+        store.remember(MusicOneUiState(currentTrack = song, queue = queue), song.id)
+        val restored = requireNotNull(store.restore(MusicSource.LOCAL, song.id, MusicOneUiState(), true))
+        assertSame(song, restored.currentTrack)
+        assertEquals(queue, restored.queue)
+        assertTrue(restored.isPlaying)
     }
 }

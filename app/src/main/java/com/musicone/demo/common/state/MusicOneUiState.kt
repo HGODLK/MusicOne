@@ -32,6 +32,7 @@ internal fun MusicOneUiState.forTrackTransition(
 ): MusicOneUiState = copy(
     currentTrack = track,
     queue = nextQueue,
+    queueOrder = queueOrder.afterTrackChange(track.id),
     isPlaying = playWhenReady,
     availableQualities = emptyList(),
     qualityLoading = false,

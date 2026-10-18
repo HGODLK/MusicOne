@@ -22,7 +22,7 @@ internal class KugouSmsLoginClient {
             .put("plat", 3)
         val response = postAndroid(SEND_CODE_API, body, deviceCookie)
         response.securityChallenge(response.cookie)?.let { throw PlatformSecurityVerificationRequired(it) }
-        response.body.requireKugouLoginSuccess("酷狗音乐验证码发送失败")
+        response.body.requireKugouSmsSuccess("酷狗音乐验证码发送失败", response.cookie)
         return KugouCaptchaResult(
             response.body.kugouLoginMessage().ifBlank { "验证码已发送" },
             response.cookie,
@@ -67,7 +67,7 @@ internal class KugouSmsLoginClient {
             .put("gitversion", "5f0b7c4")
         val response = postAndroid(LOGIN_API, body, stableCookie, loginRequest = true)
         response.securityChallenge(response.cookie)?.let { throw PlatformSecurityVerificationRequired(it) }
-        response.body.requireKugouLoginSuccess("酷狗音乐登录失败")
+        response.body.requireKugouSmsSuccess("酷狗音乐登录失败", response.cookie)
         val data = response.body.optJSONObject("data") ?: throw PlatformApiException("酷狗音乐没有返回登录结果")
         data.optString("secu_params").takeIf(String::isNotBlank)?.let { secureValue ->
             val decrypted = runCatching { KugouLoginCrypto.decryptCredential(secureValue, encrypted.key) }
@@ -124,7 +124,7 @@ internal class KugouSmsLoginClient {
             loginRequest = true,
             clientVersion = VERIFY_CLIENT_VERSION,
         )
-        response.body.requireKugouLoginSuccess("酷狗音乐安全验证失败")
+        response.body.requireKugouSmsSuccess("酷狗音乐安全验证失败", response.cookie)
         return response.cookie
     }
 
@@ -157,11 +157,23 @@ internal class KugouSmsLoginClient {
             headers,
         )
         val mergedCookie = (cookie.cookieValues() + response.cookies()).asCookieHeader()
-        return KugouLoginHttpResult(JSONObject(response.text), mergedCookie, response.headers)
+        val responseBody = JSONObject(response.text)
+        val stage = when (baseUrl) {
+            SEND_CODE_API -> "send_sms"
+            LOGIN_API -> "login_sms"
+            VERIFY_INFO_API -> "verify_info"
+            else -> "verify_user"
+        }
+        // 仅记录阶段和返回码，不记录手机号、验证码、Cookie 或响应正文。
+        android.util.Log.i("KugouLogin", "stage=$stage http=${response.status} " +
+            "status=${responseBody.optInt("status", -1)} " +
+            "code=${responseBody.optInt("error_code", responseBody.optInt("errcode", 0))}")
+        return KugouLoginHttpResult(responseBody, mergedCookie, response.headers)
     }
 
     private fun KugouLoginHttpResult.securityChallenge(deviceCookie: String): PlatformSecurityChallenge? {
         val errorCode = body.optInt("error_code", body.optInt("errcode", 0))
+        kugouAccountRecoveryChallengeForError(errorCode, deviceCookie)?.let { return it }
         val eventId = headers.entries.firstOrNull { it.key.equals("ssa-code", ignoreCase = true) }
             ?.value?.firstOrNull().orEmpty()
             .ifBlank { body.optString("ssaCode") }
@@ -187,7 +199,7 @@ internal class KugouSmsLoginClient {
             .put("sid", "")
             .put("edt", "")
         val infoResponse = postAndroid(VERIFY_INFO_API, infoBody, deviceCookie)
-        infoResponse.body.requireKugouLoginSuccess("酷狗音乐安全验证信息获取失败")
+        infoResponse.body.requireKugouSmsSuccess("酷狗音乐安全验证信息获取失败", infoResponse.cookie)
         val data = infoResponse.body.optJSONObject("data") ?: JSONObject()
         val verificationType = data.optInt("v_type", 23)
         val appId = data.opt("txappid")?.toString().orEmpty()
@@ -239,32 +251,7 @@ private fun normalizeKugouPhone(phone: String, countryCode: String): String {
     }
 }
 
-private fun kugouLoginDeviceCookie(existingCredential: String): String {
-    val required = listOf("KUGOU_API_GUID", "KUGOU_API_MID", "KUGOU_API_MAC", "KUGOU_API_DEV")
-    val existing = existingCredential.cookieValues()
-    val device = if (required.all { existing[it].isNullOrBlank().not() }) {
-        existing.filterKeys { it in required || it == "dfid" }
-    } else {
-        KugouProtocol.createDeviceCookie().cookieValues()
-    }.toMutableMap()
-    if (device["dfid"].isNullOrBlank()) device["dfid"] = KugouProtocol.randomDfid()
-    return device.asCookieHeader()
-}
-
 private fun String.kugouMaskedPhone(): String = "${take(2)}*****${takeLast(1)}"
-
-private fun JSONObject.requireKugouLoginSuccess(fallback: String) {
-    val status = optInt("status", 1)
-    val errorCode = optInt("error_code", optInt("errcode", 0))
-    if (status == 0 || errorCode != 0) {
-        val code = errorCode.takeIf { it != 0 }
-        throw PlatformApiException(kugouLoginMessage().ifBlank { code?.let { "$fallback（$it）" } ?: fallback }, code)
-    }
-}
-
-private fun JSONObject.kugouLoginMessage(): String = optString("error").ifBlank {
-    optString("message").ifBlank { optString("msg") }
-}
 
 private fun JSONObject.copyFrom(other: JSONObject) {
     other.keys().forEach { key -> put(key, other.opt(key)) }

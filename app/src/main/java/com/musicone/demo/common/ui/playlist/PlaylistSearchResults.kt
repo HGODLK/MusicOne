@@ -11,8 +11,11 @@ internal class PlaylistSearchResults(initial: List<MusicTrack>) {
     var targetIds by mutableStateOf<Set<String>>(initial.mapTo(mutableSetOf()) { it.id }); private set
     var animated by mutableStateOf(false); private set
     private val mountedIds = mutableSetOf<String>()
+    private var lastTracks = initial
 
     fun update(tracks: List<MusicTrack>, animate: Boolean) {
+        if (tracks === lastTracks && animate == animated) return
+        lastTracks = tracks
         animated = animate
         targetIds = tracks.mapTo(mutableSetOf()) { it.id }
         rows = mergePlaylistSearchRows(rows, tracks, if (animate) mountedIds else emptySet(), animate)

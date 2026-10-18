@@ -5,7 +5,7 @@ import org.json.JSONObject
 
 internal fun encodeCachedLyrics(lyrics: List<TimedLyric>): String = JSONObject()
     .put("version", CURRENT_LYRIC_PARSER_VERSION)
-    .put("format", if (lyrics.any { it.words.isNotEmpty() }) "QRC" else "LRC")
+    .put("format", if (lyrics.any { it.words.isNotEmpty() }) "WORD" else "LRC")
     .put("lines", JSONArray().apply {
         lyrics.forEach { line ->
             put(JSONObject().put("time", line.timeMs).put("text", line.text)

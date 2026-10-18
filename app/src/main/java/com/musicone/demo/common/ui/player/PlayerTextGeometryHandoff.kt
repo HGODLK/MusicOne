@@ -16,13 +16,24 @@ internal fun MusicTrack.playerTextIdentity() = PlayerTextIdentity(
 )
 
 internal data class PlayerTextFrame(val identity: PlayerTextIdentity, val size: IntSize)
-internal data class PlayerTextGeometry(val source: MotionAnchor, val target: MotionAnchor)
+internal data class PlayerTextGeometry(
+    val source: MotionAnchor,
+    val target: MotionAnchor,
+    private val capturedSource: MotionAnchor,
+    private val capturedTarget: MotionAnchor,
+) {
+    // 退场可先于重组开始，旧尺寸计算不能覆盖本次刚捕获的歌词页眉位置。
+    fun sourceFor(anchor: MotionAnchor): MotionAnchor = if (anchor == capturedSource) source else anchor
+    fun targetFor(anchor: MotionAnchor): MotionAnchor = if (anchor == capturedTarget) target else anchor
+}
 
 /** 仅更新文字尺寸，位置、字号及其余飞行锚点仍沿用当前页面事务。 */
 @Composable
 internal fun playerTextGeometry(motion: PageMotion, key: String, track: MusicTrack): PlayerTextGeometry? {
-    val source = motion.sourceSnapshot[key] ?: motion.sources[key] ?: return null
-    val target = motion.targetSnapshot[key] ?: motion.targets[key] ?: return null
+    val source = (if (motion.moving) motion.sourceSnapshot[key] else motion.sources[key])
+        ?: motion.sourceSnapshot[key] ?: return null
+    val target = (if (motion.moving) motion.targetSnapshot[key] else motion.targets[key])
+        ?: motion.targetSnapshot[key] ?: return null
     val handoff = LocalPlayerTextHandoff.current
     val identity = track.playerTextIdentity()
     val frame = handoff?.frames?.get(key)
@@ -58,5 +69,6 @@ internal fun playerTextGeometry(motion: PageMotion, key: String, track: MusicTra
         anchor.bounds.left + width.coerceAtLeast(1f) * anchor.contentScale,
         anchor.bounds.top + height.coerceAtLeast(1f) * anchor.contentScale,
     ))
-    return PlayerTextGeometry(sized(source, sourceWidth, sourceHeight), sized(target, targetWidth, targetHeight))
+    return PlayerTextGeometry(sized(source, sourceWidth, sourceHeight), sized(target, targetWidth, targetHeight),
+        source, target)
 }

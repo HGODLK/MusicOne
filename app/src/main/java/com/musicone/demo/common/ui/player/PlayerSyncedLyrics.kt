@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun PlayerSyncedLyrics(
+internal fun PlayerSyncedLyricsContent(
     track: MusicTrack,
     loadState: LyricLoadState,
     viewModel: MusicPlaybackRuntime,
@@ -28,6 +28,7 @@ internal fun PlayerSyncedLyrics(
     prepareWhileHidden: Boolean = false,
     revealTopLineBeforeEntrance: Boolean = false,
     limitTransitionHistory: Boolean = false,
+    residency: LyricResidency = LyricResidency.None,
     topExtensionPx: Int = 0,
     topBufferPx: Int = 0,
     exitProgress: () -> Float = { 1f },
@@ -40,7 +41,6 @@ internal fun PlayerSyncedLyrics(
     boundaryWindow: LyricBoundaryWindow? = null,
     trackTransitionDirection: TrackTransitionDirection = TrackTransitionDirection.NEXT,
     onWindowLayout: ((androidx.compose.foundation.lazy.LazyListLayoutInfo, LyricBlurProtection) -> Unit)? = null,
-    onOpeningFront: ((PhoneLyricsOpeningFront) -> Unit)? = null,
 ) {
     val request by rememberLyricPresentationRequest(
         track, loadState, trackTransitionDirection, viewModel.rapidTrackSwitch, viewModel.state,
@@ -218,7 +218,6 @@ internal fun PlayerSyncedLyrics(
                 val settled by remember(window, motion) {
                     derivedStateOf { motion.settledAt(window.slot) }
                 }
-                val windowProgress = remember(window) { { window.playback.positionMs } }
                 val windowSeeking = remember(window, old, matchesPlayback, preview) {
                     { preview.value != null && !old && matchesPlayback }
                 }
@@ -226,12 +225,16 @@ internal fun PlayerSyncedLyrics(
                     playbackProgress.value.generation == window.playback.generation && !old && matchesPlayback &&
                     rapid == null && !window.playback.intermediateCommitPending && !window.playback.intermediatePositionOwned
                 val latestAdvancing by rememberUpdatedState(advancing)
-                val wordClock = rememberContinuousLyricClock(
+                val continuousPlayback = (active || residency.keepRefreshing) && !old && !windowPreparing && settled
+                val playbackClock = rememberContinuousLyricClock(
                     { window.playback.wordSnapshot(playbackProgress.value, if (old) null else preview.value).positionMs },
                     { window.playback.wordSnapshot(playbackProgress.value, if (old) null else preview.value).sampledAtMs },
                     { latestAdvancing }, windowSeeking, shown.durationMs,
-                    active && !old && !windowPreparing && settled && ExperiencePreferences.options.verbatimLyricAnimation &&
-                        shown.lyrics.any { it.words.isNotEmpty() })
+                    continuousPlayback)
+                // 整行与逐字共用同一采样基准，换句不再等待下一次整秒轮询。
+                val windowProgress = remember(window, playbackClock, continuousPlayback) {
+                    { if (continuousPlayback) playbackClock() else window.playback.positionMs }
+                }
                 ImmersiveLyrics(
                     shown,
                     windowProgress,
@@ -246,7 +249,14 @@ internal fun PlayerSyncedLyrics(
                         travelPx = { travelPx }),
                     active = active && !old && matchesPlayback && !windowPreparing && settled,
                     followPlayback = followPlayback && !old && matchesPlayback && !windowPreparing && settled && !held.active,
-                    verbatimProgressMs = wordClock,
+                    verbatimProgressMs = if (residency.pauseWords) null else playbackClock,
+                    onRetryLyrics = viewModel::retryLyrics,
+                    tapFocusProgressMs = {
+                        val snapshot = viewModel.playbackProgress.value
+                        continuousLyricPosition(snapshot.positionMs, snapshot.sampledAtMs,
+                            android.os.SystemClock.elapsedRealtime(), latestAdvancing, windowSeeking(), shown.durationMs)
+                    },
+                    residency = if (!old && matchesPlayback && !windowPreparing && settled) residency else LyricResidency.None,
                     onReady = if (!old && preparing) { {
                         if (stageRole() == LyricWindowStageRole.CURRENT && preparing && !held.active) {
                             window.ready.complete(Unit)
@@ -286,13 +296,6 @@ internal fun PlayerSyncedLyrics(
                             if (stageRole() == LyricWindowStageRole.CURRENT && !held.active) {
                                 onWindowLayout(layout,
                                     if (preparing || !settled || outgoing.isNotEmpty()) LyricBlurProtection.HANDOFF else protection)
-                            }
-                        }
-                    } else null,
-                    onOpeningFront = if (!old && matchesPlayback && !held.active && !preparing && onOpeningFront != null) {
-                        { front ->
-                            if (stageRole() == LyricWindowStageRole.CURRENT && !held.active && !preparing) {
-                                onOpeningFront(front)
                             }
                         }
                     } else null,

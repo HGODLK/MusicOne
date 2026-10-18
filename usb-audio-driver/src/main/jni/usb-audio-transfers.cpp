@@ -24,10 +24,11 @@ bool submitFeedbackUrb(UsbAudioContext *ctx) {
     u->flags = USBDEVFS_URB_ISO_ASAP;
     u->endpoint = static_cast<unsigned char>(ctx->endpointFeedback);
     u->buffer = ctx->feedbackBuffer;
-    u->buffer_length = 4;
+    u->buffer_length = ctx->feedbackBytes;
     u->number_of_packets = 1;
-    u->iso_frame_desc[0].length = 4;
+    u->iso_frame_desc[0].length = ctx->feedbackBytes;
     ctx->feedbackInFlight = ioctl(ctx->fd, USBDEVFS_SUBMITURB, u) == 0;
+    if (!ctx->feedbackInFlight) ctx->failed = true;
     return ctx->feedbackInFlight;
 }
 
@@ -42,13 +43,14 @@ static int reapOne(UsbAudioContext *ctx, bool cancelling) {
     if (urb == ctx->feedbackUrb) {
         ctx->feedbackInFlight = false;
         if (!cancelling && urb->status == 0 && urb->iso_frame_desc[0].status == 0 &&
-            urb->iso_frame_desc[0].actual_length >= 4) {
+            urb->iso_frame_desc[0].actual_length >= ctx->feedbackBytes) {
             auto *fb = ctx->feedbackBuffer;
             const uint32_t raw = uint32_t(fb[0]) | (uint32_t(fb[1]) << 8) |
-                (uint32_t(fb[2]) << 16) | (uint32_t(fb[3]) << 24);
-            const double rate = raw / 65536.0;
-            const double nominal = ctx->sampleRate / 8000.0;
-            if (rate > nominal * 0.99 && rate < nominal * 1.01) ctx->calibratedFpmf = rate;
+                (uint32_t(fb[2]) << 16) | (ctx->feedbackBytes == 4 ? uint32_t(fb[3]) << 24 : 0);
+            const double rate = raw / static_cast<double>(1 << ctx->feedbackFractionBits);
+            const double nominal = static_cast<double>(ctx->sampleRate) / ctx->busIntervalsPerSecond;
+            if (rate > nominal * 0.99 && rate < nominal * 1.01)
+                ctx->calibratedFpmf = rate * ctx->busIntervalsPerSecond / ctx->packetsPerSecond;
         }
         if (!cancelling && ctx->running.load()) submitFeedbackUrb(ctx);
         return 1;
@@ -108,6 +110,13 @@ static bool waitForSlot(UsbAudioContext *ctx) {
 }
 
 static bool submitAudio(UsbAudioContext *ctx, const uint8_t *data, const int *sizes, int packets, int length) {
+    if (length > USB_AUDIO_URB_BUFFER_SIZE || packets > USB_AUDIO_PACKETS_PER_URB) {
+        ctx->failed = true;
+        return false;
+    }
+    for (int i = 0; i < packets; ++i) {
+        if (sizes[i] > ctx->maxPacketSize) { ctx->failed = true; return false; }
+    }
     if (!waitForSlot(ctx)) return false;
     const int index = ctx->transfers.freeSlot();
     auto &slot = ctx->ring[index];
@@ -148,9 +157,9 @@ void submitPcmToUrbs(UsbAudioContext *ctx, const uint8_t *pcmData, int totalByte
         int sizes[USB_AUDIO_PACKETS_PER_URB];
         double phase = ctx->frameAccumulator;
         int length = planUsbPcmPackets(dataLen - offset, ctx->bytesPerFrame, ctx->calibratedFpmf,
-            USB_AUDIO_PACKETS_PER_URB, ctx->frameAccumulator, sizes, phase);
+            ctx->packetsPerUrb, ctx->frameAccumulator, sizes, phase);
         if (length <= 0) break;
-        if (!submitAudio(ctx, data + offset, sizes, USB_AUDIO_PACKETS_PER_URB, length)) return;
+        if (!submitAudio(ctx, data + offset, sizes, ctx->packetsPerUrb, length)) return;
         ctx->frameAccumulator = phase;
         offset += length;
     }
@@ -167,7 +176,7 @@ bool finishUsbTransfers(UsbAudioContext *ctx) {
         int sizes[USB_AUDIO_PACKETS_PER_URB];
         double phase = ctx->frameAccumulator;
         const int packets = planUsbPcmTail(ctx->residualBytes, ctx->bytesPerFrame,
-            ctx->calibratedFpmf, USB_AUDIO_PACKETS_PER_URB, phase, sizes);
+            ctx->calibratedFpmf, ctx->packetsPerUrb, phase, sizes);
         if (packets <= 0) { ctx->failed = true; return false; }
         if (!submitAudio(ctx, ctx->residualBuffer, sizes, packets, ctx->residualBytes)) return false;
         ctx->residualBytes = 0;

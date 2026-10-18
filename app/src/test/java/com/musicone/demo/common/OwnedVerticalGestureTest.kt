@@ -16,6 +16,20 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class OwnedVerticalGestureTest {
+    @Test fun restoringControlsKeepsDraggingPastTheArrowRemovalThreshold() {
+        val down = change(0L, 0f, 0L, 0f, true)
+        var progress = 1f
+        val result = events(change(20L, -50f, 0L, 0f, true),
+            change(40L, -100f, 20L, -50f, true),
+            change(60L, -150f, 40L, -100f, false)).runGesture {
+            awaitOwnedVerticalGesture(down, tracker(down), GestureReleaseVelocity(0L),
+                begin = { it < 0f }, move = { progress += it / 200f })
+        }
+        assertEquals(VerticalGestureEnd(true, 60L), result)
+        assertEquals(.29f, progress, .001f)
+        assertFalse(playerControlsShouldHide(progress, 0f, true, -150f))
+    }
+
     @Test fun liftHookDoesNotMoveThePictureBackBeforeForwardSettlement() {
         val down = change(0L, 0f, 0L, 0f, true)
         val release = GestureReleaseVelocity(0L, stablePlayerSettlement = true)
@@ -74,7 +88,7 @@ class OwnedVerticalGestureTest {
         assertEquals(VerticalGestureEnd(true, 40L), result)
         assertEquals(16f, moves.sum(), .001f)
         assertEquals(24f, release.effectiveDistancePx, .001f)
-        assertTrue(shouldDismissPlayer(.98f, release.released(40L, 0f, true), true,
+        assertFalse(shouldDismissPlayer(.98f, release.released(40L, 0f, true), true,
             release.effectiveDistancePx))
     }
 

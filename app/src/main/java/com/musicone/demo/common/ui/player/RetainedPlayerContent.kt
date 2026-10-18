@@ -46,6 +46,7 @@ internal fun RetainedPlayerContent(
         LocalPlayerVisible provides visible,
         LocalPlayerPrewarming provides prewarming,
         LocalLyricRenderWarmup provides lyricWarmup,
+        LocalPlayerResourcePreparationAllowed provides retention.allowed,
     ) {
         Layout(
             content = content,
