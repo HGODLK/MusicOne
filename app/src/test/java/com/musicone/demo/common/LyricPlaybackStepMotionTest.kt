@@ -36,6 +36,9 @@ class LyricPlaybackStepMotionTest {
         assertEquals(170f, lyricPlaybackRowStiffness(1), 0f)
         assertEquals(140f, lyricPlaybackRowStiffness(2), 0f)
         assertEquals(115f, lyricPlaybackRowStiffness(3), 0f)
+        assertEquals(100f, lyricPlaybackRowStiffness(4), 0f)
+        assertEquals(90f, lyricPlaybackRowStiffness(5), 0f)
+        assertEquals(90f, lyricPlaybackRowStiffness(6), 0f)
     }
 
     @Test fun naturalEntryHandsItsOffsetsOverWithoutResettingFocus() = checkMotion {

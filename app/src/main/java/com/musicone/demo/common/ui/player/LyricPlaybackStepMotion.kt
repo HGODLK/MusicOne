@@ -305,5 +305,7 @@ internal fun lyricPlaybackRowStiffness(relative: Int): Float = when {
     relative <= 0 -> 200f
     relative == 1 -> 170f
     relative == 2 -> 140f
-    else -> 115f
+    relative == 3 -> 115f
+    relative == 4 -> 100f
+    else -> 90f
 }
