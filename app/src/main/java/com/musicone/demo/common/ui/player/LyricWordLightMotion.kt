@@ -22,6 +22,13 @@ internal class LyricWordLightMotion {
     private var initialized = false
     private var drawRevision by mutableIntStateOf(0)
     internal val renderRevision: Int get() = drawRevision
+    internal var lightTimeNanos = 0L; private set
+    internal val immediateLight: Boolean get() = !animate
+    private var lightDeadlineNanos: Long? = null
+
+    internal fun scheduleLightSample(deadline: Long) {
+        lightDeadlineNanos = minOf(lightDeadlineNanos ?: deadline, deadline)
+    }
     private var tailIndex = -1
     private var tailDeadlineMs = 0L
     val finishingTail: Boolean get() = tailIndex >= 0
@@ -68,6 +75,7 @@ internal class LyricWordLightMotion {
     fun observedPosition(): Long? = if (observesClock) progressMs?.invoke() else null
 
     val running: Boolean get() {
+        if (lightDeadlineNanos != null) return true
         if (moving(strength, if (enabled) 1f else 0f) ||
             moving(scaleStrength, if (focused) 1f else 0f)) return true
         val position = observedPosition() ?: return false
@@ -76,13 +84,16 @@ internal class LyricWordLightMotion {
     }
 
     fun advance(seconds: Float, finish: Boolean = false) {
+        lightTimeNanos += (seconds.coerceAtLeast(0f) * 1_000_000_000L).toLong()
+        val lightDue = lightDeadlineNanos?.let { lightTimeNanos >= it || finish || !animate } == true
+        if (lightDue) lightDeadlineNanos = null
         val position = progressMs?.invoke() ?: 0L
         val snap = finish || !animate
         if (finishingTail && (snap || position >= tailDeadlineMs ||
             (position >= (ranges[tailIndex].word?.endMs ?: 0L) && !moving(samples[tailIndex], 1f)))) cancelTail()
         val nextStrength = follow(strength, if (enabled) 1f else 0f, seconds, snap)
         val nextScale = follow(scaleStrength, if (focused) 1f else 0f, seconds, snap)
-        var changed = strength.position != nextStrength.position || scaleStrength.position != nextScale.position
+        var changed = lightDue || strength.position != nextStrength.position || scaleStrength.position != nextScale.position
         strength = nextStrength
         scaleStrength = nextScale
         samples = samples.mapIndexed { index, sample ->
@@ -114,10 +125,14 @@ internal class LyricWordLightMotion {
         return strength.position > 0f || scaleStrength.position > 0f
     }
 
-    fun alpha(index: Int): Float {
+    fun alpha(index: Int, horizontalFraction: Float = .5f): Float {
         drawRevision
         if (ranges[index].word == null) return 1f
-        return 1f - .2f * (1f - samples[index].position) * strength.position
+        val progress = samples[index].position
+        // 整词同时提亮，左侧稍早、右侧稍晚；首尾一致，不形成硬边扫光。
+        val stagger = if (animate) .4f * progress * (1f - progress) *
+            (1f - 2f * horizontalFraction.coerceIn(0f, 1f)) else 0f
+        return 1f - .2f * (1f - progress - stagger) * strength.position
     }
 
     fun scale(index: Int): Float {

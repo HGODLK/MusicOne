@@ -154,6 +154,7 @@ internal fun hiResCodecMaxInputSize(sampleMimeType: String?, defaultMaxInputSize
     }
 
 /** 使用提取器报告的有效位深，避免把解码器的 32-bit PCM 容器误当成源文件位深。 */
+@OptIn(UnstableApi::class)
 internal fun sourceAudioBitDepth(format: Format?): Int {
     val label = format?.label
     if (label != null && label.startsWith("effective-depth:")) {

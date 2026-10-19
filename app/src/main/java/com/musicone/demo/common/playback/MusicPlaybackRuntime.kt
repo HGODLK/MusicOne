@@ -107,8 +107,7 @@ class MusicPlaybackRuntime(private val application: Application) {
             }
             val causeType = generateSequence<Throwable>(error) { it.cause }.last()::class.java.simpleName
             Log.w("MusicPlayback", "Media3 播放失败：errorCode=${error.errorCode}，cause=$causeType")
-            if (playWhenReadyRequested && failureRecovery.mayRenew(
-                    track, error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS)) {
+            if (playWhenReadyRequested && failureRecovery.mayRenew(track)) {
                 startTrack(track.copy(previewUrl = ""), _state.value.queue, currentPlaybackPosition(), preserveQqRadio = _state.value.qqRadioActive)
                 return
             }

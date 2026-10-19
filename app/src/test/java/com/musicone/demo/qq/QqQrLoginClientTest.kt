@@ -27,10 +27,14 @@ class QqQrLoginClientTest {
             when (calls.size) {
                 1 -> PlatformHttpResponse(200, png, mapOf("Set-Cookie" to listOf("qrsig=session; Path=/")))
                 2 -> response("ptuiCB('0','0','https://ssl.ptlogin2.qq.com/check_sig?uin=123456&ptsigx=ticket&s_url=next','0','登录成功','昵称');")
-                3 -> response(headers = mapOf("Set-Cookie" to listOf("p_skey=qq-ticket; Domain=graph.qq.com", "p_uin=o123456")))
-                4 -> response(headers = mapOf("location" to listOf("https://y.qq.com/portal/wx_redirect.html?login_type=1&code=auth-code&state=state")))
-                5 -> credential()
-                else -> error("请求次数异常")
+                3 -> response(headers = mapOf(
+                    "Set-Cookie" to listOf("p_skey=qq-ticket; Domain=graph.qq.com", "p_uin=o123456", "p_skey=; Domain=qq.com; Path=/; Max-Age=0"),
+                    "Location" to listOf("https://graph.qq.com/oauth2.0/login_jump")
+                ))
+                4 -> response("login jump ok")
+                5 -> response(headers = mapOf("Location" to listOf("https://y.qq.com/portal/wx_redirect.html?login_type=1&code=auth-code&state=${req.form?.get("state").orEmpty()}")))
+                6 -> credential()
+                else -> error("请求次数异常: ${calls.size}")
             }
         }
         val qr = api.createQrCode(PlatformLoginMethod.QR_CODE, "device")
@@ -49,17 +53,20 @@ class QqQrLoginClientTest {
         assertFalse(values.containsKey("qrsig"))
         assertFalse(values.containsKey("p_skey"))
         assertEquals("qrsig=session", calls[1].cookie)
-        assertEquals("qq-ticket", calls[3].cookie.cookieValues()["p_skey"])
-        assertEquals(qqQrToken("qq-ticket", 5381).toString(), calls[3].form!!["g_tk"])
-        assertFalse(calls[3].followRedirects)
-        val body = JSONObject(calls[4].json!!)
+        assertEquals("https://ssl.ptlogin2.qq.com/check_sig?uin=123456&ptsigx=ticket&s_url=next", calls[2].url)
+        assertEquals("qrsig=session", calls[2].cookie)
+        assertEquals("https://graph.qq.com/oauth2.0/login_jump", calls[3].url)
+        assertEquals("qq-ticket", calls[4].cookie.cookieValues()["p_skey"])
+        assertEquals(qqQrToken("qq-ticket", 5381).toString(), calls[4].form!!["g_tk"])
+        assertFalse(calls[4].followRedirects)
+        val body = JSONObject(calls[5].json!!)
         assertEquals("QQConnectLogin.LoginServer", body.getJSONObject("qrLogin").getString("module"))
         assertEquals("QQLogin", body.getJSONObject("qrLogin").getString("method"))
         assertEquals("auth-code", body.getJSONObject("qrLogin").getJSONObject("param").getString("code"))
-        assertEquals(2, body.getJSONObject("comm").getInt("tmeLoginType"))
-        assertEquals("device", body.getJSONObject("comm").getString("OpenUDID"))
-        assertFalse(body.getJSONObject("comm").has("tmeLoginMethod"))
-        assertEquals("", calls[4].cookie)
+        assertEquals(24, body.getJSONObject("comm").getInt("ct"))
+        assertEquals("yqq", body.getJSONObject("comm").getString("platform"))
+        assertEquals(5381, body.getJSONObject("comm").getInt("g_tk"))
+        assertEquals("", calls[5].cookie)
     }
 
     @Test

@@ -2,7 +2,6 @@ package com.musicone.demo
 
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.URI
 
 internal fun JSONObject.toMusicAccount(): MusicAccount {
     val profile = optJSONObject("profile") ?: throw NeteaseApiException("网易云登录状态已失效", 301)
@@ -226,13 +225,12 @@ private fun artworkColors(key: String): Pair<Long, Long> {
 
 internal fun String.asNeteaseHttpsUrl(): String = trim().replaceFirst(Regex("^http://", RegexOption.IGNORE_CASE), "https://")
 
-internal fun String.asNeteasePlaybackUrl(): String? {
-    val value = trim()
-    val uri = runCatching { URI(value) }.getOrNull() ?: return null
-    return value.takeIf {
-        uri.isAbsolute && !uri.host.isNullOrBlank() &&
-            (uri.scheme.equals("http", ignoreCase = true) || uri.scheme.equals("https", ignoreCase = true))
-    }
+/** 清理触发 CDN 403 鉴权失败（X-AUTH-MSG: auth failed - origin failed）的失效 authSecret 参数。 */
+internal fun String.asNeteasePlaybackUrl(): String {
+    val https = asNeteaseHttpsUrl()
+    return https.replace(Regex("([?&])authSecret=[^&]+(&|$)")) { match ->
+        if (match.groupValues[1] == "?" && match.groupValues[2] == "&") "?" else if (match.groupValues[2] == "&") "&" else ""
+    }.trimEnd('&', '?')
 }
 
 internal fun parseLrc(value: String): List<TimedLyric> {

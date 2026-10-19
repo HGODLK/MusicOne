@@ -1,11 +1,14 @@
 package com.musicone.demo
 
+import androidx.annotation.OptIn
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.audio.AudioSink
 
 /** 输出设备错误单独交接，不进入歌曲换票或跳过流程。 */
 internal class UsbOutputException(cause: Throwable) : IllegalStateException("USB 音频输出已中断", cause)
 
+@OptIn(UnstableApi::class)
 internal fun isUsbOutputFailure(
     error: Throwable,
     exclusiveEnabled: Boolean,

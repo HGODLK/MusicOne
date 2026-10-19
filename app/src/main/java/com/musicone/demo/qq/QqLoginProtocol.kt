@@ -1,5 +1,6 @@
 package com.musicone.demo
 
+import android.util.Log
 import org.json.JSONObject
 
 /** 短信、扫码换票与续期共用稳定的 Android 设备上下文。 */
@@ -39,21 +40,33 @@ internal class QqQrCredentialClient(
 ) {
     fun authorize(method: PlatformLoginMethod, code: String, deviceId: String, verificationCredential: String = ""): QqSmsLoginResult {
         val wechat = method == PlatformLoginMethod.WECHAT_QR_CODE
+        val comm = if (wechat) {
+            qqAndroidLoginComm(deviceId, true).also { it.remove("tmeLoginMethod") }
+                .put("tmeLoginType", 1)
+        } else {
+            // QQ 扫码通过 QQConnect Web 端 OAuth 换票，信封对齐 yqq 网页端规范
+            JSONObject()
+                .put("g_tk", 5381)
+                .put("platform", "yqq")
+                .put("ct", 24)
+                .put("cv", 0)
+        }
         val body = JSONObject()
-            .put("comm", qqAndroidLoginComm(deviceId, true).also { it.remove("tmeLoginMethod") }
-                .put("tmeLoginType", if (wechat) 1 else 2))
+            .put("comm", comm)
             .put("qrLogin", JSONObject()
                 .put("module", if (wechat) "music.login.LoginServer" else "QQConnectLogin.LoginServer")
                 .put("method", if (wechat) "Login" else "QQLogin")
                 .put("param", JSONObject().put("code", code).also {
                     if (wechat) it.put("strAppid", "wx48db31d50e334801")
                 }))
+        Log.w("QqQrLogin", "开始换票: body=${body.toString().take(200)}")
         val raw = request(QqQrHttpRequest(
             url = "https://u.y.qq.com/cgi-bin/musicu.fcg",
             json = body.toString(),
             cookie = verificationCredential,
             headers = mapOf("User-Agent" to "QQMusic 14090008(android 14)", "Referer" to "https://y.qq.com/"),
         ))
+        Log.w("QqQrLogin", "换票返回: status=${raw.status}, text=${raw.text.take(300)}")
         val root = JSONObject(raw.text)
         if (root.optInt("code", -1) != 0) throw qqLoginError(root, "QQ 音乐扫码登录失败", "登录信息已过期，请刷新二维码")
         val result = root.optJSONObject("qrLogin") ?: throw PlatformApiException("QQ 音乐没有返回扫码登录结果")

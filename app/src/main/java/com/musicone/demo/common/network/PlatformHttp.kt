@@ -21,8 +21,19 @@ internal data class PlatformHttpResponse(
         headers.entries.filter { it.key.equals("Set-Cookie", ignoreCase = true) }
             .flatMap { it.value }
             .forEach { header ->
+                val isExpired = header.contains("Max-Age=0", ignoreCase = true) ||
+                    header.contains("expires=Thu, 01 Jan 1970", ignoreCase = true) ||
+                    header.contains("expires=Thu, 01-Jan-1970", ignoreCase = true)
                 val pair = header.substringBefore(';').split('=', limit = 2)
-                if (pair.size == 2 && pair[0].isNotBlank()) put(pair[0].trim(), pair[1].trim())
+                if (pair.size == 2 && pair[0].isNotBlank()) {
+                    val key = pair[0].trim()
+                    val value = pair[1].trim()
+                    if (value.isNotBlank() && !isExpired) {
+                        put(key, value)
+                    } else if (!containsKey(key)) {
+                        put(key, value)
+                    }
+                }
             }
     }
 }

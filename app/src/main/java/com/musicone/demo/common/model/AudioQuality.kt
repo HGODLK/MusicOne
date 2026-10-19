@@ -21,6 +21,8 @@ enum class AudioQuality(
         listOf(DOLBY, HI_RES, STANDARD).filter { it.ordinal <= ordinal }
     } else if (source == MusicSource.QQ) {
         QQ_AUDIO_QUALITIES.filter { it.ordinal <= ordinal }.sortedByDescending(AudioQuality::ordinal)
+    } else if (source == MusicSource.NETEASE) {
+        NETEASE_AUDIO_QUALITIES.filter { it.ordinal <= ordinal }.sortedByDescending(AudioQuality::ordinal)
     } else {
         fallbackCandidates()
     }
@@ -60,6 +62,13 @@ internal val QQ_AUDIO_QUALITIES = listOf(
     AudioQuality.DOLBY,
 )
 
+internal val NETEASE_AUDIO_QUALITIES = listOf(
+    AudioQuality.STANDARD,
+    AudioQuality.EXHIGH,
+    AudioQuality.LOSSLESS,
+    AudioQuality.HI_RES,
+)
+
 internal val STANDARD_AUDIO_QUALITIES = AudioQuality.entries.filter { it != AudioQuality.DOLBY }
 
 internal val PLAYER_AUDIO_QUALITIES = listOf(
@@ -89,6 +98,7 @@ internal fun verifiedPlayerQualities(
 
 internal fun playerDisplayedQuality(preferred: AudioQuality, actual: AudioQuality): AudioQuality = when {
     actual == AudioQuality.HIGHER -> AudioQuality.EXHIGH
+    preferred == AudioQuality.LOSSLESS && actual == AudioQuality.HI_RES -> AudioQuality.LOSSLESS
     else -> actual
 }
 

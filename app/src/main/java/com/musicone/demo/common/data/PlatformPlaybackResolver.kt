@@ -159,7 +159,7 @@ internal class PlatformPlaybackResolver(
         if (source.trial) {
             throw PlatformApiException("当前歌曲只返回${quality.displayLabel(track.source)}试听音源")
         }
-        if (source.actualQuality != quality) {
+        if (source.actualQuality != quality && (track.source != MusicSource.NETEASE || !isNeteaseQualitySatisfied(quality, source.actualQuality))) {
             throw PlatformApiException("平台未返回${quality.displayLabel(track.source)}完整音源")
         }
         offline.remember(ResolvedPlayback(track.copy(previewUrl = source.url), source))
@@ -338,7 +338,9 @@ private class NeteasePlaybackAdapter(
     }
 
     override suspend fun availableQualities(track: MusicTrack, onProgress: (List<AudioQuality>) -> Unit): List<AudioQuality> = withContext(Dispatchers.IO) {
-        probeAvailableQualities { quality -> api.playbackSource(track.remoteId(), cookie(), quality) }
+        probeNeteaseAvailableQualities(onProgress = onProgress) { quality ->
+            api.playbackSource(track.remoteId(), cookie(), quality)
+        }
     }
 
     override suspend fun lyrics(track: MusicTrack): List<TimedLyric> = withContext(Dispatchers.IO) {
@@ -346,21 +348,38 @@ private class NeteasePlaybackAdapter(
     }
 }
 
-private suspend fun probeAvailableQualities(
-    candidates: List<AudioQuality> = STANDARD_AUDIO_QUALITIES,
+/** 网易云四档音质（MP3L、MP3H、FLAC、HiRes）探测，高规格 FLAC 流可同时确立普通 FLAC 与 HiRes 档位。 */
+internal suspend fun probeNeteaseAvailableQualities(
+    candidates: List<AudioQuality> = NETEASE_AUDIO_QUALITIES,
+    onProgress: (List<AudioQuality>) -> Unit = {},
     resolve: suspend (AudioQuality) -> PlaybackSource,
 ): List<AudioQuality> = supervisorScope {
+    val verified = mutableSetOf<AudioQuality>()
+    val progressLock = Any()
     candidates.map { quality ->
         async {
             try {
                 val source = resolve(quality)
-                quality.takeIf { source.actualQuality == quality && !source.trial }
+                if (!source.trial && isNeteaseQualitySatisfied(quality, source.actualQuality)) {
+                    synchronized(progressLock) {
+                        verified += quality
+                        onProgress(candidates.filter { it in verified })
+                    }
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
                 if (error.stopsPlaybackFallback()) throw error
-                null
             }
         }
-    }.awaitAll().filterNotNull()
+    }.awaitAll()
+    candidates.filter { it in verified }
+}
+
+internal fun isNeteaseQualitySatisfied(requested: AudioQuality, actual: AudioQuality): Boolean = when (requested) {
+    AudioQuality.STANDARD -> actual == AudioQuality.STANDARD
+    AudioQuality.HIGHER, AudioQuality.EXHIGH -> actual in setOf(AudioQuality.HIGHER, AudioQuality.EXHIGH)
+    AudioQuality.LOSSLESS -> actual in setOf(AudioQuality.LOSSLESS, AudioQuality.HI_RES)
+    AudioQuality.HI_RES -> actual == AudioQuality.HI_RES
+    else -> actual == requested
 }

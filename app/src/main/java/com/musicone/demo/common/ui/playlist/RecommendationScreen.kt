@@ -58,7 +58,7 @@ internal fun RecommendationScreen(
     val menuAwareBack = { if (menu?.expanded == true) menu.back() else onBack() }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = usesTabletLandscape(maxWidth, maxHeight)
-        val tablet = playlist.source == MusicSource.QQ && maxWidth >= 600.dp
+        val tablet = maxWidth >= 600.dp
         val density = LocalDensity.current
         val coverHeight = if (usePageBackground) 112.dp else maxWidth
         val coverModifier = Modifier.fillMaxWidth().then(

@@ -1,5 +1,6 @@
 package com.musicone.demo
 
+import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -35,6 +36,7 @@ internal class PlatformQrLoginController(
                 throw cancelled
             } catch (error: Throwable) {
                 currentCoroutineContext().ensureActive()
+                Log.e("PlatformQrLogin", "扫码创建失败: source=$source, method=$method, msg=${error.message}", error)
                 if (generation == ticket && !onSecurity(error, false)) {
                     onChanged(PlatformQrLoginStatus.FAILED, error.asUserMessage(), null)
                 }
@@ -90,6 +92,7 @@ internal class PlatformQrLoginController(
                 throw cancelled
             } catch (error: Throwable) {
                 currentCoroutineContext().ensureActive()
+                Log.e("PlatformQrLogin", "扫码轮询失败: source=${challenge.source}, method=${challenge.loginMethod}, msg=${error.message}", error)
                 if (generation == ticket && !onSecurity(error, true)) {
                     onChanged(PlatformQrLoginStatus.FAILED, error.asUserMessage(), null)
                 }

@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.layer.CompositingStrategy
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
@@ -31,9 +32,36 @@ private class LyricWordRenderPart(
     val bounds: Rect,
     val baseline: Float,
     val textRange: TextRange,
+    val lightStart: Float,
+    val lightEnd: Float,
 )
 
-private class LyricWordRenderNode(val rangeIndex: Int, val layer: GraphicsLayer)
+private class LyricWordRenderNode(
+    val rangeIndex: Int,
+    val layer: GraphicsLayer,
+    private val lightStart: Float,
+    private val lightEnd: Float,
+    private val record: (Float, Float) -> Unit,
+) {
+    private val lightSampler = LyricWordLightSampler()
+    private val scaleSampler = LyricWordLightSampler(lowerEndpoint = .985f)
+
+    fun update(motion: LyricWordLightMotion) {
+        // 横纵使用同一比例，整体放大原字形，不拉伸或压扁字体。
+        val scale = motion.scale(rangeIndex)
+        scaleSampler.update(motion.lightTimeNanos, scale, scale, motion.immediateLight) { value, _ ->
+            layer.scaleX = value
+            layer.scaleY = value
+        }?.let(motion::scheduleLightSample)
+        val left = motion.alpha(rangeIndex, lightStart)
+        val right = motion.alpha(rangeIndex, lightEnd)
+        lightSampler.update(motion.lightTimeNanos, left, right, motion.immediateLight) { first, last ->
+            val uniform = first == last
+            record(if (uniform) 1f else first, if (uniform) 1f else last)
+            layer.alpha = if (uniform) first else 1f
+        }?.let(motion::scheduleLightSample)
+    }
+}
 
 private class DynamicLyricWordRenderScene(
     val layer: GraphicsLayer,
@@ -44,12 +72,7 @@ private class DynamicLyricWordRenderScene(
 
     fun update(motion: LyricWordLightMotion, revision: Int) {
         if (lastMotion === motion && lastRevision == revision) return
-        words.forEach { word ->
-            val scale = motion.scale(word.rangeIndex)
-            word.layer.scaleX = scale
-            word.layer.scaleY = scale
-            word.layer.alpha = motion.alpha(word.rangeIndex)
-        }
+        words.forEach { it.update(motion) }
         lastMotion = motion
         lastRevision = revision
     }
@@ -70,7 +93,7 @@ private fun DrawScope.drawClippedLyricRaster(
     }
 }
 
-/** 字形和裁剪只录制一次；词段属性更新仍使用原逐字时钟。 */
+/** 保留原字形缩放与裁剪；词级缩放和渐亮最高 60fps，其他动效不受影响。 */
 internal class LyricWordRenderScene private constructor(
     private val staticLayer: GraphicsLayer,
     private val prepareDynamic: () -> DynamicLyricWordRenderScene,
@@ -139,13 +162,28 @@ internal class LyricWordRenderScene private constructor(
                         // 每个节点只有一次图像绘制，保持原画笔透明度语义，不增加词段离屏缓冲。
                         compositingStrategy = CompositingStrategy.ModulateAlpha
                     }
-                    word.record(recordingDensity, recordingDirection, IntSize(width, height)) {
-                        if (wordInk != null) drawIntoCanvas { it.drawImage(wordInk, Offset.Zero, paint) }
-                        else translate(left = -left.toFloat(), top = -top.toFloat()) {
-                            drawClippedLyricRaster(bitmap, origin, paint, part.path)
+                    val light = LyricWordLightDrawing(wordInk ?: bitmap,
+                        if (wordInk != null) Offset.Zero else Offset(origin.x - left, origin.y - top))
+                    val recordWord: (Float, Float) -> Unit = { leftAlpha, rightAlpha ->
+                        word.record(recordingDensity, recordingDirection, IntSize(width, height)) {
+                            if (leftAlpha == rightAlpha) {
+                                if (wordInk != null) drawIntoCanvas { it.drawImage(wordInk, Offset.Zero, paint) }
+                                else translate(left = -left.toFloat(), top = -top.toFloat()) {
+                                    drawClippedLyricRaster(bitmap, origin, paint, part.path)
+                                }
+                            } else if (wordInk != null) {
+                                light.draw(this, part.bounds.left - left, part.bounds.right - left, leftAlpha, rightAlpha)
+                            } else translate(left = -left.toFloat(), top = -top.toFloat()) {
+                                clipPath(part.path) {
+                                    translate(left = left.toFloat(), top = top.toFloat()) {
+                                        light.draw(this, part.bounds.left - left, part.bounds.right - left, leftAlpha, rightAlpha)
+                                    }
+                                }
+                            }
                         }
                     }
-                    LyricWordRenderNode(part.rangeIndex, word)
+                    recordWord(1f, 1f)
+                    LyricWordRenderNode(part.rangeIndex, word, part.lightStart, part.lightEnd, recordWord)
                 }
                 val scene = obtainGraphicsLayer()
                 scene.record(recordingDensity, recordingDirection, textSize) {
@@ -168,7 +206,7 @@ private fun lyricWordRenderParts(layout: TextLayoutResult,
         val start = range.start.coerceIn(0, textLength)
         val end = range.end.coerceIn(start, textLength)
         if (start >= end) emptyList() else {
-            (layout.getLineForOffset(start)..layout.getLineForOffset(end - 1)).mapNotNull { line ->
+            val segments = (layout.getLineForOffset(start)..layout.getLineForOffset(end - 1)).mapNotNull { line ->
                 val partStart = maxOf(start, layout.getLineStart(line))
                 val partEnd = minOf(end, layout.getLineEnd(line))
                 if (partStart >= partEnd) null else {
@@ -176,9 +214,18 @@ private fun lyricWordRenderParts(layout: TextLayoutResult,
                     val bounds = path.getBounds()
                     if (bounds.isEmpty) null else {
                         coverage.addPath(path)
-                        LyricWordRenderPart(index, path, bounds, layout.getLineBaseline(line), TextRange(partStart, partEnd))
+                        LyricWordRenderPart(index, path, bounds, layout.getLineBaseline(line), TextRange(partStart, partEnd), 0f, 1f)
                     }
                 }
+            }
+            // 跨行词段延续同一提亮进度，第二行不从词首重新开始。
+            val totalWidth = segments.sumOf { it.bounds.width.toDouble() }.toFloat().coerceAtLeast(1f)
+            var offset = 0f
+            segments.map { part ->
+                val lightStart = offset / totalWidth
+                offset += part.bounds.width
+                LyricWordRenderPart(part.rangeIndex, part.path, part.bounds, part.baseline,
+                    part.textRange, lightStart, offset / totalWidth)
             }
         }
     }

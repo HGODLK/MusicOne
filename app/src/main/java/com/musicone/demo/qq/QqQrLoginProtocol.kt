@@ -23,13 +23,18 @@ internal fun qqQrQuery(url: String): Map<String, String> = URI(url).rawQuery.orE
     if (pair.size != 2) null else URLDecoder.decode(pair[0], "UTF-8") to URLDecoder.decode(pair[1], "UTF-8")
 }.toMap()
 
-internal fun qqQrAuthorizationCode(location: String): String {
+internal fun qqQrAuthorizationCode(location: String, expectedState: String = ""): String {
     val uri = runCatching { URI(location) }.getOrNull()
     if (uri?.scheme != "https" || uri.host != "y.qq.com" || uri.path != "/portal/wx_redirect.html" ||
         uri.userInfo != null || uri.port !in listOf(-1, 443)) {
         throw PlatformApiException("QQ 授权跳转异常，请刷新二维码")
     }
-    return qqQrQuery(location)["code"]?.takeIf(String::isNotBlank)
+    val query = qqQrQuery(location)
+    val state = query["state"].orEmpty()
+    if (expectedState.isNotBlank() && state.isNotBlank() && state != expectedState) {
+        throw PlatformApiException("QQ 授权状态校验失败，请刷新二维码")
+    }
+    return query["code"]?.takeIf(String::isNotBlank)
         ?: throw PlatformApiException("QQ 授权未返回登录凭据，请刷新二维码")
 }
 

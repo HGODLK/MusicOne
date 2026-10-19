@@ -10,6 +10,55 @@ import org.junit.Test
 class LyricWordLightMotionTest {
     private val ranges = listOf(LyricHighlightRange(0, 1, LyricWord(100, 400, "光")))
 
+    @Test fun wordBrightensEverywhereWithLeftLeadingAndMatchingEndpoints() {
+        var position = 0L
+        val motion = LyricWordLightMotion()
+        motion.configure(ranges, { position }, true, true, true)
+        var previousLeft = .8f
+        var previousRight = .8f
+        for (time in 0L..500L step 10L) {
+            position = time
+            motion.advance(.01f, finish = true)
+            val left = motion.alpha(0, 0f)
+            val right = motion.alpha(0, 1f)
+            assertTrue(left in .8f..1f && right in .8f..1f)
+            assertTrue(left >= right)
+            assertTrue(left >= previousLeft && right >= previousRight)
+            assertEquals(motion.alpha(0), (left + right) / 2f, .00001f)
+            if (time in 110L..390L) assertTrue(left > right)
+            if (time <= 100L || time >= 400L) assertEquals(left, right, 0f)
+            previousLeft = left
+            previousRight = right
+        }
+    }
+
+    @Test fun backwardSeekKeepsSpatialLightContinuousAndDisablingClearsIt() {
+        var position = 250L
+        val motion = LyricWordLightMotion()
+        motion.configure(ranges, { position }, true, true, true)
+        val left = motion.alpha(0, 0f)
+        val right = motion.alpha(0, 1f)
+        position = 0L
+        assertEquals(left, motion.alpha(0, 0f), 0f)
+        assertEquals(right, motion.alpha(0, 1f), 0f)
+        motion.advance(1f / 60)
+        assertTrue(motion.alpha(0, 0f) < left)
+        assertTrue(motion.alpha(0, 1f) < right)
+        motion.configure(ranges, { position }, false, false, true)
+        repeat(120) { motion.advance(1f / 60) }
+        assertEquals(1f, motion.alpha(0, 0f), 0f)
+        assertEquals(1f, motion.alpha(0, 1f), 0f)
+    }
+
+    @Test fun reducedMotionAndUntimedTextKeepUniformBrightness() {
+        val motion = LyricWordLightMotion()
+        motion.configure(ranges, { 250L }, true, true, false)
+        assertEquals(motion.alpha(0, 0f), motion.alpha(0, 1f), 0f)
+        motion.configure(listOf(LyricHighlightRange(0, 1, null)), { 250L }, true, true, true)
+        assertEquals(1f, motion.alpha(0, 0f), 0f)
+        assertEquals(1f, motion.alpha(0, 1f), 0f)
+    }
+
     @Test fun skippedWordSoftensAndConvergesWithoutReplayingOtherWords() {
         var position = 0L
         val motion = LyricWordLightMotion()

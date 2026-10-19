@@ -1,6 +1,5 @@
 package com.musicone.demo
 
-import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -239,31 +238,33 @@ internal class NeteaseApiClient(
     fun playbackSource(trackId: String, cookie: String, quality: AudioQuality): PlaybackSource {
         requireNumericId(trackId, "歌曲")
         var accountFailure: Exception? = null
+        val targetBitrate = neteaseQualityBitrate(quality)
+
+        // 备选实现：网易云新版 EAPI (/v1) 接口，若未来网易云正式摈弃旧接口可快速取消注释切回
+        /*
         if (cookie.isNotBlank()) {
             val payload = JSONObject()
                 .put("ids", JSONArray().put(trackId.toLong()))
                 .put("level", quality.providerLevel)
                 .put("encodeType", if (quality >= AudioQuality.LOSSLESS) "flac" else "aac")
-            try {
-                return postEapi(
-                    PLAYBACK_EAPI,
-                    payload,
-                    cookie,
-                    "播放地址获取失败",
-                    profile = NeteaseRequestProfile.ANDROID,
-                ).toPlaybackSource(quality)
-            }
+            try { return postEapi(PLAYBACK_EAPI, payload, cookie, "播放地址获取失败").toPlaybackSource(quality) }
             catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (error: Exception) {
-                accountFailure = error
-                Log.w(NETEASE_PLAYBACK_LOG_TAG,
-                    "取源失败 song=$trackId requested=${quality.providerLevel} type=${error.javaClass.simpleName} " +
-                        "code=${(error as? NeteaseApiException)?.apiCode ?: "none"}")
-            }
+            catch (error: Exception) { accountFailure = error }
+        }
+        */
+
+        // 当前主力实现：网易云标准码率梯队通道（128k/320k/350k/999k），精准区分 16位普通FLAC 与 24位HiRes
+        if (cookie.isNotBlank()) {
+            val payload = JSONObject()
+                .put("ids", JSONArray().put(trackId.toLong()))
+                .put("br", targetBitrate)
+            try { return postEapi(PLAYBACK_LEGACY_EAPI, payload, cookie, "播放地址获取失败").toPlaybackSource(quality) }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) { accountFailure = error }
         }
         if (quality > AudioQuality.EXHIGH) throw (accountFailure ?: PlatformApiException("当前账号无法播放${quality.label}"))
         val ids = JSONArray().put(trackId.toLong()).toString().formEncoded()
-        val response = getJson("$PLAYBACK_API?ids=$ids&br=${quality.bitRate}", cookie)
+        val response = getJson("$PLAYBACK_API?ids=$ids&br=$targetBitrate", cookie)
         response.requireSuccess("播放地址获取失败")
         return try { response.toPlaybackSource(quality) }
         catch (error: PlatformApiException) {
@@ -298,17 +299,11 @@ internal class NeteaseApiClient(
         return response.parseSongDetails(hasVipAccess)
     }
 
-    private fun postEapi(
-        url: String,
-        payload: JSONObject,
-        cookie: String,
-        fallback: String,
-        profile: NeteaseRequestProfile = NeteaseRequestProfile.PC,
-    ): JSONObject {
-        payload.put("header", neteaseRequestHeader(cookie, deviceId(), profile))
+    private fun postEapi(url: String, payload: JSONObject, cookie: String, fallback: String): JSONObject {
+        payload.put("header", neteaseRequestHeader(cookie, deviceId()))
         val params = NeteaseCrypto.encryptEapi(url, payload.toString())
         val response = postForm(url, mapOf("params" to params), cookie,
-            headers = mapOf("User-Agent" to neteaseUserAgent(profile))).body
+            headers = mapOf("User-Agent" to NETEASE_PC_USER_AGENT)).body
         response.requireSuccess(fallback)
         return response
     }
@@ -406,6 +401,7 @@ internal class NeteaseApiClient(
         private const val PLAYLIST_API = "https://music.163.com/api/v6/playlist/detail"
         private const val DETAIL_API = "https://music.163.com/api/song/detail"
         private const val PLAYBACK_API = "https://music.163.com/api/song/enhance/player/url"
+        private const val PLAYBACK_LEGACY_EAPI = "https://interface.music.163.com/eapi/song/enhance/player/url"
         private const val PLAYBACK_EAPI = "https://interface3.music.163.com/eapi/song/enhance/player/url/v1"
         private const val LIKE_EAPI = "https://interface3.music.163.com/eapi/song/like"
         private const val LYRIC_API = "https://music.163.com/api/song/lyric"

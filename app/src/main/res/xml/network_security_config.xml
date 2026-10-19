@@ -1,11 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
-    <!-- 酷狗部分旧媒体地址仍返回 HTTP，按平台域名定向兼容。 -->
+    <!-- 酷狗与网易云部分旧媒体地址仍返回 HTTP，按平台域名定向兼容。 -->
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">kugou.com</domain>
-    </domain-config>
-    <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">music.163.com</domain>
         <domain includeSubdomains="true">music.126.net</domain>
     </domain-config>

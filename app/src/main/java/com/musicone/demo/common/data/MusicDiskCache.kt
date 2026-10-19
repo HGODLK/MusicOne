@@ -50,7 +50,13 @@ internal class MusicDiskCache private constructor(private val context: Context) 
         override fun onSpanAdded(cache: Cache, span: CacheSpan) {
             // 回调持有 Media3 的锁，不能反向获取本类锁；已提交字节从预留量转入真实占用。
             audioBytes.getOrPut(span.key) { AtomicLong() }.addAndGet(span.length)
-            reserved[span.key]?.updateAndGet { (it - span.length).coerceAtLeast(0) }
+            reserved[span.key]?.let { atomic ->
+                while (true) {
+                    val current = atomic.get()
+                    val next = (current - span.length).coerceAtLeast(0)
+                    if (atomic.compareAndSet(current, next)) break
+                }
+            }
             audioChanged()
         }
         override fun onSpanRemoved(cache: Cache, span: CacheSpan) {
