@@ -6,6 +6,10 @@ internal data class PlatformQrChallenge(
     val url: String = "",
     val imageBase64: String = "",
     val credentialSeed: String = "",
+    val loginMethod: PlatformLoginMethod = PlatformLoginMethod.QR_CODE,
+    val deviceId: String = "",
+    val scanMessage: String = "",
+    val verificationCredential: String = "",
 )
 
 internal data class PlatformQrResult(
@@ -27,7 +31,7 @@ internal data class PlatformSmsLoginResult(
 
 internal interface PlatformAuthAdapter {
     val source: MusicSource
-    fun createQrCode(): PlatformQrChallenge
+    fun createQrCode(method: PlatformLoginMethod, deviceId: String): PlatformQrChallenge
     fun checkQrCode(challenge: PlatformQrChallenge): PlatformQrResult
     fun prepareCaptchaCredential(session: PlatformSession, credentialSeed: String): String = credentialSeed
     fun sendCaptcha(
@@ -59,7 +63,11 @@ internal class PlatformAuthRepository {
 
     fun supports(source: MusicSource): Boolean = adapters.containsKey(source)
 
-    fun createQrCode(source: MusicSource): PlatformQrChallenge = adapter(source).createQrCode()
+    fun createQrCode(
+        source: MusicSource,
+        method: PlatformLoginMethod = PlatformLoginMethod.QR_CODE,
+        deviceId: String = "",
+    ): PlatformQrChallenge = adapter(source).createQrCode(method, deviceId)
 
     fun checkQrCode(challenge: PlatformQrChallenge): PlatformQrResult = adapter(challenge.source).checkQrCode(challenge)
 
@@ -109,7 +117,7 @@ private class KugouAuthAdapter(
     override fun prepareCaptchaCredential(session: PlatformSession, credentialSeed: String): String =
         kugouLoginDeviceCookie(credentialSeed.ifBlank { session.credential })
 
-    override fun createQrCode(): PlatformQrChallenge = api.createQrCode().let {
+    override fun createQrCode(method: PlatformLoginMethod, deviceId: String): PlatformQrChallenge = api.createQrCode().let {
         PlatformQrChallenge(source, it.key, url = it.url, credentialSeed = it.deviceCookie)
     }
 
@@ -152,7 +160,7 @@ private class KugouAuthAdapter(
 private class NeteaseAuthAdapter(private val api: NeteaseApiClient) : PlatformAuthAdapter {
     override val source = MusicSource.NETEASE
 
-    override fun createQrCode(): PlatformQrChallenge = api.createQrCode().let {
+    override fun createQrCode(method: PlatformLoginMethod, deviceId: String): PlatformQrChallenge = api.createQrCode().let {
         PlatformQrChallenge(source, it.key, url = it.url, credentialSeed = it.cookie)
     }
 
@@ -186,43 +194,6 @@ private class NeteaseAuthAdapter(private val api: NeteaseApiClient) : PlatformAu
         session.deviceId,
         credentialSeed,
     ).let { PlatformSmsLoginResult(it.cookie, it.account) }
-
-    override fun account(credential: String): MusicAccount = api.account(credential)
-}
-
-private class QqAuthAdapter(
-    private val api: QqApiClient,
-    private val sms: QqSmsLoginClient = QqSmsLoginClient(),
-) : PlatformAuthAdapter {
-    override val source = MusicSource.QQ
-
-    override fun createQrCode(): PlatformQrChallenge =
-        throw PlatformApiException("QQ 音乐仅支持短信验证码登录")
-
-    override fun checkQrCode(challenge: PlatformQrChallenge): PlatformQrResult =
-        throw PlatformApiException("QQ 音乐仅支持短信验证码登录")
-
-    override fun sendCaptcha(
-        phone: String,
-        countryCode: String,
-        session: PlatformSession,
-        credentialSeed: String,
-    ): PlatformCaptchaChallenge = sms.sendCaptcha(
-        phone,
-        countryCode,
-        session.deviceId,
-        mergePlatformCredentials(session.credential, credentialSeed),
-    ).let { PlatformCaptchaChallenge(it.message, it.cookie) }
-
-    override fun loginByCaptcha(
-        phone: String,
-        countryCode: String,
-        captcha: String,
-        session: PlatformSession,
-        credentialSeed: String,
-    ): PlatformSmsLoginResult = sms.loginByCaptcha(phone, captcha, session.deviceId, credentialSeed).let { result ->
-        PlatformSmsLoginResult(result.cookie, runCatchingCancellable { api.account(result.cookie) }.getOrDefault(result.account))
-    }
 
     override fun account(credential: String): MusicAccount = api.account(credential)
 }

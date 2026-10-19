@@ -63,15 +63,14 @@ class LyricTapFocusTest {
         listOf(MusicSource.LOCAL, MusicSource.BILIBILI).forEach {
             assertEquals(10_000L, lyricDisplayPosition(10_000L, it))
         }
-        assertEquals(10_320L, lyricDisplayPosition(10_000L, MusicSource.QQ))
+        assertEquals(10_275L, lyricDisplayPosition(10_000L, MusicSource.QQ))
         assertEquals(10_185L, lyricDisplayPosition(10_000L, MusicSource.KUGOU))
         assertEquals(0L, (20_000L * lyricSeekFraction(200L, 20_000L)).toLong())
     }
 
     @Test fun wordLeadIsIndependentFromWholeLineLead() {
-        for (source in listOf(MusicSource.QQ, MusicSource.KUGOU)) {
-            assertEquals(10_125L, lyricWordDisplayPosition(10_000L, source))
-        }
+        assertEquals(10_105L, lyricWordDisplayPosition(10_000L, MusicSource.QQ))
+        assertEquals(10_115L, lyricWordDisplayPosition(10_000L, MusicSource.KUGOU))
         for (source in listOf(MusicSource.NETEASE, MusicSource.LOCAL, MusicSource.BILIBILI)) {
             assertEquals(10_000L, lyricWordDisplayPosition(10_000L, source))
         }

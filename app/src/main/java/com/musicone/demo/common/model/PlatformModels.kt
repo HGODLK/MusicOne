@@ -18,7 +18,7 @@ internal enum class SessionStatus {
     CONNECTED,
 }
 
-internal enum class PlatformLoginMethod { QR_CODE, SMS }
+internal enum class PlatformLoginMethod { QR_CODE, WECHAT_QR_CODE, SMS }
 
 internal enum class PlatformQrLoginStatus { IDLE, LOADING, WAITING_SCAN, WAITING_CONFIRM, EXPIRED, SUCCESS, FAILED }
 

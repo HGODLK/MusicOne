@@ -20,11 +20,18 @@ internal fun CacheSongRow(track: MusicTrack, state: MusicCacheState, onPlay: (Mu
     onCache: (MusicTrack) -> Unit, onDelete: (MusicTrack) -> Unit, currentTrackId: String?, playing: Boolean) {
     val menu = LocalPlaybackSettingsMenu.current
     val status = state.statuses[track.cacheIdentity()].orEmpty()
+    val audio = state.audioDetails[track.cacheIdentity()]
+    val detail = if (audio == null) status else {
+        val qualities = audio.qualities.map { it.displayLabel(track.source) } + if (audio.hasUnknownQuality) listOf("音质未知") else emptyList()
+        val size = if (audio.bytes >= 1_048_576L) cacheSizeLabel(audio.bytes)
+            else if (audio.bytes >= 1024L) "%.1f KB".format(audio.bytes / 1024.0) else "${audio.bytes} B"
+        listOf(qualities.joinToString(" / "), size, status).filter(String::isNotBlank).joinToString(" · ")
+    }
     val reason = state.blocked[track.cacheIdentity()]
     PlaylistTrackRow(track, current = currentTrackId == track.id, playing = currentTrackId == track.id && playing,
         favorite = false, pendingRemoval = false, onClick = { onPlay(track) }, onFavorite = {}, modifier = Modifier.fillMaxWidth(),
         supportingContent = {
-            Text(status, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Text(detail, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.heightIn(min = 18.dp))
         }, onMore = { bounds ->
             menu?.open(track.title, bounds.center, listOf(

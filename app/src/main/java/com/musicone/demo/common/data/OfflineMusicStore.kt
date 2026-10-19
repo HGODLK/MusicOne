@@ -96,15 +96,18 @@ internal class OfflineMusicStore(private val context: Context) {
     /** 管理页一次扫描共享索引，不能为每一行反复解析整份离线元数据。 */
     fun snapshot(): OfflineCacheSnapshot {
         val cache = MusicDiskCache.get(context).audio
-        val keys = cache.keys.filterTo(hashSetOf()) { cache.getCachedSpans(it).isNotEmpty() }
+        val bytes = cache.keys.associateWith { key -> cache.getCachedSpans(key).sumOf { it.length } }.filterValues { it > 0 }
+        val keys = bytes.keys
         val cached = hashSetOf<String>()
         val complete = hashSetOf<String>()
+        val audio = mutableListOf<CachedAudioResource>()
         val rows = records().map { (reference, row) -> physical(reference, row) to row } + supplemental.cacheRecords()
         rows.forEach { (key, row) ->
             if (key !in keys) return@forEach
             val source = MusicSource.entries.firstOrNull { it.name == row.optString("source") } ?: MusicSource.QQ
             val identity = cacheTrackIdentity(source, row.optString("id"))
             cached += identity
+            audio += CachedAudioResource(key, identity, offlineRecordQuality(key, row), bytes.getValue(key))
             val length = ContentMetadata.getContentLength(cache.getContentMetadata(key))
             if (!row.optBoolean("pending") && !row.optBoolean("trial") && length > 0 && cache.isCached(key, 0, length)) complete += identity
         }
@@ -114,10 +117,11 @@ internal class OfflineMusicStore(private val context: Context) {
             val source = MusicSource.entries.firstOrNull { it.name == key.substringBefore(':') } ?: return@forEach
             val identity = cacheTrackIdentity(source, key.substringAfter('|').substringBefore('|'))
             cached += identity
+            audio += CachedAudioResource(key, identity, offlineRecordQuality(key, null), bytes.getValue(key))
             val length = ContentMetadata.getContentLength(cache.getContentMetadata(key))
             if (length > 0 && cache.isCached(key, 0, length)) complete += identity
         }
-        return OfflineCacheSnapshot(cached, complete)
+        return OfflineCacheSnapshot(cached, complete, cachedAudioDetails(audio))
     }
 
     suspend fun resolve(track: MusicTrack, preferred: AudioQuality, allowOtherQuality: Boolean): ResolvedPlayback? = withContext(Dispatchers.IO) {
@@ -156,4 +160,8 @@ internal class OfflineMusicStore(private val context: Context) {
     }
 }
 
-internal data class OfflineCacheSnapshot(val cached: Set<String>, val complete: Set<String>)
+internal data class OfflineCacheSnapshot(
+    val cached: Set<String>,
+    val complete: Set<String>,
+    val audioDetails: Map<String, CachedAudioDetails> = emptyMap(),
+)

@@ -138,29 +138,6 @@ internal class QqSmsLoginClient {
         return QqLoginResponse(responseBody, mergePlatformCredentials(cookie, raw.cookies().asCookieHeader()))
     }
 
-    private fun qqAndroidLoginComm(deviceId: String, login: Boolean): JSONObject {
-        val stableId = deviceId.filter(Char::isLetterOrDigit).take(32).ifBlank { "musiconeandroidclient" }
-        return JSONObject()
-            .put("ct", 11)
-            .put("cv", 14090008)
-            .put("v", 14090008)
-            .put("chid", "10003505")
-            .put("tmeAppID", "qqmusic")
-            .put("tmeLoginMethod", 3)
-            .put("QIMEI", "")
-            .put("QIMEI36", "")
-            .put("OpenUDID", stableId)
-            .put("OpenUDID2", stableId)
-            .put("udid", stableId)
-            .put("aid", stableId)
-            .put("os_ver", "14")
-            .put("phonetype", "MusicOne")
-            .put("devicelevel", "34")
-            .put("newdevicelevel", "34")
-            .put("rom", "MusicOne")
-            .also { if (login) it.put("tmeLoginType", 0) }
-    }
-
     companion object {
         private const val MUSIC_U_API = "https://u.y.qq.com/cgi-bin/musicu.fcg"
     }
@@ -218,7 +195,7 @@ internal fun JSONObject.toQqSmsLoginResult(baseCookie: String): QqSmsLoginResult
     return QqSmsLoginResult(cookie, MusicAccount(MusicSource.QQ, userId, nickname, avatar))
 }
 
-private fun JSONObject.throwIfQqSecurityVerificationRequired(cookie: String) {
+internal fun JSONObject.throwIfQqSecurityVerificationRequired(cookie: String) {
     val code = optInt("code", 0)
     val securityUrl = optJSONObject("data")?.optString("securityURL").orEmpty()
         .ifBlank { optJSONObject("data")?.optString("securityUrl").orEmpty() }
@@ -236,10 +213,14 @@ private fun JSONObject.throwIfQqSecurityVerificationRequired(cookie: String) {
     }
 }
 
-private fun qqLoginError(response: JSONObject, fallback: String): PlatformApiException {
+internal fun qqLoginError(
+    response: JSONObject,
+    fallback: String,
+    expiredMessage: String = "登录信息已过期，请重新获取验证码",
+): PlatformApiException {
     val code = response.optInt("code", -1)
     val known = when (code) {
-        1000, 104400, 104401 -> "登录信息已过期，请重新获取验证码"
+        1000, 104400, 104401 -> expiredMessage
         20261 -> "登录参数错误"
         20271 -> "验证码错误"
         20272 -> "账号绑定异常"

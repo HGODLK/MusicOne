@@ -22,12 +22,27 @@ internal class PlatformSettingsViewModel(application: Application) : AndroidView
     private val validationJobs = mutableMapOf<MusicSource, Job>()
     private var lastQqValidationMs = 0L
     private var pendingCaptchaCredential = ""
-    private var pendingQrChallenge: PlatformQrChallenge? = null
     private var pendingSecurityChallenge: PlatformSecurityChallenge? = null
     private var pendingSecurityAction: SecurityRetryAction? = null
-    private var qrLoginJob: Job? = null
     private val _state = MutableStateFlow(saved.initialUiState())
     val state: StateFlow<PlatformSettingsUiState> = _state.asStateFlow()
+
+    private val qrLogin = PlatformQrLoginController(
+        scope = viewModelScope,
+        create = { source, method, deviceId -> withContext(Dispatchers.IO) { auth.createQrCode(source, method, deviceId) } },
+        check = { challenge -> withContext(Dispatchers.IO) { auth.checkQrCode(challenge) } },
+        onChanged = { status, message, challenge ->
+            _state.update { it.copy(qrStatus = status, qrMessage = message,
+                qrUrl = challenge?.url.orEmpty(), qrImageBase64 = challenge?.imageBase64.orEmpty()) }
+        },
+        onSuccess = ::onLoginSuccess,
+        onSecurity = { error, checking ->
+            // QQ/微信换票的授权码是一次性的，完成安全验证后重新生成二维码。
+            showSecurityVerification(error, if (checking && _state.value.loginSource != MusicSource.QQ) {
+                SecurityRetryAction.CHECK_QR
+            } else SecurityRetryAction.START_QR)
+        },
+    )
 
     init {
         val session = saved.session(saved.selectedSource)
@@ -112,55 +127,23 @@ internal class PlatformSettingsViewModel(application: Application) : AndroidView
     }
 
     fun selectLoginMethod(method: PlatformLoginMethod) {
-        if (_state.value.loginSource == MusicSource.QQ && method == PlatformLoginMethod.QR_CODE) return
-        if (_state.value.loginMethod == method) return
-        if (method == PlatformLoginMethod.SMS) qrLoginJob?.cancel()
-        _state.update { it.copy(loginMethod = method, message = null) }
-        if (method == PlatformLoginMethod.QR_CODE) startQrLogin()
+        if (method == PlatformLoginMethod.WECHAT_QR_CODE && _state.value.loginSource != MusicSource.QQ) return
+        if (_state.value.loginMethod == method || _state.value.working) return
+        stopQrLogin()
+        clearSecurityVerification()
+        _state.update { it.copy(loginMethod = method, message = null, securityVerification = null) }
+        if (method != PlatformLoginMethod.SMS) startQrLogin()
     }
 
     fun startQrLogin() {
-        if (_state.value.loginSource == MusicSource.QQ) {
-            _state.update { it.copy(loginMethod = PlatformLoginMethod.SMS, message = "QQ 音乐仅支持短信验证码登录") }
-            return
-        }
-        if (qrLoginJob?.isActive == true) return
-        qrLoginJob = viewModelScope.launch {
-            val source = _state.value.loginSource
-            _state.update {
-                it.copy(
-                    qrStatus = PlatformQrLoginStatus.LOADING,
-                    qrUrl = "",
-                    qrImageBase64 = "",
-                    qrMessage = null,
-                    message = null,
-                )
-            }
-            val challenge = try {
-                withContext(Dispatchers.IO) { auth.createQrCode(source) }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                if (showSecurityVerification(error, SecurityRetryAction.START_QR)) return@launch
-                _state.update { it.copy(qrStatus = PlatformQrLoginStatus.FAILED, qrMessage = error.asUserMessage()) }
-                return@launch
-            }
-            pendingQrChallenge = challenge
-            _state.update {
-                it.copy(
-                    qrUrl = challenge.url,
-                    qrImageBase64 = challenge.imageBase64,
-                    qrStatus = PlatformQrLoginStatus.WAITING_SCAN,
-                    qrMessage = "请使用${source.scanAppName()}扫码",
-                )
-            }
-            pollQrLogin()
-        }
+        val snapshot = _state.value
+        if (snapshot.loginMethod == PlatformLoginMethod.SMS || snapshot.working) return
+        qrLogin.start(snapshot.loginSource, snapshot.loginMethod, preferences.readSession(snapshot.loginSource).deviceId)
     }
 
     fun stopQrLogin() {
-        qrLoginJob?.cancel()
-        qrLoginJob = null
+        qrLogin.stop()
+        _state.update { it.copy(qrStatus = PlatformQrLoginStatus.IDLE, qrUrl = "", qrImageBase64 = "", qrMessage = null) }
     }
 
     fun sendCaptcha() {
@@ -273,17 +256,17 @@ internal class PlatformSettingsViewModel(application: Application) : AndroidView
                 when (action) {
                     SecurityRetryAction.SEND_CAPTCHA, SecurityRetryAction.LOGIN ->
                         pendingCaptchaCredential = mergePlatformCredentials(pendingCaptchaCredential, credential)
-                    SecurityRetryAction.CHECK_QR -> pendingQrChallenge = pendingQrChallenge?.copy(
-                        credentialSeed = mergePlatformCredentials(pendingQrChallenge?.credentialSeed.orEmpty(), credential),
-                    )
+                    SecurityRetryAction.CHECK_QR -> qrLogin.mergeVerificationCredential(credential)
                     SecurityRetryAction.START_QR -> Unit
                 }
                 _state.update { it.copy(working = false, securityVerification = null) }
                 when (action) {
                     SecurityRetryAction.SEND_CAPTCHA -> sendCaptcha()
                     SecurityRetryAction.LOGIN -> login()
-                    SecurityRetryAction.START_QR -> startQrLogin()
-                    SecurityRetryAction.CHECK_QR -> resumeQrPolling()
+                    SecurityRetryAction.START_QR -> {
+                        if (challenge.source != MusicSource.QQ || !qrLogin.restartAfterVerification(credential)) startQrLogin()
+                    }
+                    SecurityRetryAction.CHECK_QR -> qrLogin.resume()
                 }
             }.onFailure { error ->
                 if (pendingSecurityChallenge !== challenge) return@onFailure
@@ -304,8 +287,8 @@ internal class PlatformSettingsViewModel(application: Application) : AndroidView
             it.copy(
                 working = false,
                 securityVerification = null,
-                qrStatus = if (it.loginMethod == PlatformLoginMethod.QR_CODE) PlatformQrLoginStatus.FAILED else it.qrStatus,
-                qrMessage = if (it.loginMethod == PlatformLoginMethod.QR_CODE) "已取消安全验证" else it.qrMessage,
+                qrStatus = if (it.loginMethod != PlatformLoginMethod.SMS) PlatformQrLoginStatus.FAILED else it.qrStatus,
+                qrMessage = if (it.loginMethod != PlatformLoginMethod.SMS) "已取消安全验证" else it.qrMessage,
                 message = if (it.loginMethod == PlatformLoginMethod.SMS) "已取消安全验证" else it.message,
             )
         }
@@ -329,35 +312,8 @@ internal class PlatformSettingsViewModel(application: Application) : AndroidView
         }
     }
 
-    private suspend fun pollQrLogin() {
-        while (true) {
-            delay(2_000)
-            val challenge = pendingQrChallenge ?: return
-            val result = try {
-                withContext(Dispatchers.IO) { auth.checkQrCode(challenge) }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                if (showSecurityVerification(error, SecurityRetryAction.CHECK_QR)) return
-                _state.update { it.copy(qrStatus = PlatformQrLoginStatus.FAILED, qrMessage = error.asUserMessage()) }
-                return
-            }
-            pendingQrChallenge = challenge.copy(credentialSeed = result.credential)
-            _state.update { it.copy(qrStatus = result.status, qrMessage = result.message) }
-            when (result.status) {
-                PlatformQrLoginStatus.EXPIRED, PlatformQrLoginStatus.FAILED -> return
-                PlatformQrLoginStatus.SUCCESS -> {
-                    val account = result.account ?: return
-                    pendingQrChallenge = null
-                    onLoginSuccess(result.credential, account)
-                    return
-                }
-                else -> Unit
-            }
-        }
-    }
-
     private fun onLoginSuccess(credential: String, account: MusicAccount) {
+        qrLogin.stop()
         preferences.saveSession(credential, account)
         if (account.source == MusicSource.QQ) lastQqValidationMs = System.currentTimeMillis()
         _state.update {
@@ -457,11 +413,6 @@ internal class PlatformSettingsViewModel(application: Application) : AndroidView
         pendingSecurityChallenge = null
         pendingSecurityAction = null
     }
-
-    private fun resumeQrPolling() {
-        qrLoginJob?.cancel()
-        qrLoginJob = viewModelScope.launch { pollQrLogin() }
-    }
 }
 
 private enum class SecurityRetryAction {
@@ -480,14 +431,6 @@ private fun SavedPlatformSettings.initialUiState(): PlatformSettingsUiState {
         account = selected.account,
         sessionStatus = if (!selectedSource.requiresAccount) SessionStatus.CONNECTED else if (selected.credential.isBlank()) SessionStatus.SIGNED_OUT else SessionStatus.CHECKING,
     )
-}
-
-private fun MusicSource.scanAppName(): String = when (this) {
-    MusicSource.NETEASE -> "网易云音乐"
-    MusicSource.QQ -> "QQ"
-    MusicSource.KUGOU -> "酷狗音乐"
-    MusicSource.LOCAL -> "本地音乐"
-    MusicSource.BILIBILI -> "哔哩哔哩"
 }
 
 private fun Throwable.invalidSession(): Boolean =

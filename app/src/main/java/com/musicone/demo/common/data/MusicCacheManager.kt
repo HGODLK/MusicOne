@@ -17,6 +17,7 @@ internal data class MusicCacheState(
     val playlists: List<MusicPlaylist> = emptyList(),
     val cachedTracks: List<MusicTrack> = emptyList(),
     val statuses: Map<String, String> = emptyMap(),
+    val audioDetails: Map<String, CachedAudioDetails> = emptyMap(),
     val blocked: Map<String, String> = emptyMap(),
     val protected: Set<String> = emptySet(),
     val usage: CacheUsage = CacheUsage(),
@@ -89,7 +90,7 @@ internal class MusicCacheManager private constructor(private val context: Contex
         loadJob?.cancel()
         loadJob = scope.launch {
             val cached = directory.cached(source, incoming)
-            if (accountChanged) mutable.update { it.copy(playlists = cached, cachedTracks = emptyList(), statuses = emptyMap(), message = null) }
+            if (accountChanged) mutable.update { it.copy(playlists = cached, cachedTracks = emptyList(), statuses = emptyMap(), audioDetails = emptyMap(), message = null) }
             else mutable.update { it.copy(playlists = (cached + it.playlists).distinctBy(::cachePlaylistKey)) }
             refreshStatuses()
             if (!offline.hasNetwork()) return@launch
@@ -268,7 +269,7 @@ internal class MusicCacheManager private constructor(private val context: Contex
         if (owners != requestedOwners || mutable.value.playlists != playlists) return@synchronized
         mutable.update { state -> state.copy(initialized = true, cachedTracks = cached, protected = protected, usage = usage,
             limits = settingsDraft.pending ?: disk.limits.value, appliedLimits = disk.limits.value,
-            blocked = blocked, statuses = statuses.mapValues { (id, text) ->
+            blocked = blocked, audioDetails = snapshot.audioDetails, statuses = statuses.mapValues { (id, text) ->
                 state.statuses[id]?.takeIf { it.startsWith("缓存失败") || (state.busyPlaylist != null && (it.startsWith("正在缓存") || it == "等待缓存")) } ?: text
             }) }
     }
