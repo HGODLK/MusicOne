@@ -67,11 +67,11 @@ internal class MusicCacheIndex(private val read: () -> String?, private val writ
         }
     }
 
-    fun forget(key: String) {
+    fun forget(key: String, persist: Boolean = true) {
         // 保留资源身份和歌单关系，真正重新进入缓存时才重新记录 FIFO 次序。
         resources[key]?.let { resources[key] = it.copy(entered = 0L) }
         auxiliaryOrder.remove(key)
-        save()
+        if (persist) save() else saveAuxiliaryPending = true
     }
 
     fun auxiliaryOrder(key: String, legacyOrder: Long = 0): Long = auxiliaryOrder.getOrPut(key) {
@@ -114,6 +114,7 @@ internal class MusicCacheIndex(private val read: () -> String?, private val writ
     }
 
     private fun save() {
+        saveAuxiliaryPending = false
         val rows = JSONArray()
         resources.values.forEach { rows.put(JSONObject().put("key", it.key).put("identity", it.identity)
             .put("variant", it.variant).put("entered", it.entered).put("trusted", it.trusted)) }

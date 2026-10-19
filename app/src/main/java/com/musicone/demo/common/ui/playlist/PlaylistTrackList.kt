@@ -124,16 +124,16 @@ internal fun PlaylistTrackRow(
     val displayed = displayedPlaybackTrack(track)
     val removalActions = LocalPlaylistRemovals.current
     val libraryUi = LocalMusicLibraryUi.current
-    val selection = LocalPlaylistMultiSelection.current.takeIf { qqMenu != null }
+    val selection = LocalPlaylistMultiSelection.current
     val haptic = LocalHapticFeedback.current
     var menuExpanded by remember { mutableStateOf(false) }
     var menuAnchor by remember { mutableStateOf(Rect.Zero) }
     Column(modifier.playlistDetailReveal()) {
         Row(Modifier.fillMaxWidth().combinedClickable(enabled = enabled,
-            onClick = { if (selection?.active == true) selection.toggle(track.id) else if (displayed.playable) onClick() },
+            onClick = { if (selection?.active == true) selection.toggle(selection.key(track)) else if (displayed.playable) onClick() },
             onLongClickLabel = "选择歌曲",
             hapticFeedbackEnabled = false,
-            onLongClick = selection?.let { { haptic.performHapticFeedback(HapticFeedbackType.LongPress); it.begin(track.id) } },
+            onLongClick = selection?.let { { haptic.performHapticFeedback(HapticFeedbackType.LongPress); it.begin(it.key(track)) } },
         ).padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(52.dp)) {
                 RemoteArtwork(track.artworkUrl, track.artworkStart, track.artworkEnd, track.artworkMark,
@@ -154,9 +154,9 @@ internal fun PlaylistTrackRow(
                 supportingContent?.invoke()
             }
             if (selection?.active == true) {
-                Box(Modifier.size(48.dp).toggleable(track.id in selection.ids, enabled = enabled, role = Role.Checkbox,
-                    onValueChange = { selection.toggle(track.id) }), contentAlignment = Alignment.Center) {
-                    Icon(if (track.id in selection.ids) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                Box(Modifier.size(48.dp).toggleable(selection.key(track) in selection.ids, enabled = enabled, role = Role.Checkbox,
+                    onValueChange = { selection.toggle(selection.key(track)) }), contentAlignment = Alignment.Center) {
+                    Icon(if (selection.key(track) in selection.ids) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
                         contentDescription = "选择${track.title}", tint = MaterialTheme.colorScheme.onSurface)
                 }
             } else Box {

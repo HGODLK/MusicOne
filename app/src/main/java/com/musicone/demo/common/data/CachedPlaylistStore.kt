@@ -8,7 +8,7 @@ import org.json.JSONObject
 internal class CachedPlaylistStore(context: Context) {
     private val preferences = context.getSharedPreferences("cached_playlists", Context.MODE_PRIVATE)
     fun read(namespace: String): List<MusicPlaylist> = runCatching {
-        JSONArray(preferences.getString(namespace, "[]")).searchObjects().map { value ->
+        JSONArray(preferences.getString("account_directory_v2:$namespace", "[]")).searchObjects().map { value ->
             MusicPlaylist(value.getString("id"), MusicSource.valueOf(value.getString("source")),
                 value.getString("title"), value.optString("subtitle"), value.optString("description"), value.optInt("count"),
                 value.optLong("start"), value.optLong("end"), value.optString("mark"),
@@ -30,6 +30,6 @@ internal class CachedPlaylistStore(context: Context) {
                 .put("artwork", playlist.artworkUrl.orEmpty()).put("directory", playlist.qqDirectoryId ?: 0)
                 .put("tracks", JSONArray().apply { playlist.tracks.forEach { put(it.toQqStoredTrackJson()) } }))
         }
-        preferences.edit().putString(namespace, values.toString()).apply()
+        preferences.edit().putString("account_directory_v2:$namespace", values.toString()).apply()
     }
 }

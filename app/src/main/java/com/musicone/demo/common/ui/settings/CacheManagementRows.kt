@@ -67,11 +67,10 @@ internal fun CachePlaylistControls(playlist: MusicPlaylist, state: MusicCacheSta
 }
 
 @Composable
-internal fun CacheClearConfirmation(all: Boolean?, onDismiss: () -> Unit, onConfirm: (Boolean) -> Unit) {
-    if (all == null) return
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (all) "清除所有缓存？" else "清除未受保护缓存？") },
-        text = { Text(if (all) "包含受保护音频，不删除歌单、收藏或本地音乐原文件。正在使用的缓存会在释放后清理。"
-            else "保留受保护歌曲和正在使用的音频，不删除歌单、收藏或本地音乐原文件。") },
-        confirmButton = { TextButton(onClick = { onConfirm(all); onDismiss() }) { Text("清除") } },
+internal fun CacheClearConfirmation(mode: CacheClearMode?, onDismiss: () -> Unit, onConfirm: (CacheClearMode) -> Unit) {
+    if (mode == null) return
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("${mode.title}？") },
+        text = { Text(mode.description) },
+        confirmButton = { TextButton(onClick = { onConfirm(mode); onDismiss() }) { Text("清除") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } })
 }

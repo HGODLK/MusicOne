@@ -2,11 +2,11 @@ package com.musicone.demo
 
 internal enum class CacheCapacity(val bytes: Long, val label: String) {
     OFF(0, "不缓存"), GB1(1_073_741_824L, "1 GB"), GB5(5_368_709_120L, "5 GB"),
-    GB10(10_737_418_240L, "10 GB"), GB20(21_474_836_480L, "20 GB"), UNLIMITED(Long.MAX_VALUE, "无上限");
+    GB10(10_737_418_240L, "10 GB"), GB20(21_474_836_480L, "20 GB"), GB50(53_687_091_200L, "50 GB"), UNLIMITED(Long.MAX_VALUE, "无上限");
 
     companion object {
         fun fromLegacy(gb: Int) = when (gb) {
-            0 -> UNLIMITED; 1 -> GB1; 10 -> GB10; 20 -> GB20; else -> GB5
+            0 -> UNLIMITED; 1 -> GB1; 10 -> GB10; 20 -> GB20; 50 -> GB50; else -> GB5
         }
     }
 }

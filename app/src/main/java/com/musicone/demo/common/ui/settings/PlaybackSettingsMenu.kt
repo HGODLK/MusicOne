@@ -11,6 +11,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -47,7 +52,9 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -99,6 +106,7 @@ internal fun PlaybackSettingsMenuButton(
     label: String,
     title: String,
     options: List<PlaybackSettingsMenuOption>,
+    modifier: Modifier = Modifier,
 ) {
     val menu = LocalPlaybackSettingsMenu.current
     var bounds by remember { mutableStateOf(Rect.Zero) }
@@ -106,7 +114,7 @@ internal fun PlaybackSettingsMenuButton(
     TextButton(
         enabled = menu != null,
         onClick = { menu?.open(title, pressOrigin ?: bounds.center, options) },
-        modifier = Modifier.onGloballyPositioned { bounds = it.boundsInRoot() }
+        modifier = modifier.onGloballyPositioned { bounds = it.boundsInRoot() }
             .pointerInput(title, menu) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -120,12 +128,13 @@ internal fun PlaybackSettingsMenuButton(
 
 /** 录制设置页作为采样源，菜单从实际按下位置展开并按原路径收回。 */
 @Composable
-internal fun PlaybackSettingsMenuHost(content: @Composable () -> Unit) {
+internal fun PlaybackSettingsMenuHost(bottomInset: Dp = 0.dp, content: @Composable () -> Unit) {
     val state = remember { PlaybackSettingsMenuState() }
     val backdrop = rememberGraphicsLayer()
     var hostBounds by remember { mutableStateOf(Rect.Zero) }
-    var measuredSize by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
+    val direction = LocalLayoutDirection.current
+    val safe = WindowInsets.safeDrawing.asPaddingValues()
 
     CompositionLocalProvider(LocalPlaybackSettingsMenu provides state) {
         BoxWithConstraints(
@@ -133,14 +142,14 @@ internal fun PlaybackSettingsMenuHost(content: @Composable () -> Unit) {
         ) {
             Box(Modifier.fillMaxSize().playerQualityBackdropSnapshot(backdrop, state.expanded)) { content() }
 
-            val width = minOf(336.dp, maxWidth - 24.dp)
-            val maximumHeight = maxHeight - 24.dp
-            val estimatedHeight = (68 + state.options.size * 54).dp.coerceAtMost(maximumHeight)
-            val actualHeight = with(density) { measuredSize.height.toDp() }.takeIf { it > 0.dp } ?: estimatedHeight
-            val localOriginX = with(density) { (state.triggerOrigin.x - hostBounds.left).toDp() }
-            val localOriginY = with(density) { (state.triggerOrigin.y - hostBounds.top).toDp() }
-            val x = (localOriginX - width / 2).coerceIn(12.dp, (maxWidth - width - 12.dp).coerceAtLeast(12.dp))
-            val y = (localOriginY - 22.dp).coerceIn(12.dp, (maxHeight - actualHeight - 12.dp).coerceAtLeast(12.dp))
+            val left = safe.calculateStartPadding(direction) + 12.dp
+            val right = safe.calculateEndPadding(direction) + 12.dp
+            val top = safe.calculateTopPadding() + 12.dp
+            val bottom = maxOf(bottomInset, safe.calculateBottomPadding()) + 12.dp
+            val width = minOf(336.dp, (maxWidth - left - right).coerceAtLeast(1.dp))
+            val maximumHeight = (maxHeight - top - bottom).coerceAtLeast(1.dp)
+            val safeBounds = with(density) { Rect(left.toPx(), top.toPx(),
+                (maxWidth - right).toPx(), (maxHeight - bottom).toPx()) }
             val transformOrigin = qualityMenuTransformOrigin(state.triggerOrigin, hostBounds)
 
             AnimatedVisibility(
@@ -159,11 +168,11 @@ internal fun PlaybackSettingsMenuHost(content: @Composable () -> Unit) {
                         onClick = state::dismiss,
                     ),
                 ) {
+                    Layout(content = {
                     MusicOneBackdropGlass(
                         backdropLayer = backdrop,
                         backdropBounds = hostBounds,
-                        modifier = Modifier.offset(x, y).width(width)
-                            .onSizeChanged { measuredSize = it }
+                        modifier = Modifier.width(width)
                             .clickable(remember { MutableInteractionSource() }, indication = null) {},
                         shape = RoundedCornerShape(28.dp),
                         blurRadius = 24.dp,
@@ -182,6 +191,17 @@ internal fun PlaybackSettingsMenuHost(content: @Composable () -> Unit) {
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                             )
                             state.options.forEach { option -> PlaybackSettingsMenuRow(option) { state.select(option) } }
+                        }
+                    }
+                    }, modifier = Modifier.fillMaxSize()) { measurables, constraints ->
+                        val menuWidth = with(density) { width.roundToPx() }.coerceAtMost(constraints.maxWidth)
+                        val menuHeight = with(density) { maximumHeight.roundToPx() }.coerceAtMost(constraints.maxHeight)
+                        val menu = measurables.single().measure(constraints.copy(
+                            minWidth = menuWidth, maxWidth = menuWidth, minHeight = 0, maxHeight = menuHeight))
+                        val origin = state.triggerOrigin - hostBounds.topLeft
+                        val position = settingsMenuOffset(origin, safeBounds, IntSize(menu.width, menu.height))
+                        layout(constraints.maxWidth, constraints.maxHeight) {
+                            menu.place(position.x.toInt(), position.y.toInt())
                         }
                     }
                 }

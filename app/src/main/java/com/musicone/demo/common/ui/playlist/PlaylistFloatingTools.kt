@@ -44,12 +44,14 @@ internal fun PlaylistFloatingTools(
     state: PlaylistSearchState,
     canLocate: Boolean,
     onLocate: () -> Unit,
-    backdropLayer: GraphicsLayer,
+    backdropLayer: GraphicsLayer?,
     backdropBounds: Rect,
     bottomInset: Dp,
     motionProgress: () -> Float,
     modifier: Modifier = Modifier,
     showLocate: Boolean = true,
+    inlinePlacement: Boolean = false,
+    searchLabel: String = "搜索歌单歌曲",
 ) {
     val locateAlpha = animateFloatAsState(if (canLocate) 1f else .38f, musicMotion(220), label = "定位可用状态")
     val searchExpansion = remember { Animatable(if (state.expanded) 1f else 0f) }
@@ -78,7 +80,7 @@ internal fun PlaylistFloatingTools(
     }
 
     Column(
-        modifier = modifier
+        modifier = if (inlinePlacement) modifier else modifier
             .padding(end = edgePadding, bottom = resolvedBottomPadding)
             .graphicsLayer {
                 val progress = motionProgress()
@@ -120,7 +122,7 @@ internal fun PlaylistFloatingTools(
                 ) {
                     Icon(
                         Icons.Rounded.Search,
-                        contentDescription = if (state.expanded) null else "搜索歌单歌曲",
+                        contentDescription = if (state.expanded) null else searchLabel,
                         modifier = Modifier.size(21.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

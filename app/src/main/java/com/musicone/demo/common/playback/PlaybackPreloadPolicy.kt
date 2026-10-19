@@ -33,3 +33,17 @@ internal fun playbackPreloadBytes(bitRate: Int, durationMs: Long = 0L): Long {
 }
 
 internal fun preloadedPlaybackFresh(createdMs: Long, nowMs: Long): Boolean = nowMs - createdMs in 0 until 30_000L
+
+internal fun preloadedPlaybackRefreshDue(createdMs: Long, nowMs: Long): Boolean = nowMs - createdMs >= 25_000L
+
+internal fun playbackPreloadNearEnd(remainingMs: Long?): Boolean = remainingMs != null && remainingMs in 1L..30_000L
+
+/** 起播先留十秒余量；运行中降至三秒以下才让路，避免在门槛附近反复取消。 */
+internal fun playbackPreloadCanRun(playing: Boolean, bufferedMs: Long, remainingMs: Long?, running: Boolean,
+                                 local: Boolean = false): Boolean {
+    if (!playing) return false
+    if (local) return true
+    val threshold = if (running) 3_000L else 10_000L
+    val required = remainingMs?.takeIf { it > 0L }?.let { minOf(threshold, it) } ?: threshold
+    return bufferedMs >= required
+}

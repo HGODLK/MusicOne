@@ -34,6 +34,8 @@ internal fun BiliSupplementalSettings(bottomInset: Dp = 0.dp, onBack: () -> Unit
     val homeScroll = rememberLazyGridState()
     val foldersScroll = rememberLazyGridState()
     val visiblePage = state.visiblePage()
+    // 沿用已有封面交叉渐变策略，让收藏夹、视频封面与头像异步更新时保持连续。
+    CompositionLocalProvider(LocalArtworkEntrancePolicy provides LocalArtworkEntrancePolicy.current.copy(fadeArtwork = true)) {
     // 表单与验证层共享同一尺寸，避免父 Column 将验证层排到可见区域之外。
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -89,5 +91,6 @@ internal fun BiliSupplementalSettings(bottomInset: Dp = 0.dp, onBack: () -> Unit
                 onDismiss = { viewModel.dismissGeetest(challenge) },
                 onFailure = { viewModel.failGeetest(challenge, it) })
         }
+    }
     }
 }

@@ -10,17 +10,18 @@ internal class CachePlaylistDirectory(private val context: Context) {
     private val snapshots = CachedPlaylistStore(context)
     private val catalog = PlatformCatalogRepository(context)
     private val library = MusicLibraryStore.get(context)
+    private val bili = BiliCachePlaylistDirectory(context)
 
     fun signature(): List<Pair<String, String>> = MusicSource.entries.map {
         val session = preferences.readSession(it)
         session.cacheNamespace() to session.credential
     } + listOf("bilibili" to BiliSessionStore(context).read()?.mid.orEmpty())
 
-    fun cached(source: MusicSource, supplied: List<MusicPlaylist>): List<MusicPlaylist> {
+    fun cached(): List<MusicPlaylist> {
         val saved = listOf(MusicSource.QQ, MusicSource.NETEASE, MusicSource.KUGOU).flatMap {
             snapshots.read(preferences.readSession(it).cacheNamespace())
         }
-        return (supplied.filter { it.source == source && !it.id.startsWith("local-cached-") } + library.state.value.playlists + saved)
+        return canonicalCachePlaylists(library.state.value.playlists + saved + bili.cached())
             .distinctBy(::cachePlaylistKey).map { playlist ->
                 val stored = saved.firstOrNull { cachePlaylistKey(it) == cachePlaylistKey(playlist) }
                 if (playlist.tracks.isEmpty() && stored != null) playlist.copy(tracks = stored.tracks) else playlist
@@ -28,6 +29,7 @@ internal class CachePlaylistDirectory(private val context: Context) {
     }
 
     suspend fun remote(source: MusicSource): List<MusicPlaylist> {
+        if (source == MusicSource.BILIBILI) return bili.remote()
         val session = preferences.readSession(source)
         val account = session.account ?: return emptyList()
         if (session.credential.isBlank()) return emptyList()
@@ -44,11 +46,15 @@ internal class CachePlaylistDirectory(private val context: Context) {
             else -> emptyList()
         }
         check(preferences.readSession(source) == session) { "账号已变化，请重新打开缓存管理" }
-        return playlists.distinctBy(::cachePlaylistKey)
+        return canonicalCachePlaylists(playlists)
     }
+
+    fun signedIn(source: MusicSource): Boolean = if (source == MusicSource.BILIBILI) BiliSessionStore(context).read() != null
+        else preferences.readSession(source).let { it.account != null && it.credential.isNotBlank() }
 
     suspend fun load(playlist: MusicPlaylist): MusicPlaylist {
         if (playlist.source == MusicSource.LOCAL) return library.state.value.playlists.firstOrNull { it.id == playlist.id } ?: playlist
+        if (playlist.source == MusicSource.BILIBILI) return bili.load(playlist)
         val detail = catalog.playlistDetail(playlist).copy(isOwned = playlist.isOwned, isPlatformFavorites = playlist.isPlatformFavorites)
         if (detail.isPrimaryCachePlaylist && detail.tracks.size >= detail.count) {
             val session = preferences.readSession(detail.source)
@@ -59,7 +65,24 @@ internal class CachePlaylistDirectory(private val context: Context) {
 
     fun save(playlists: List<MusicPlaylist>) {
         listOf(MusicSource.QQ, MusicSource.NETEASE, MusicSource.KUGOU).forEach { source ->
-            snapshots.save(preferences.readSession(source).cacheNamespace(), playlists.filter { it.source == source })
+            snapshots.save(preferences.readSession(source).cacheNamespace(), playlists.filter { it.source == source && isCacheLibraryPlaylist(it) })
         }
+    }
+
+    suspend fun cleanupPlaylists(): List<MusicPlaylist> {
+        val initial = signature()
+        val all = cached().associateBy(::cachePlaylistKey).toMutableMap()
+        for (provider in listOf(MusicSource.QQ, MusicSource.NETEASE, MusicSource.KUGOU, MusicSource.BILIBILI)) {
+            val fresh = remote(provider)
+            if (signedIn(provider)) all.entries.removeAll { it.value.source == provider }
+            fresh.forEach { all[cachePlaylistKey(it)] = it }
+        }
+        val complete = all.values.map { playlist ->
+            val detail = if (playlist.tracks.size < playlist.count) load(playlist) else playlist
+            check(detail.tracks.size >= detail.count) { "歌单歌曲尚未加载完整，请联网后重试" }
+            detail
+        }
+        check(signature() == initial) { "账号已变化，请重新清理" }
+        return complete
     }
 }

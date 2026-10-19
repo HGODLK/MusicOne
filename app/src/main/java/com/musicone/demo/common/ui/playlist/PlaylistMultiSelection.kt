@@ -20,7 +20,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @Stable
-internal class PlaylistMultiSelection {
+internal class PlaylistMultiSelection(val key: (MusicTrack) -> String = { it.id }) {
     var active by mutableStateOf(false)
     var ids by mutableStateOf(emptySet<String>())
     var tracks by mutableStateOf(emptyList<MusicTrack>())
@@ -33,7 +33,7 @@ internal class PlaylistMultiSelection {
     fun update(tracks: List<MusicTrack>) {
         if (this.tracks === tracks) return
         this.tracks = tracks
-        if (ids.isNotEmpty()) ids = ids.intersect(tracks.mapTo(hashSetOf()) { it.id })
+        if (ids.isNotEmpty()) ids = ids.intersect(tracks.mapTo(hashSetOf(), key))
     }
     fun toggle(id: String) { ids = if (id in ids) ids - id else ids + id }
     fun begin(id: String) { active = true; ids = ids + id }
@@ -46,7 +46,7 @@ internal class PlaylistMultiSelection {
             val complete = load()
             if (request != revision) return
             tracks = complete
-            ids = complete.mapTo(hashSetOf()) { it.id }
+            ids = complete.mapTo(hashSetOf(), key)
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
             if (request == revision) error = failure.asUserMessage()
@@ -61,12 +61,14 @@ internal val LocalPlaylistMultiSelection = staticCompositionLocalOf<PlaylistMult
 internal val LocalPlaylistRemovalLabel = staticCompositionLocalOf<String?> { null }
 
 @Composable
-internal fun PlaylistSelectionToolbar(loadAll: (suspend () -> List<MusicTrack>)? = null) {
+internal fun PlaylistSelectionToolbar(onDeleteCache: ((List<MusicTrack>) -> Unit)? = null,
+    loadAll: (suspend () -> List<MusicTrack>)? = null) {
     val selection = LocalPlaylistMultiSelection.current ?: return
-    val menu = LocalQqPlaylistSongMenu.current ?: return
+    val menu = LocalQqPlaylistSongMenu.current
+    if (menu == null && onDeleteCache == null) return
     val pagination = LocalPlaylistPagination.current
     val scope = rememberCoroutineScope()
-    val available = !menu.busy && !selection.loading
+    val available = menu?.busy != true && !selection.loading
     var anchor by remember { mutableStateOf(Rect.Zero) }
     AnimatedVisibility(selection.active,
         enter = expandVertically(musicMotion(220)) + fadeIn(musicMotion(180)),
@@ -78,17 +80,23 @@ internal fun PlaylistSelectionToolbar(loadAll: (suspend () -> List<MusicTrack>)?
                 scope.launch { selection.selectAll { loadAll?.invoke() ?: pagination?.selectionTracks() ?: selection.tracks } }
             }
             selection.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            if (onDeleteCache != null) {
+                SelectionAction("删除缓存", selection.ids.isNotEmpty() && available) {
+                    onDeleteCache(selection.tracks.filter { selection.key(it) in selection.ids })
+                }
+            } else if (menu != null) {
             Box(Modifier.onGloballyPositioned { anchor = it.boundsInRoot() }) {
                 SelectionAction("添加到", selection.ids.isNotEmpty() && available) {
-                    menu.openBatch(selection.tracks.filter { it.id in selection.ids }, anchor)
+                    menu.openBatch(selection.tracks.filter { selection.key(it) in selection.ids }, anchor)
                 }
             }
             LocalPlaylistRemovalLabel.current?.let { label ->
                 SelectionAction(label, selection.ids.isNotEmpty() && available) {
-                    menu.openBatch(selection.tracks.filter { it.id in selection.ids }, anchor, chooseTargets = false)
+                    menu.openBatch(selection.tracks.filter { selection.key(it) in selection.ids }, anchor, chooseTargets = false)
                 }
             }
-            SelectionAction("取消", !menu.busy, selection::close)
+            }
+            SelectionAction("取消", menu?.busy != true, selection::close)
         }
     }
 }

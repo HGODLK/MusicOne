@@ -6,6 +6,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextAlign
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -30,9 +32,12 @@ internal fun CacheCapacitySettings(state: MusicCacheState, onCapacity: (Boolean,
     LibrarySettingsGroup("容量设置") {
         CacheCapacityRow("总缓存", "所有歌曲共用的缓存额度", state.limits.total) { onCapacity(false, it) }
         CacheCapacityRow("独立缓存", "保护我喜欢和综合歌单中的歌曲", state.limits.independent) { onCapacity(true, it) }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("实际最大容量", style = MaterialTheme.typography.bodyMedium)
-            Text(cacheMaximumLabel(state.limits.maximum, withPrefix = false), style = MaterialTheme.typography.bodyMedium)
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("实际最大容量", style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f).alignByBaseline())
+            val maximum = if (state.limits.total.bytes >= state.limits.independent.bytes) state.limits.total else state.limits.independent
+            Text(maximum.label, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center,
+                modifier = Modifier.alignByBaseline().widthIn(min = 96.dp).padding(horizontal = 12.dp))
         }
         Text(state.limits.protectionLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -40,29 +45,28 @@ internal fun CacheCapacitySettings(state: MusicCacheState, onCapacity: (Boolean,
 
 @Composable
 private fun CacheCapacityRow(title: String, description: String, capacity: CacheCapacity, select: (CacheCapacity) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).alignByBaseline())
+            PlaybackSettingsMenuButton(capacity.label, title, CacheCapacity.entries.map { choice ->
+                PlaybackSettingsMenuOption(choice.label, capacity == choice) { select(choice) }
+            }, modifier = Modifier.alignByBaseline().widthIn(min = 96.dp))
         }
-        PlaybackSettingsMenuButton(capacity.label, title, CacheCapacity.entries.map { choice ->
-            PlaybackSettingsMenuOption(choice.label, capacity == choice) { select(choice) }
-        })
+        Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
-internal fun CacheUsageSettings(state: MusicCacheState, onClear: (Boolean) -> Unit) {
+internal fun CacheUsageSettings(state: MusicCacheState, onClear: (CacheClearMode) -> Unit) {
     LibrarySettingsGroup("缓存占用") {
         Text(if (state.initialized) cacheSizeLabel(state.usage.total) else "—", style = MaterialTheme.typography.headlineLarge)
         Text(cacheMaximumLabel(state.limits.maximum), style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("其中受保护 ${if (state.initialized) cacheSizeLabel(state.usage.protected) else "—"}", style = MaterialTheme.typography.bodyMedium)
         Text("未受保护 ${if (state.initialized) cacheSizeLabel(state.usage.ordinary) else "—"}", style = MaterialTheme.typography.bodyMedium)
-        PlaybackSettingsMenuButton("清理缓存", "清理缓存", listOf(
-            PlaybackSettingsMenuOption("清除未受保护缓存", false) { onClear(false) },
-            PlaybackSettingsMenuOption("清除所有缓存", false) { onClear(true) },
-        ))
+        PlaybackSettingsMenuButton("清理缓存", "清理缓存", CacheClearMode.entries.map { mode ->
+            PlaybackSettingsMenuOption(mode.title, false) { onClear(mode) }
+        })
     }
 }
 

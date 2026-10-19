@@ -9,6 +9,9 @@ import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -41,8 +44,11 @@ internal class MusicDiskCache private constructor(private val context: Context) 
     private var primaryAudioKeys = emptySet<String>()
     private var auxiliaryBytes = files().sumOf { it.length() }
     private var shrinkRequested = false
+    private val cleanupMutex = Mutex()
+    private val releaseSignals = Channel<Unit>(Channel.CONFLATED)
+    @Volatile private var clearingAudio = false
     @Volatile var activeKey: String? = null
-        set(value) { field = value; worker.launch { clearReleasedAudio() } }
+        set(value) { field = value; clearReleasedAudio() }
     private val evictor = object : CacheEvictor {
         override fun requiresCacheSpanTouches() = false
         override fun onCacheInitialized() = Unit
@@ -61,7 +67,7 @@ internal class MusicDiskCache private constructor(private val context: Context) 
         }
         override fun onSpanRemoved(cache: Cache, span: CacheSpan) {
             audioBytes[span.key]?.addAndGet(-span.length)
-            audioChanged()
+            if (!clearingAudio) audioChanged()
         }
         override fun onSpanTouched(cache: Cache, oldSpan: CacheSpan, newSpan: CacheSpan) = Unit
     }
@@ -70,6 +76,16 @@ internal class MusicDiskCache private constructor(private val context: Context) 
     init {
         importLegacyIndex()
         refreshPrimaryAudioKeys()
+        worker.launch {
+            for (signal in releaseSignals) {
+                try {
+                    val released = synchronized(this@MusicDiskCache) { pendingClear.toList() }
+                    if (released.isNotEmpty()) clearResources(released, deferActive = true)
+                    shrinkAfterRelease()
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { /* 保留待清理键，后续释放时重试。 */ }
+            }
+        }
         worker.launch {
             setLibraryPrimary(MusicLibraryStore.get(context).primaryCacheMembers())
             clearReleasedAudio()
@@ -105,14 +121,7 @@ internal class MusicDiskCache private constructor(private val context: Context) 
         mutableLimits.value = next
         preferences.edit().putString("total_capacity", next.total.name).putString("independent_capacity", next.independent.name).apply()
         audioChanged()
-        return worker.launch {
-            // 关闭只改变新增资格，不借后续读取回调自动清空旧文件。
-            synchronized(this@MusicDiskCache) {
-                if (mutableLimits.value != next) return@synchronized
-                shrinkAfterRelease()
-                audioChanged()
-            }
-        }
+        return worker.launch { shrinkAfterRelease() }
     }
 
     @Synchronized fun setFavorites(namespace: String, ids: Set<String>) {
@@ -215,7 +224,7 @@ internal class MusicDiskCache private constructor(private val context: Context) 
         val current = entries.firstOrNull { it.key == key } ?: return "缓存写入已取消"
         val plan = cacheWritePlan(entries, current.copy(bytes = current.bytes + bytes, active = true), limits.value)
         if (!plan.allowed) return plan.reason
-        plan.remove.forEach(::deleteResource)
+        plan.remove.forEach { deleteResource(it) }
         index.markWritten(key)
         reserved.getValue(key).addAndGet(bytes)
         return null
@@ -250,40 +259,80 @@ internal class MusicDiskCache private constructor(private val context: Context) 
             entries.filter { it.key in protected }.sumOf { it.bytes }, entries.filter { it.primaryOrder != null }.sumOf { it.bytes })
     }
 
-    @Synchronized fun clearOrdinary() {
-        val entries = resources()
-        val protected = protectedCacheKeys(entries, limits.value)
-        entries.filter { audioCacheClearAction(it.key in protected, it.active, false) == AudioCacheClearAction.REMOVE }
-            .forEach { deleteResource(it.key) }
+    suspend fun clearOrdinary() {
+        val keys = synchronized(this) {
+            val entries = resources()
+            val protected = protectedCacheKeys(entries, limits.value)
+            entries.filter { it.key !in protected && !it.active }.map { it.key }
+        }
+        clearResources(keys, deferActive = false, keepProtected = true)
         ArtworkRepository.clearMemory()
-        audioChanged()
     }
 
-    @Synchronized fun clearAll() {
-        resources().forEach {
-            when (audioCacheClearAction(false, it.active, true)) {
-                AudioCacheClearAction.AFTER_PLAYBACK -> pendingClear += it.key
-                AudioCacheClearAction.REMOVE -> deleteResource(it.key)
-                AudioCacheClearAction.KEEP -> Unit
+    suspend fun clearAll() {
+        clearResources(synchronized(this) { resources().map { it.key } }, deferActive = true)
+        ArtworkRepository.clearMemory()
+    }
+
+    suspend fun removeTracks(tracks: List<MusicTrack>) {
+        val identities = tracks.filter { it.source != MusicSource.LOCAL }.mapTo(hashSetOf()) { it.cacheIdentity() }
+        val keys = synchronized(this) { (audio.keys + writers.keys).filter { index.resource(it)?.identity in identities } }
+        clearResources(keys, deferActive = true)
+    }
+
+    suspend fun clearOutsidePlaylists(identities: Set<String>, valid: () -> Boolean) {
+        val keys = synchronized(this) {
+            outsidePlaylistCacheKeys((audio.keys + writers.keys).associateWith { index.resource(it)?.identity }, identities)
+        }
+        clearResources(keys, deferActive = true, valid = valid)
+    }
+
+    private fun clearReleasedAudio() { releaseSignals.trySend(Unit) }
+
+    // 文件删除逐项释放锁；整批结束才落盘索引，不在读写释放回调中遍历缓存。
+    private suspend fun clearResources(keys: List<String>, deferActive: Boolean,
+        keepProtected: Boolean = false, valid: () -> Boolean = { true }) = cleanupMutex.withLock {
+        var failed = false
+        var protectionRevision: Long? = null
+        var protected = emptySet<String>()
+        clearingAudio = true
+        try {
+            for (chunk in keys.distinct().chunked(32)) {
+                currentCoroutineContext().ensureActive()
+                check(valid()) { "歌单或账号已变化，请重新清理" }
+                if (keepProtected) synchronized(this) {
+                    if (protectionRevision != revisions.value) {
+                        protectionRevision = revisions.value
+                        protected = protectedCacheKeys(resources(), limits.value)
+                    }
+                }
+                chunk.forEach { key ->
+                    synchronized(this) {
+                        if (key in protected) return@synchronized
+                        if (inUse(key)) {
+                            if (deferActive) pendingClear += key
+                        } else {
+                            runCatching { deleteResource(key, persist = false); pendingClear.remove(key) }
+                                .onFailure { failed = true }
+                        }
+                    }
+                }
+                yield()
             }
+        } finally {
+            try { synchronized(this) { index.flush(); savePendingClear() } }
+            finally { clearingAudio = false; audioChanged() }
         }
-        savePendingClear()
-        ArtworkRepository.clearMemory()
-        audioChanged()
+        check(!failed) { "部分缓存暂时无法清理，请稍后重试" }
     }
 
-    @Synchronized private fun clearReleasedAudio() {
-        pendingClear.filterNot(::inUse).forEach { key ->
-            runCatching { deleteResource(key) }.onSuccess { pendingClear.remove(key) }
+    private suspend fun shrinkAfterRelease() {
+        val plan = synchronized(this) {
+            if (!shrinkRequested) return
+            cacheShrinkPlan(resources(), limits.value)
         }
-        savePendingClear()
-        shrinkAfterRelease()
-    }
-
-    private fun shrinkAfterRelease() {
-        if (!shrinkRequested) return
-        runCatching {
-            cacheShrinkPlan(resources(), limits.value).forEach(::deleteResource)
+        clearResources(plan, deferActive = false)
+        synchronized(this) {
             val remaining = resources()
             val primaryBytes = remaining.filter { it.primaryOrder != null }.sumOf { it.bytes }
             val bytes = remaining.sumOf { it.bytes }
@@ -306,14 +355,14 @@ internal class MusicDiskCache private constructor(private val context: Context) 
         return audioEntries + files
     }
 
-    private fun deleteResource(key: String) {
+    private fun deleteResource(key: String, persist: Boolean = true) {
         if (key.startsWith("file:")) {
             val file = File(auxiliary, key.removePrefix("file:"))
             val size = file.length()
             check(file.delete() || !file.exists()) { "缓存文件暂时无法删除" }
             auxiliaryBytes = (auxiliaryBytes - size).coerceAtLeast(0)
         } else audio.removeResource(key)
-        index.forget(key)
+        index.forget(key, persist)
     }
 
     private fun refreshPrimaryAudioKeys() {
@@ -334,7 +383,7 @@ internal class MusicDiskCache private constructor(private val context: Context) 
         val plan = cacheWritePlan(entries, CacheResource(resource, bytes.size.toLong(),
             entries.firstOrNull { it.key == resource }?.entered ?: Long.MAX_VALUE, active = true), limits.value)
         if (!plan.allowed) return
-        plan.remove.forEach(::deleteResource)
+        plan.remove.forEach { deleteResource(it) }
         runCatching {
             val oldSize = target.length()
             val temporary = File(auxiliary, target.name + ".tmp")
@@ -378,7 +427,7 @@ internal class MusicDiskCache private constructor(private val context: Context) 
                 val length = ContentMetadata.getContentLength(audio.getContentMetadata(key))
                 if (length > 0 && audio.isCached(key, 0, length)) Long.MAX_VALUE else audio.getCachedSpans(key).sumOf { it.length }
             }
-            keys.filter { it != keep && !inUse(it) }.forEach(::deleteResource)
+            keys.filter { it != keep && !inUse(it) }.forEach { deleteResource(it) }
         }
     }
 

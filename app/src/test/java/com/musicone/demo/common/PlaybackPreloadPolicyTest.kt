@@ -68,4 +68,34 @@ class PlaybackPreloadPolicyTest {
         assertFalse(preloadedPlaybackFresh(1_000L, 31_000L))
         assertFalse(preloadedPlaybackFresh(1_000L, 999L))
     }
+    @Test fun foregroundPlaybackMustStartAndBuildBufferBeforePreloading() {
+        assertFalse(playbackPreloadCanRun(false, 60_000L, 180_000L, false))
+        assertFalse(playbackPreloadCanRun(true, 9_999L, 180_000L, false))
+        assertTrue(playbackPreloadCanRun(true, 10_000L, 180_000L, false))
+        assertFalse(playbackPreloadCanRun(false, 60_000L, 180_000L, true))
+    }
+    @Test fun runningDownloadsYieldAtLowBufferAndWaitForRecovery() {
+        assertTrue(playbackPreloadCanRun(true, 3_000L, 180_000L, true))
+        assertFalse(playbackPreloadCanRun(true, 2_999L, 180_000L, true))
+        assertFalse(playbackPreloadCanRun(true, 5_000L, 180_000L, false))
+        assertTrue(playbackPreloadCanRun(true, 10_000L, 180_000L, false))
+    }
+    @Test fun shortAndLocalTracksDoNotWaitForUnreachableBuffer() {
+        assertTrue(playbackPreloadCanRun(true, 2_000L, 2_000L, false))
+        assertFalse(playbackPreloadCanRun(true, 1_999L, 2_000L, false))
+        assertTrue(playbackPreloadCanRun(true, 0L, 180_000L, false, local = true))
+        assertFalse(playbackPreloadCanRun(false, 0L, 180_000L, false, local = true))
+        assertFalse(playbackPreloadCanRun(true, 9_999L, null, false))
+        assertTrue(playbackPreloadCanRun(true, 10_000L, null, false))
+    }
+    @Test fun ticketsAreRefreshedBeforeExpiryOnlyInTheEndWindow() {
+        assertFalse(preloadedPlaybackRefreshDue(1_000L, 25_999L))
+        assertTrue(preloadedPlaybackRefreshDue(1_000L, 26_000L))
+        assertFalse(playbackPreloadNearEnd(null))
+        assertFalse(playbackPreloadNearEnd(0L))
+        assertFalse(playbackPreloadNearEnd(-1L))
+        assertFalse(playbackPreloadNearEnd(30_001L))
+        assertTrue(playbackPreloadNearEnd(30_000L))
+        assertTrue(playbackPreloadNearEnd(1L))
+    }
 }

@@ -63,4 +63,20 @@ class BiliFolderDirectoryTest {
         assertTrue(directory.state.value.folders.isEmpty())
         assertFalse(directory.state.value.loading)
     }
+
+    @Test fun nonemptyOldCoverIsRefreshedAndLateDirectoryMetadataCannotRestoreIt() = runBlocking {
+        val cache = MemoryBiliFolderCache()
+        val old = folder.copy(cover = "old-fixed-cover")
+        val directory = BiliFolderDirectory(cache, this, { listOf(old) }, { _, _ -> "latest-video-cover" })
+        directory.attach(account)
+        withTimeout(2_000) { directory.state.first { !it.loading && it.folders.isNotEmpty() } }
+        directory.cover(old)
+        withTimeout(2_000) { directory.state.first { it.folders.single().cover == "latest-video-cover" } }
+        directory.refresh()
+        withTimeout(2_000) { directory.state.first { !it.loading } }
+        assertEquals("latest-video-cover", directory.state.value.folders.single().cover)
+        directory.updateCover("other-account", folder.id, "wrong-account-cover")
+        assertEquals("latest-video-cover", directory.state.value.folders.single().cover)
+        directory.cancel()
+    }
 }

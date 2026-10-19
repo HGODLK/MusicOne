@@ -38,7 +38,10 @@ internal fun BiliFolderScreen(state: BiliLibraryUiState, model: BiliLibraryViewM
     val scroll = rememberLazyListState()
     LaunchedEffect(entry) {
         if (query.isNotEmpty()) { scroll.scrollToItem(0); delay(280) }
-        biliFolderAttempt { repository.first(account, entry, refresh = true) }
+        biliFolderAttempt {
+            val snapshot = repository.first(account, entry, refresh = true)
+            if (query.isEmpty()) model.updateFolderCover(account, folder.id, snapshot.videos)
+        }
     }
     ObserveBiliFolderPagination(scroll, entry) { repository.more(account, entry) }
     val videos = content.snapshot?.videos.orEmpty()

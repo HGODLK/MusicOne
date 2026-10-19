@@ -16,12 +16,13 @@ import kotlinx.coroutines.withContext
 internal class BiliLibraryViewModel(application: Application) : AndroidViewModel(application) {
     private val api = BiliApi(application)
     private val folderCache = BiliFolderCache(application)
-    val folderDirectory = BiliFolderDirectory(folderCache, viewModelScope,
-        { account -> api.getFavoriteFolders(account.mid.toLong(), account.cookie) },
-        { account, folder -> api.getFavoriteFolderCover(folder, account.cookie) })
     val folderRepository = BiliFolderRepository(folderCache) { account, folder, page, query ->
         api.getFavoriteVideos(folder, page, account.cookie, query)
     }
+    val folderDirectory = BiliFolderDirectory(folderCache, viewModelScope,
+        { account -> api.getFavoriteFolders(account.mid.toLong(), account.cookie) },
+        { account, folder -> latestBiliFolderCover(folderRepository.first(account,
+            folderRepository.entry(account.mid, folder), refresh = true).videos).orEmpty() })
     private val sessionStore = BiliSessionStore(application)
     private val library = MusicLibraryStore.get(application)
     private val syncer = BiliSubscriptionSyncer(api, library)
@@ -170,6 +171,10 @@ internal class BiliLibraryViewModel(application: Application) : AndroidViewModel
     }
 
     fun loadFolderCover(folder: BiliFavFolder) = folderDirectory.cover(folder)
+
+    fun updateFolderCover(account: BiliAccountSession, folder: Long, videos: List<BiliVideoItem>) {
+        if (state.value.account == account) folderDirectory.updateCover(account.mid, folder, latestBiliFolderCover(videos))
+    }
 
     fun playFolder(folder: BiliFavFolder, onPlay: (MusicPlaylist) -> Unit) {
         val account = state.value.account ?: return

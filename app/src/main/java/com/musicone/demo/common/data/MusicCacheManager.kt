@@ -57,14 +57,29 @@ internal class MusicCacheManager private constructor(private val context: Contex
 
     @Synchronized fun applyPendingSettings() {
         val pending = settingsDraft.consume() ?: return
-        disk.applyLimits(pending)
+        scope.launch { disk.applyLimits(pending) }
     }
 
-    fun clear(all: Boolean) {
+    fun clear(mode: CacheClearMode) {
         val oldBatch = batch
         cancel()
         scope.launch { oldBatch?.join(); operationMutex.withLock {
-            try { if (all) disk.clearAll() else disk.clearOrdinary() }
+            try {
+                when (mode) {
+                    CacheClearMode.ALL -> disk.clearAll()
+                    CacheClearMode.ORDINARY -> disk.clearOrdinary()
+                    CacheClearMode.OUTSIDE_PLAYLISTS -> {
+                        val requestedOwners = directory.signature()
+                        val library = MusicLibraryStore.get(context).state.value.playlists
+                        val playlists = directory.cleanupPlaylists()
+                        val identities = playlists.flatMap { it.tracks }.mapTo(hashSetOf()) { it.cacheIdentity() }
+                        disk.clearOutsidePlaylists(identities) {
+                            directory.signature() == requestedOwners && MusicLibraryStore.get(context).state.value.playlists == library
+                        }
+                    }
+                }
+            }
+            catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { mutable.update { it.copy(message = "部分缓存暂时无法清理，请稍后重试") } }
             refreshStatuses()
         } }
@@ -73,8 +88,7 @@ internal class MusicCacheManager private constructor(private val context: Contex
     init {
         scope.launch { disk.audioRevision.debounce(250).collect { refreshStatuses() } }
         scope.launch { MusicLibraryStore.get(context).state.collect { library ->
-            mutable.update { old -> old.copy(playlists = (old.playlists.filter { it.source != MusicSource.LOCAL } + library.playlists)
-                .distinctBy(::cachePlaylistKey)) }
+            mutable.update { old -> old.copy(playlists = replaceCacheProviderPlaylists(old.playlists, MusicSource.LOCAL, library.playlists)) }
             refreshStatuses()
         } }
     }
@@ -89,24 +103,23 @@ internal class MusicCacheManager private constructor(private val context: Contex
         owners = nextOwners
         loadJob?.cancel()
         loadJob = scope.launch {
-            val cached = directory.cached(source, incoming)
+            val cached = directory.cached()
             if (accountChanged) mutable.update { it.copy(playlists = cached, cachedTracks = emptyList(), statuses = emptyMap(), audioDetails = emptyMap(), message = null) }
-            else mutable.update { it.copy(playlists = (cached + it.playlists).distinctBy(::cachePlaylistKey)) }
+            else mutable.update { it.copy(playlists = cached) }
             refreshStatuses()
             if (!offline.hasNetwork()) return@launch
-            for (provider in listOf(MusicSource.QQ, MusicSource.NETEASE, MusicSource.KUGOU)) {
+            for (provider in listOf(MusicSource.QQ, MusicSource.NETEASE, MusicSource.KUGOU, MusicSource.BILIBILI)) {
                 try {
                     val remote = directory.remote(provider)
                     ensureActive()
                     if (owners != nextOwners || directory.signature() != nextOwners) return@launch
-                    if (remote.isNotEmpty()) {
+                    if (remote.isNotEmpty() || directory.signedIn(provider)) {
                         val old = mutable.value.playlists
                         val merged = remote.map { playlist ->
                             val previous = old.firstOrNull { cachePlaylistKey(it) == cachePlaylistKey(playlist) }
                             if (playlist.tracks.size < playlist.count && previous != null) playlist.copy(tracks = previous.tracks) else playlist
                         }
-                        mutable.update { it.copy(playlists = (it.playlists.filter { p -> p.source != provider } + merged)
-                            .distinctBy(::cachePlaylistKey)) }
+                        mutable.update { it.copy(playlists = replaceCacheProviderPlaylists(it.playlists, provider, merged)) }
                         directory.save(mutable.value.playlists)
                         refreshStatuses()
                         remote.filter { it.isPrimaryCachePlaylist }.forEach { favorite ->
@@ -136,6 +149,15 @@ internal class MusicCacheManager private constructor(private val context: Contex
             catch (error: Exception) { mutable.update { it.copy(message = error.asUserMessage()) } }
             finally { mutable.update { it.copy(loading = false) }; refreshStatuses() }
         }
+    }
+
+    suspend fun selectionTracks(playlist: MusicPlaylist): List<MusicTrack> = withContext(Dispatchers.IO) {
+        val requestedOwners = owners
+        val detail = if (playlist.tracks.size < playlist.count) directory.load(playlist) else playlist
+        check(owners == requestedOwners && directory.signature() == requestedOwners) { "账号已变化，请重新打开歌单" }
+        check(detail.tracks.size >= detail.count) { "歌单歌曲尚未加载完整，请重试" }
+        updatePlaylist(detail)
+        detail.tracks.distinctBy { it.cacheIdentity() }
     }
 
     fun play(playlist: MusicPlaylist, onReady: (MusicPlaylist) -> Unit) {
@@ -230,23 +252,29 @@ internal class MusicCacheManager private constructor(private val context: Contex
         track.title, "", "", 1, track.artworkStart, track.artworkEnd, track.artworkMark, listOf(track), track.artworkUrl)
 
     fun remove(playlist: MusicPlaylist) {
+        removeTracks(playlist.tracks)
+    }
+
+    fun removeTracks(tracks: List<MusicTrack>) {
         val oldBatch = batch
         cancel()
         scope.launch {
             oldBatch?.join()
             operationMutex.withLock {
                 try {
-                    playlist.tracks.forEach(offline::remove)
+                    disk.removeTracks(tracks)
                     refreshStatuses()
                     mutable.update { it.copy(message = null) }
-                } catch (error: Exception) { mutable.update { it.copy(message = error.asUserMessage()) } }
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) { mutable.update { it.copy(message = error.asUserMessage()) } }
             }
         }
     }
 
     private fun updatePlaylist(playlist: MusicPlaylist) {
-        mutable.update { state -> state.copy(playlists = (state.playlists.filterNot { cachePlaylistKey(it) == cachePlaylistKey(playlist) } + playlist)
-            .distinctBy(::cachePlaylistKey)) }
+        if (!isCacheLibraryPlaylist(playlist)) return
+        mutable.update { state -> state.copy(playlists = canonicalCachePlaylists(
+            state.playlists.filterNot { cachePlaylistKey(it) == cachePlaylistKey(playlist) } + playlist)) }
         directory.save(mutable.value.playlists)
     }
 

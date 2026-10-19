@@ -43,7 +43,7 @@ internal fun BiliLibraryHome(state: BiliLibraryUiState, model: BiliLibraryViewMo
                 LibrarySettingsGroup { Spacer(Modifier.fillMaxWidth().aspectRatio(1f)) }
             }
             items(directory.folders, key = { it.id }) { folder ->
-                LaunchedEffect(folder.id) { model.loadFolderCover(folder) }
+                LaunchedEffect(folder.id, directory.coverRevision) { model.loadFolderCover(folder) }
                 Box(Modifier.animateItem(fadeInSpec = musicMotion(300), placementSpec = null, fadeOutSpec = musicMotion(180))) {
                     QqPlaylistCard(folder.asPlaylist(), { model.selectFolder(folder) },
                         { if (state.playingFolderId == null) model.playFolder(folder, playback.playlist) },
