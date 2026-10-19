@@ -90,6 +90,8 @@ internal class MusicOneUsbAudioSink(
         try {
             if (reuseDirectOutput) flushDirectOutput() else selectOutput(inputFormat)
             super.configure(inputFormat, specifiedBufferSize, outputChannels)
+            // 只在 delegate 初始化成功后确认直通接管，避免把系统输出错误算成 USB 中断。
+            UsbAudioOutputStatus.markDirectOutput(stream?.isAlive == true)
             if (stream?.isAlive == true) muteDelegate() else unmuteDelegate()
         } finally {
             if (changingRoute) finishRouteChange()
@@ -323,6 +325,7 @@ internal class MusicOneUsbAudioSink(
     }
 
     private fun releaseDirectOutput() {
+        UsbAudioOutputStatus.markDirectOutput(false)
         if (UsbExclusiveVolumeKeys.activeGain === systemMediaVolume) UsbExclusiveVolumeKeys.activeGain = null
         val activeStream = stream
         stream = null

@@ -15,10 +15,21 @@ class UsbOutputRecoveryTest {
         val error = RuntimeException(UsbOutputException(IOException("设备已断开")))
         assertTrue(isUsbOutputFailure(error, true))
         assertTrue(isUsbOutputFailure(error, false))
-        assertFalse(isUsbOutputFailure(IOException("网络不可用"), true))
+        assertFalse(isUsbOutputFailure(IOException("网络不可用"), true, directRouteActive = true))
         val write = AudioSink.WriteException(-1, Format.Builder().build(), false)
-        assertTrue(isUsbOutputFailure(RuntimeException(write), true))
-        assertFalse(isUsbOutputFailure(write, false))
+        assertTrue(isUsbOutputFailure(RuntimeException(write), true, directRouteActive = true))
+        assertFalse(isUsbOutputFailure(write, false, directRouteActive = true))
+    }
+
+    @Test fun ordinaryOutputFailuresAreNotUsbLossBeforeTheDirectRouteTakesOver() {
+        val format = Format.Builder().build()
+        val write = AudioSink.WriteException(-1, format, false)
+        val init = AudioSink.InitializationException("系统输出初始化失败", -1, format, false,
+            IOException("没有可用音频设备"))
+        assertFalse(isUsbOutputFailure(write, true, directRouteActive = false))
+        assertFalse(isUsbOutputFailure(init, true, directRouteActive = false))
+        // 直通链路真正接管后，同类错误仍按 USB 中断处理。
+        assertTrue(isUsbOutputFailure(init, true, directRouteActive = true))
     }
 
     @Test fun unplugKeepsTheSameTrackPositionAndPausedIntent() = runBlocking {

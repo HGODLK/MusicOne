@@ -6,9 +6,13 @@ import androidx.media3.exoplayer.audio.AudioSink
 /** 输出设备错误单独交接，不进入歌曲换票或跳过流程。 */
 internal class UsbOutputException(cause: Throwable) : IllegalStateException("USB 音频输出已中断", cause)
 
-internal fun isUsbOutputFailure(error: Throwable, exclusiveEnabled: Boolean): Boolean =
+internal fun isUsbOutputFailure(
+    error: Throwable,
+    exclusiveEnabled: Boolean,
+    directRouteActive: Boolean = UsbAudioOutputStatus.directOutputActive,
+): Boolean =
     generateSequence(error) { it.cause }.any {
-        it is UsbOutputException || exclusiveEnabled &&
+        it is UsbOutputException || exclusiveEnabled && directRouteActive &&
             (it is AudioSink.WriteException || it is AudioSink.InitializationException)
     }
 

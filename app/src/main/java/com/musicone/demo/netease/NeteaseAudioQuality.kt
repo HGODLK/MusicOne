@@ -1,5 +1,6 @@
 package com.musicone.demo
 
+import android.util.Log
 import org.json.JSONObject
 
 /** 先识别实际编码；压缩后的 FLAC 码率不能用于推断位深或采样率。 */
@@ -38,8 +39,13 @@ internal fun neteasePlaybackSource(value: JSONObject, requested: AudioQuality,
     val bitDepth = value.optInt("bitDepth", value.optInt("bitdepth"))
     val info = if (format.equals("flac", true)) inspect(url) ?: if (sampleRate > 0 && bitDepth in 1..32)
         QqFlacInfo(0, sampleRate, bitDepth) else null else null
-    return PlaybackSource(url, requested,
-        neteaseAudioQuality(value.optString("level"), format, bitRate, info),
-        bitRate, format, value.has("freeTrialInfo") && !value.isNull("freeTrialInfo"),
-        actualFormat = info?.description)
+    val actualQuality = neteaseAudioQuality(value.optString("level"), format, bitRate, info)
+    val trial = value.has("freeTrialInfo") && !value.isNull("freeTrialInfo")
+    Log.i(NETEASE_PLAYBACK_LOG_TAG,
+        "source song=${value.optString("id")} requested=${requested.providerLevel} " +
+            "returned=${value.optString("level")} actual=${actualQuality.providerLevel} format=$format " +
+            "bitrate=$bitRate sampleRate=$sampleRate bitDepth=$bitDepth trial=$trial")
+    return PlaybackSource(url, requested, actualQuality, bitRate, format, trial, actualFormat = info?.description)
 }
+
+internal const val NETEASE_PLAYBACK_LOG_TAG = "NeteasePlayback"

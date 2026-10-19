@@ -31,6 +31,15 @@ internal object UsbAudioOutputStatus {
     private val mutableDeviceChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
     val deviceChanges = mutableDeviceChanges
 
+    /** 独占流是否真正持有输出；错误分流必须先核对，不能只看开关。 */
+    @Volatile
+    var directOutputActive = false
+        private set
+
+    fun markDirectOutput(active: Boolean) {
+        directOutputActive = active
+    }
+
     fun publish(snapshot: UsbAudioOutputSnapshot) {
         mutable.value = snapshot
     }

@@ -1,5 +1,6 @@
 package com.musicone.demo
 
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -243,9 +244,22 @@ internal class NeteaseApiClient(
                 .put("ids", JSONArray().put(trackId.toLong()))
                 .put("level", quality.providerLevel)
                 .put("encodeType", if (quality >= AudioQuality.LOSSLESS) "flac" else "aac")
-            try { return postEapi(PLAYBACK_EAPI, payload, cookie, "播放地址获取失败").toPlaybackSource(quality) }
+            try {
+                return postEapi(
+                    PLAYBACK_EAPI,
+                    payload,
+                    cookie,
+                    "播放地址获取失败",
+                    profile = NeteaseRequestProfile.ANDROID,
+                ).toPlaybackSource(quality)
+            }
             catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (error: Exception) { accountFailure = error }
+            catch (error: Exception) {
+                accountFailure = error
+                Log.w(NETEASE_PLAYBACK_LOG_TAG,
+                    "取源失败 song=$trackId requested=${quality.providerLevel} type=${error.javaClass.simpleName} " +
+                        "code=${(error as? NeteaseApiException)?.apiCode ?: "none"}")
+            }
         }
         if (quality > AudioQuality.EXHIGH) throw (accountFailure ?: PlatformApiException("当前账号无法播放${quality.label}"))
         val ids = JSONArray().put(trackId.toLong()).toString().formEncoded()
@@ -284,11 +298,17 @@ internal class NeteaseApiClient(
         return response.parseSongDetails(hasVipAccess)
     }
 
-    private fun postEapi(url: String, payload: JSONObject, cookie: String, fallback: String): JSONObject {
-        payload.put("header", neteaseRequestHeader(cookie, deviceId()))
+    private fun postEapi(
+        url: String,
+        payload: JSONObject,
+        cookie: String,
+        fallback: String,
+        profile: NeteaseRequestProfile = NeteaseRequestProfile.PC,
+    ): JSONObject {
+        payload.put("header", neteaseRequestHeader(cookie, deviceId(), profile))
         val params = NeteaseCrypto.encryptEapi(url, payload.toString())
         val response = postForm(url, mapOf("params" to params), cookie,
-            headers = mapOf("User-Agent" to NETEASE_PC_USER_AGENT)).body
+            headers = mapOf("User-Agent" to neteaseUserAgent(profile))).body
         response.requireSuccess(fallback)
         return response
     }
