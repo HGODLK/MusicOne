@@ -28,15 +28,18 @@ internal class PlatformPreferences(context: Context) {
 
     fun read(): SavedPlatformSettings {
         migrateLegacyNeteaseSession()
-        val source = runCatching {
-            MusicSource.valueOf(preferences.getString(KEY_SOURCE, MusicSource.NETEASE.name).orEmpty())
-        }.getOrDefault(MusicSource.NETEASE)
+        val source = selectedSource()
         return SavedPlatformSettings(
             selectedSource = source,
             sourceSelected = preferences.contains(KEY_SOURCE),
             sessions = MusicSource.entries.associateWith(::readSession),
         )
     }
+
+    /** 只读取主音源，不加载全部会话；供 B站跟随主音源首选时使用。 */
+    fun selectedSource(): MusicSource = runCatching {
+        MusicSource.valueOf(preferences.getString(KEY_SOURCE, MusicSource.NETEASE.name).orEmpty())
+    }.getOrDefault(MusicSource.NETEASE)
 
     fun readSession(source: MusicSource): PlatformSession {
         val credential = preferences.getString(key(source, FIELD_CREDENTIAL), "").orEmpty()

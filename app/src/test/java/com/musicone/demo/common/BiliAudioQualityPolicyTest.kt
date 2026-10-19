@@ -18,9 +18,20 @@ class BiliAudioQualityPolicyTest {
             assertEquals(AudioQuality.HI_RES, biliAutomaticQuality(requested, eligibility(false, unlocked = true)))
             assertEquals(AudioQuality.HI_RES, biliAutomaticQuality(requested, eligibility(true, usb = true)))
         }
-        for (requested in listOf(AudioQuality.STANDARD, AudioQuality.HIGHER, AudioQuality.EXHIGH)) {
-            assertEquals(AudioQuality.STANDARD, biliAutomaticQuality(requested, eligibility(true)))
+        // B站只有标准/高音质/Dolby 三档，旧 192/320 首选也应按高音质请求。
+        for (requested in listOf(AudioQuality.HIGHER, AudioQuality.EXHIGH)) {
+            assertEquals(AudioQuality.DOLBY, biliAutomaticQuality(requested, eligibility(true)))
+            assertEquals(AudioQuality.HI_RES, biliAutomaticQuality(requested, eligibility(false)))
         }
+        assertEquals(AudioQuality.STANDARD, biliAutomaticQuality(AudioQuality.STANDARD, eligibility(true)))
+    }
+
+    @Test fun biliPreferenceFollowsMainSourceTier() {
+        assertEquals(AudioQuality.DOLBY, biliPreferredFromMain(AudioQuality.HI_RES))
+        assertEquals(AudioQuality.DOLBY, biliPreferredFromMain(AudioQuality.LOSSLESS))
+        assertEquals(AudioQuality.STANDARD, biliPreferredFromMain(AudioQuality.EXHIGH))
+        assertEquals(AudioQuality.STANDARD, biliPreferredFromMain(AudioQuality.STANDARD))
+        assertEquals(AudioQuality.DOLBY, biliPreferredFromMain(AudioQuality.DOLBY))
     }
 
     @Test fun supportedAutomaticPlaybackFallsBackFromDolbyToHiResThenNormal() {
@@ -54,12 +65,13 @@ class BiliAudioQualityPolicyTest {
         assertEquals(listOf(AudioQuality.STANDARD, AudioQuality.HI_RES, AudioQuality.DOLBY), biliAvailableQualities(all, eligibility(true)))
         assertFalse(AudioQuality.LOSSLESS in playerQualitiesForSource(MusicSource.BILIBILI))
         assertFalse(AudioQuality.LOSSLESS in biliAvailableQualities(all, eligibility(false, unlocked = true)))
-        assertEquals("NORM", AudioQuality.STANDARD.displayCompactLabel(MusicSource.BILIBILI))
+        assertEquals("Norm", AudioQuality.STANDARD.displayCompactLabel(MusicSource.BILIBILI))
         assertEquals("普通", AudioQuality.STANDARD.displayLabel(MusicSource.BILIBILI))
         assertEquals(AudioQuality.HI_RES, normalizedQualityPreference(MusicSource.BILIBILI, AudioQuality.LOSSLESS))
         assertEquals(AudioQuality.HI_RES, normalizedQualityPreference(MusicSource.BILIBILI, null))
         assertEquals(AudioQuality.DOLBY, normalizedQualityPreference(MusicSource.BILIBILI, AudioQuality.DOLBY))
-        assertEquals(AudioQuality.STANDARD, normalizedQualityPreference(MusicSource.BILIBILI, AudioQuality.EXHIGH))
+        assertEquals(AudioQuality.HI_RES, normalizedQualityPreference(MusicSource.BILIBILI, AudioQuality.EXHIGH))
+        assertEquals(AudioQuality.HI_RES, normalizedQualityPreference(MusicSource.BILIBILI, AudioQuality.HIGHER))
         assertEquals(AudioQuality.EXHIGH, normalizedQualityPreference(MusicSource.QQ, null))
         assertEquals(AudioQuality.LOSSLESS, normalizedQualityPreference(MusicSource.NETEASE, AudioQuality.DOLBY))
     }

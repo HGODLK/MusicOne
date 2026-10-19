@@ -114,7 +114,7 @@ internal fun AudioQuality.displayLabel(source: MusicSource): String = when {
 }
 
 internal fun AudioQuality.displayCompactLabel(source: MusicSource): String = when {
-    source == MusicSource.BILIBILI && this == AudioQuality.STANDARD -> "NORM"
+    source == MusicSource.BILIBILI && this == AudioQuality.STANDARD -> "Norm"
     else -> when (this) {
     AudioQuality.HI_RES -> "HiRes"
     AudioQuality.LOSSLESS -> "FLAC"

@@ -11,7 +11,10 @@ class PreloadedPlaybackHandoffTest {
         val resolved = ResolvedPlayback(song.copy(previewUrl = "https://example.com/hires.flac"),
             PlaybackSource("https://example.com/hires.flac", AudioQuality.HI_RES, AudioQuality.HI_RES,
                 4_600_000, "flac", false))
-        val entries = PlaybackPreloadEntries<String, ResolvedPlayback>(::preloadedPlaybackFresh, ::preloadedPlaybackRefreshDue)
+        val entries = PlaybackPreloadEntries<String, ResolvedPlayback>(
+            ttlMs = { 120_000L },
+            refreshLeadMs = 5_000L,
+        )
         entries.work(song.id, 0L)
         entries.resolved(song.id, resolved, 0L)
         // 片段下载还未完成，取源结果已可交付，后补元数据也不能挡住起播。

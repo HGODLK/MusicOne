@@ -6,8 +6,8 @@ import org.junit.Test
 
 class PlaybackPreloadEntriesTest {
     private fun entries() = PlaybackPreloadEntries<String, String>(
-        fresh = ::preloadedPlaybackFresh,
-        refreshDue = ::preloadedPlaybackRefreshDue,
+        ttlMs = { 30_000L },
+        refreshLeadMs = 5_000L,
     )
 
     @Test fun completedDownloadWaitsUntilRefreshAndNewTicketNeedsDownload() {
@@ -23,25 +23,28 @@ class PlaybackPreloadEntriesTest {
         assertEquals("second", entries.peek("a", 25_000L))
     }
 
-    @Test fun refreshRequiresPermissionButInitialResolutionDoesNot() {
+    @Test fun refreshHappensWithoutExtraPermissionAndExpiryAlwaysResolves() {
         val entries = entries()
         assertEquals(PlaybackPreloadEntries.Work.RESOLVE, entries.work("a", 0L, allowRefresh = false))
         entries.resolved("a", "url", 0L)
         entries.downloaded("a")
-        assertEquals(PlaybackPreloadEntries.Work.NONE, entries.work("a", 25_000L, allowRefresh = false))
-        assertEquals(PlaybackPreloadEntries.Work.NONE, entries.work("a", 60_000L, allowRefresh = false))
+        assertEquals(PlaybackPreloadEntries.Work.RESOLVE, entries.work("a", 25_000L, allowRefresh = false))
+        assertEquals(PlaybackPreloadEntries.Work.RESOLVE, entries.work("a", 60_000L, allowRefresh = false))
         assertEquals(PlaybackPreloadEntries.Work.RESOLVE, entries.work("a", 60_000L, allowRefresh = true))
     }
 
-    @Test fun unfinishedDownloadResolvesExpiredTicketEvenWithoutRefreshPermission() {
+    @Test fun unfinishedDownloadRefreshesBeforeExpiryAndResolvesAfterIt() {
         val entries = entries()
         entries.work("a", 0L)
         entries.resolved("a", "url", 0L)
+        assertEquals(PlaybackPreloadEntries.Work.RESOLVE, entries.work("a", 25_000L, allowRefresh = false))
+        entries.resolved("a", "renewed", 25_000L)
         assertEquals(PlaybackPreloadEntries.Work.DOWNLOAD, entries.work("a", 25_000L, allowRefresh = false))
         assertEquals(PlaybackPreloadEntries.Work.DOWNLOAD, entries.work("a", 29_999L, allowRefresh = false))
-        assertEquals(PlaybackPreloadEntries.Work.RESOLVE, entries.work("a", 30_000L, allowRefresh = false))
-        entries.resolved("a", "renewed", 30_000L)
-        assertEquals(PlaybackPreloadEntries.Work.DOWNLOAD, entries.work("a", 30_000L, allowRefresh = false))
+        assertEquals(PlaybackPreloadEntries.Work.DOWNLOAD, entries.work("a", 49_999L, allowRefresh = false))
+        assertEquals(PlaybackPreloadEntries.Work.RESOLVE, entries.work("a", 50_000L, allowRefresh = false))
+        entries.resolved("a", "renewed-again", 50_000L)
+        assertEquals(PlaybackPreloadEntries.Work.DOWNLOAD, entries.work("a", 50_000L, allowRefresh = false))
     }
 
     @Test fun completedDownloadRetriesFailedRefreshAfterBackoffWithoutRefreshPermission() {
@@ -135,11 +138,11 @@ class PlaybackPreloadEntriesTest {
         entries.work("a", 1_000L)
         entries.resolved("a", "url", 1_000L)
         assertNull(entries.peek("a", 999L))
-        assertEquals("url", entries.peek("a", 30_999L))
-        assertNull(entries.peek("a", 31_000L))
-        entries.failed("a", 31_000L, retryable = false)
-        assertNull(entries.take("a", 31_000L))
-        assertEquals(PlaybackPreloadEntries.Work.RESOLVE, entries.work("a", 31_000L))
+        assertEquals("url", entries.peek("a", 25_999L))
+        assertNull(entries.peek("a", 26_000L))
+        entries.failed("a", 26_000L, retryable = false)
+        assertNull(entries.take("a", 26_000L))
+        assertEquals(PlaybackPreloadEntries.Work.RESOLVE, entries.work("a", 26_000L))
     }
 
     @Test fun lateCallbacksCannotReviveKeysRemovedFromWindow() {
@@ -187,9 +190,8 @@ class PlaybackPreloadEntriesTest {
         assertEquals(false, entries.needsRefresh("a", 25_000L, allowRefresh = true))
         entries.resolved("a", "url", 0L)
         assertEquals(false, entries.needsRefresh("a", 24_999L, allowRefresh = true))
-        assertEquals(false, entries.needsRefresh("a", 25_000L, allowRefresh = false))
+        assertEquals(true, entries.needsRefresh("a", 25_000L, allowRefresh = false))
         assertEquals(true, entries.needsRefresh("a", 25_000L, allowRefresh = true))
-        assertEquals(false, entries.needsRefresh("a", 25_000L, allowRefresh = false))
         entries.failed("a", 25_000L, retryable = true)
         assertEquals(false, entries.needsRefresh("a", 34_999L, allowRefresh = true))
         assertEquals(true, entries.needsRefresh("a", 35_000L, allowRefresh = true))

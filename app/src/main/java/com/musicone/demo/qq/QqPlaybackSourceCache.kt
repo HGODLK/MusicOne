@@ -31,7 +31,8 @@ internal class QqPlaybackSourceCache(
     @Synchronized
     fun remember(track: MusicTrack, cookie: String, source: PlaybackSource) {
         if (source.trial || source.verificationPending) return
-        entries[key(track, cookie, source.actualQuality)] = Entry(source, clockMs() + 30_000L)
+        entries[key(track, cookie, source.actualQuality)] =
+            Entry(source, clockMs() + playbackTicketTtlMs(MusicSource.QQ))
     }
 
     private fun key(track: MusicTrack, cookie: String, quality: AudioQuality) = Key(

@@ -1,19 +1,22 @@
 package com.musicone.demo
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 class QqPlaybackSourceCacheTest {
     @Test
-    fun 短期复用完整音源但不跨凭证媒体标识或过期时间() {
+    fun 完整音源按平台有效期复用且不跨凭证媒体标识() {
         var now = 0L
         val cache = QqPlaybackSourceCache { now }
         cache.remember(track, "credential-one", source)
         assertEquals(source, cache.get(track, "credential-one", source.actualQuality))
         assertNull(cache.get(track, "credential-two", source.actualQuality))
         assertNull(cache.get(track.copy(mediaId = "different"), "credential-one", source.actualQuality))
-        now = 30_000L
+        now = playbackTicketTtlMs(MusicSource.QQ) - 1
+        assertNotNull(cache.get(track, "credential-one", source.actualQuality))
+        now = playbackTicketTtlMs(MusicSource.QQ)
         assertNull(cache.get(track, "credential-one", source.actualQuality))
     }
 

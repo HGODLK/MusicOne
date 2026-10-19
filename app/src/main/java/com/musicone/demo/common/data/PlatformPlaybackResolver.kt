@@ -9,7 +9,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 internal interface PlatformPlaybackAdapter {
     val source: MusicSource
@@ -20,6 +23,13 @@ internal interface PlatformPlaybackAdapter {
         if (verifyMedia) resolveVerified(track, quality) else resolve(track, quality)
     suspend fun availableQualities(track: MusicTrack, onProgress: (List<AudioQuality>) -> Unit): List<AudioQuality>
     suspend fun lyrics(track: MusicTrack): List<TimedLyric>
+}
+
+/** 单档探测结果；超时与明确不可用必须分开，避免把超时当成降档。 */
+private sealed interface TierProbe {
+    data class Available(val playback: ResolvedPlayback) : TierProbe
+    data object Unavailable : TierProbe
+    data object TimedOut : TierProbe
 }
 
 internal class PlatformPlaybackResolver(
@@ -36,6 +46,9 @@ internal class PlatformPlaybackResolver(
     private val qqArtworkAliases = QqArtworkAliasStore(context)
     private val localLibrary = MusicLibraryStore.get(context)
     private val localPlayback = LocalPlaybackAdapter(context.applicationContext)
+    private val qualityCache = PlaybackQualityCache(context)
+    // 后台探测最多两路并发；下载与歌词仍走各自的单路门控。
+    private val probeSlots = Semaphore(2)
     private val adapters: Map<MusicSource, PlatformPlaybackAdapter> = listOf(
         NeteasePlaybackAdapter(NeteaseApiClient { preferences.readSession(MusicSource.NETEASE).deviceId }) { preferences.credential(MusicSource.NETEASE) },
         QqPlaybackAdapter(
@@ -92,10 +105,176 @@ internal class PlatformPlaybackResolver(
         }
     }
 
+    /** 预加载入口：后台按首选档探测，必要时并发无损通道，失败再逐档回退。 */
     suspend fun resolvePreferred(track: MusicTrack, preferredQuality: AudioQuality): ResolvedPlayback {
         val requested = automaticQualityForSource(track.source, preferredQuality)
-        return if (track.source == MusicSource.LOCAL) resolve(track, requested) else
-            offline.resolve(track, requested, allowOtherQuality = false) ?: resolveOnline(track, requested, verifyMedia = true)
+        if (track.source == MusicSource.LOCAL) return resolve(track, requested)
+        offline.resolve(track, requested, allowOtherQuality = false)?.let { return it }
+        val probe = probeBest(track, requested)
+        val resolved = probe.playback ?: throw PlatformApiException("歌曲暂无可用播放地址")
+        if (!resolved.source.trial) offline.remember(resolved, requested)
+        return resolved
+    }
+
+    /** 无缓存时的首次探测：Hi-Res/杜比走两路并发，其余从上往下逐档。 */
+    suspend fun probeBest(track: MusicTrack, preferredQuality: AudioQuality): PlaybackQualityProbe {
+        val requested = automaticQualityForSource(track.source, preferredQuality)
+        if (track.source == MusicSource.LOCAL) return PlaybackQualityProbe(resolve(track, requested), true)
+        if (!offline.hasNetwork()) {
+            return PlaybackQualityProbe(offline.resolve(track, requested, allowOtherQuality = false), false)
+        }
+        val ready = prepareTrack(track)
+        val lanes = playbackParallelLanes(requested).filter(DolbyPlaybackPolicy::permits)
+        val timedOut = mutableSetOf<AudioQuality>()
+        if (lanes.isNotEmpty() && track.source != MusicSource.BILIBILI) {
+            val outcomes = supervisorScope {
+                lanes.map { quality ->
+                    async { quality to probeTierTimed(ready, quality, PLAYBACK_QUALITY_GROUP_WINDOW_MS) }
+                }.awaitAll()
+            }
+            val successes = mutableListOf<Pair<AudioQuality, ResolvedPlayback>>()
+            for ((quality, outcome) in outcomes) {
+                when (outcome) {
+                    is TierProbe.Available -> successes += quality to outcome.playback
+                    TierProbe.TimedOut -> timedOut += quality
+                    TierProbe.Unavailable -> {}
+                }
+            }
+            bestProbe(track, successes, timedOut)?.let { return it }
+        }
+        for (quality in playbackQualityLadder(track.source, requested)) {
+            if (quality in lanes) continue
+            when (val outcome = probeTierTimed(ready, quality, PLAYBACK_QUALITY_GROUP_WINDOW_MS)) {
+                is TierProbe.Available -> return bestProbe(
+                    track,
+                    listOf(quality to outcome.playback),
+                    timedOut,
+                ) ?: PlaybackQualityProbe(outcome.playback, false)
+                TierProbe.TimedOut -> timedOut += quality
+                TierProbe.Unavailable -> {}
+            }
+        }
+        return PlaybackQualityProbe(null, false)
+    }
+
+    /**
+     * 已有缓存时从首选档往下对比，一直走到缓存档。
+     * 更高档超时只会让本次暂用低档，不会把低档写死进缓存。
+     */
+    suspend fun probeComparison(
+        track: MusicTrack,
+        preferredQuality: AudioQuality,
+        cached: AudioQuality,
+    ): PlaybackQualityProbe {
+        val requested = automaticQualityForSource(track.source, preferredQuality)
+        val ready = prepareTrack(track)
+        val timedOut = mutableSetOf<AudioQuality>()
+        for (quality in playbackComparisonLadder(track.source, requested, cached)) {
+            when (val outcome = probeTierTimed(ready, quality, PLAYBACK_QUALITY_COMPARISON_TIMEOUT_MS)) {
+                is TierProbe.Available -> {
+                    val cacheable = playbackProbeCacheable(quality, timedOut)
+                    if (cacheable) qualityCache.write(track, outcome.playback.source.actualQuality)
+                    else qualityCache.upgrade(track, outcome.playback.source.actualQuality)
+                    return PlaybackQualityProbe(outcome.playback, cacheable)
+                }
+                TierProbe.TimedOut -> timedOut += quality
+                TierProbe.Unavailable -> {}
+            }
+        }
+        return PlaybackQualityProbe(null, false)
+    }
+
+    /** 从缓存档开始尝试；失败或超时后才继续往下。 */
+    suspend fun probeAt(
+        track: MusicTrack,
+        preferredQuality: AudioQuality,
+        cached: AudioQuality,
+    ): PlaybackQualityProbe {
+        val requested = automaticQualityForSource(track.source, preferredQuality)
+        val start = playbackCachedStart(cached, track.source, requested) ?: return probeBest(track, requested)
+        val ready = prepareTrack(track)
+        val ladder = playbackQualityLadder(track.source, requested)
+        val index = ladder.indexOfFirst { it.ordinal <= start.ordinal }
+        val tiers = if (index >= 0) ladder.drop(index) else ladder
+        val timedOut = mutableSetOf<AudioQuality>()
+        for (quality in tiers) {
+            when (val outcome = probeTierTimed(ready, quality, PLAYBACK_QUALITY_GROUP_WINDOW_MS)) {
+                is TierProbe.Available -> {
+                    val cacheable = playbackProbeCacheable(quality, timedOut)
+                    if (cacheable) qualityCache.write(track, outcome.playback.source.actualQuality)
+                    else qualityCache.upgrade(track, outcome.playback.source.actualQuality)
+                    return PlaybackQualityProbe(outcome.playback, cacheable)
+                }
+                TierProbe.TimedOut -> timedOut += quality
+                TierProbe.Unavailable -> {}
+            }
+        }
+        return PlaybackQualityProbe(null, false)
+    }
+
+    private fun bestProbe(
+        track: MusicTrack,
+        successes: List<Pair<AudioQuality, ResolvedPlayback>>,
+        timedOut: Set<AudioQuality>,
+    ): PlaybackQualityProbe? {
+        val best = successes.maxByOrNull { it.first.ordinal } ?: return null
+        val cacheable = playbackProbeCacheable(best.first, timedOut)
+        if (cacheable) qualityCache.write(track, best.second.source.actualQuality)
+        else qualityCache.upgrade(track, best.second.source.actualQuality)
+        return PlaybackQualityProbe(best.second, cacheable)
+    }
+
+    /** 下载前把已取到的完整音源登记进离线索引，保留现有缓存管理语义。 */
+    fun rememberPreloaded(resolved: ResolvedPlayback, preferred: AudioQuality) =
+        offline.remember(resolved, preferred)
+
+    private suspend fun probeTierTimed(track: MusicTrack, quality: AudioQuality, timeoutMs: Long): TierProbe =
+        withTimeoutOrNull(timeoutMs) { probeTier(track, quality, verify = true) } ?: TierProbe.TimedOut
+
+    private suspend fun probeTier(track: MusicTrack, quality: AudioQuality, verify: Boolean): TierProbe {
+        if (!DolbyPlaybackPolicy.permits(quality)) return TierProbe.Unavailable
+        offline.resolve(track, quality, allowOtherQuality = false)?.let { return TierProbe.Available(it) }
+        if (!offline.hasNetwork()) return TierProbe.Unavailable
+        if (track.source == MusicSource.BILIBILI && !track.playable) {
+            throw TrackUnavailableException(track.unavailableReason ?: "B站资源已失效")
+        }
+        val adapter = adapters[track.source] ?: throw PlatformApiException("${track.source.label}尚未接入播放")
+        return probeSlots.withPermit {
+            try {
+                val source = if (verify) adapter.resolveVerified(track, quality) else adapter.resolve(track, quality)
+                val lower = source.actualQuality.ordinal < quality.ordinal
+                val lowerAccepted = track.source == MusicSource.BILIBILI ||
+                    (track.source == MusicSource.NETEASE &&
+                        isNeteaseQualitySatisfied(quality, source.actualQuality))
+                if (source.trial || (lower && !lowerAccepted)) {
+                    TierProbe.Unavailable
+                } else {
+                    registerResolvedSource(source)
+                    TierProbe.Available(ResolvedPlayback(track.copy(previewUrl = source.url), source))
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                if (error.stopsPlaybackFallback()) throw error
+                TierProbe.Unavailable
+            }
+        }
+    }
+
+    private suspend fun prepareTrack(track: MusicTrack): MusicTrack {
+        val aliased = qqArtworkAliases.apply(track)
+        val adapter = adapters[track.source] ?: throw PlatformApiException("${track.source.label}尚未接入播放")
+        return if (aliased.requiresQqPlaybackMetadata() ||
+            (aliased.source == MusicSource.BILIBILI && (aliased.bilibiliCid <= 0L || aliased.durationMs <= 0L))) {
+            adapter.enrichTrack(aliased)
+        } else {
+            aliased
+        }
+    }
+
+    private fun registerResolvedSource(source: PlaybackSource) {
+        // 只登记平台自带缓存键（B站 DASH 等）；普通音源在真正下载或播放时再建索引。
+        source.cacheKey?.let { SupplementalPlaybackRequests.register(source.url, source.requestHeaders, it) }
     }
 
     private suspend fun resolveOnline(track: MusicTrack, preferredQuality: AudioQuality, verifyMedia: Boolean): ResolvedPlayback {
@@ -116,7 +295,19 @@ internal class PlatformPlaybackResolver(
         var trialFallback: PlaybackSource? = null
         var unavailable: TrackUnavailableException? = null
         var uncertain: Throwable? = null
-        val candidates = preferredQuality.fallbackCandidates(track.source).filter(DolbyPlaybackPolicy::permits)
+        val cachedStart = playbackCachedStart(qualityCache.read(track), track.source, preferredQuality)
+        val ladder = playbackQualityLadder(track.source, preferredQuality)
+        val candidates = (if (cachedStart != null) {
+            if (track.source == MusicSource.BILIBILI && cachedStart.ordinal < preferredQuality.ordinal) {
+                // B站旧缓存可能被记成普通；先按当前首选完整走一遍，避免低档缓存压住 HiRes。
+                ladder
+            } else {
+                // 已知缓存档可用时不再回头尝试更高档；更高档的升级交给后台对比探测。
+                listOf(cachedStart) + ladder.filter { it.ordinal < cachedStart.ordinal }
+            }
+        } else {
+            ladder
+        }).distinct().filter(DolbyPlaybackPolicy::permits)
             .let { values -> if (track.source == MusicSource.KUGOU) values.filterNot { it == AudioQuality.HIGHER } else values }
         val source = candidates.firstNotNullOfOrNull { quality ->
             try {
@@ -142,6 +333,7 @@ internal class PlatformPlaybackResolver(
                 else MusicDiskCache.get(context).register(networkPlaybackCacheKey(context, resolvedTrack.copy(previewUrl = source.url)), resolvedTrack)
             SupplementalPlaybackRequests.register(source.url, source.requestHeaders, key)
         }
+        if (!source.trial) qualityCache.write(track, source.actualQuality)
         return ResolvedPlayback(resolvedTrack.copy(previewUrl = source.url), source)
             .also { offline.remember(it, preferredQuality) }
     }
@@ -175,7 +367,9 @@ internal class PlatformPlaybackResolver(
             offline.resolve(track, it, allowOtherQuality = false) != null
         }
         val adapter = adapters[track.source] ?: return emptyList()
-        return adapter.availableQualities(adapter.enrichTrack(track), onProgress)
+        val values = adapter.availableQualities(adapter.enrichTrack(track), onProgress)
+        values.maxOrNull()?.let { qualityCache.write(track, it) }
+        return values
     }
 
     suspend fun lyrics(track: MusicTrack): List<TimedLyric> {

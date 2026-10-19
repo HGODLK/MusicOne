@@ -4,9 +4,9 @@ internal data class BiliAudioSelection(val stream: BiliAudioStream, val quality:
     val isDolby: Boolean get() = quality == AudioQuality.DOLBY
 }
 
-/** 高档首选共用 B站 HiRes/杜比音轨；自动选择只认真实解码能力，解锁仅用于手动选择。 */
+/** B站只有标准/高音质/Dolby 三档；除标准外一律优先 HiRes，设备支持时自动用 Dolby。 */
 internal fun biliAutomaticQuality(quality: AudioQuality, dolby: DolbyPlaybackEligibility): AudioQuality = when {
-    quality.ordinal < AudioQuality.LOSSLESS.ordinal -> AudioQuality.STANDARD
+    quality == AudioQuality.STANDARD -> AudioQuality.STANDARD
     dolby.automaticAllowed -> AudioQuality.DOLBY
     else -> AudioQuality.HI_RES
 }

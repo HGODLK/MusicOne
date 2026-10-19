@@ -22,6 +22,7 @@ class MusicPlaybackRuntime(private val application: Application) {
     private val playbackResolver = PlatformPlaybackResolver(application)
     private val nextAudioPreloader = PlaybackPreloader(application, scope)
     private val qualityPreferences = PlaybackQualityPreferences(application)
+    private val qualityCache = PlaybackQualityCache(application)
     private val playbackSession = PlaybackSessionCoordinator(application)
     private val playbackHistory = PlaybackHistory()
     private val cachedLyrics = CachedLyricsStore(application)
@@ -745,6 +746,7 @@ class MusicPlaybackRuntime(private val application: Application) {
                     restartWithoutDolby()
                     return
                 }
+                if (!resolved.source.trial) qualityCache.write(resolved.track, resolved.source.actualQuality)
                 _state.update { it.withResolvedPlayback(event) }
                 startPlayback(resolved.track, event.positionMs, generation)
                 qualityController.followCachedPlayback(resolved, event.key, event.effective, event.preferred)

@@ -32,18 +32,12 @@ internal fun playbackPreloadBytes(bitRate: Int, durationMs: Long = 0L): Long {
     return bitRate.coerceAtLeast(128_000).toLong() * milliseconds / 8_000L + 128 * 1024L
 }
 
-internal fun preloadedPlaybackFresh(createdMs: Long, nowMs: Long): Boolean = nowMs - createdMs in 0 until 30_000L
+/** 当前歌真实播放即可开始探测；不再等十秒缓冲。 */
+internal fun playbackPreloadCanProbe(playing: Boolean): Boolean = playing
 
-internal fun preloadedPlaybackRefreshDue(createdMs: Long, nowMs: Long): Boolean = nowMs - createdMs >= 25_000L
-
-internal fun playbackPreloadNearEnd(remainingMs: Long?): Boolean = remainingMs != null && remainingMs in 1L..30_000L
-
-/** 起播先留十秒余量；运行中降至三秒以下才让路，避免在门槛附近反复取消。 */
-internal fun playbackPreloadCanRun(playing: Boolean, bufferedMs: Long, remainingMs: Long?, running: Boolean,
-                                 local: Boolean = false): Boolean {
+/** 下载仍需给当前播放留三秒缓冲；本地文件不受网络缓冲限制。 */
+internal fun playbackPreloadCanDownload(playing: Boolean, bufferedMs: Long, local: Boolean = false): Boolean {
     if (!playing) return false
     if (local) return true
-    val threshold = if (running) 3_000L else 10_000L
-    val required = remainingMs?.takeIf { it > 0L }?.let { minOf(threshold, it) } ?: threshold
-    return bufferedMs >= required
+    return bufferedMs >= PLAYBACK_PRELOAD_LOW_BUFFER_MS
 }
