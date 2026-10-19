@@ -35,6 +35,8 @@ internal fun Modifier.playerControlsBackdrop(
     focusProtection: (() -> LyricBlurProtection)? = null,
     topGlass: PlayerLyricsTopGlass? = null,
 ): Modifier {
+    val options = ExperiencePreferences.options
+    val canBlur = Build.VERSION.SDK_INT >= 31 && !options.disableBlur && !options.disablePlayerControlsBlur
     val source = rememberGraphicsLayer()
     val blurred = rememberGraphicsLayer()
     val exitBlurred = rememberGraphicsLayer()
@@ -42,7 +44,7 @@ internal fun Modifier.playerControlsBackdrop(
     val paint = androidx.compose.runtime.remember { Paint() }
     val additivePaint = androidx.compose.runtime.remember { Paint().apply { blendMode = BlendMode.Plus } }
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val rasterizeSource = Build.VERSION.SDK_INT >= 31 && !ExperiencePreferences.options.disableBlur
+    val rasterizeSource = canBlur
     // 底部模糊参数不变；顶部使用更轻的半径，效果对象按密度复用。
     val blurEffect = androidx.compose.runtime.remember(density) {
         BlurEffect(with(density) { 18.dp.toPx() }, with(density) { 18.dp.toPx() }, TileMode.Clamp)
@@ -60,7 +62,6 @@ internal fun Modifier.playerControlsBackdrop(
         topBlurred.renderEffect = topBlurEffect
     }
     return drawWithCache {
-        val canBlur = Build.VERSION.SDK_INT >= 31 && !ExperiencePreferences.options.disableBlur
         val headerBottom = (topExtension + topBuffer).toFloat().coerceIn(0f, size.height)
         val topFadeHeight = playerLyricsTopFadeHeight(topExtension.toFloat())
         val topBlurEnd = topGlass?.clearStart?.coerceIn(0f, size.height)

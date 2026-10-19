@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 internal data class ExperienceOptions(
     val disableBlur: Boolean = false,
     val disableLyricBlur: Boolean = false,
+    val disablePlayerControlsBlur: Boolean = false,
     val reduceMotion: Boolean = false,
     val disableCardColors: Boolean = false,
     val alwaysDark: Boolean = false,
@@ -30,6 +31,7 @@ internal object ExperiencePreferences {
         options = ExperienceOptions(
             disableBlur = store.getBoolean("disable_blur", false),
             disableLyricBlur = store.getBoolean("disable_lyric_blur", false),
+            disablePlayerControlsBlur = store.getBoolean("disable_player_controls_blur", false),
             reduceMotion = store.getBoolean("reduce_motion", false),
             disableCardColors = store.getBoolean("disable_card_colors", false),
             alwaysDark = store.getBoolean("always_dark", false),
@@ -44,6 +46,7 @@ internal object ExperiencePreferences {
         options = value
         preferences?.edit()?.putBoolean("disable_blur", value.disableBlur)
             ?.putBoolean("disable_lyric_blur", value.disableLyricBlur)
+            ?.putBoolean("disable_player_controls_blur", value.disablePlayerControlsBlur)
             ?.putBoolean("reduce_motion", value.reduceMotion)
             ?.putBoolean("disable_card_colors", value.disableCardColors)
             ?.putBoolean("always_dark", value.alwaysDark)

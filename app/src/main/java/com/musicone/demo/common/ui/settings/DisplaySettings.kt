@@ -27,6 +27,9 @@ internal fun DisplaySettings() {
         DisplaySetting("关闭模糊效果", "使用清晰底色，降低图形负担", options.disableBlur) {
             ExperiencePreferences.update(options.copy(disableBlur = it))
         }
+        DisplaySetting("关闭播放控件及顶部模糊", "保留渐隐过渡，不影响未播放歌词模糊", options.disablePlayerControlsBlur) {
+            ExperiencePreferences.update(options.copy(disablePlayerControlsBlur = it))
+        }
         DisplaySetting("关闭未播放歌词模糊", "仅影响未播放歌词，不影响播放控件模糊", options.disableLyricBlur) {
             ExperiencePreferences.update(options.copy(disableLyricBlur = it))
         }
