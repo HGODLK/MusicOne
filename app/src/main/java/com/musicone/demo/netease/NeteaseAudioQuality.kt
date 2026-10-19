@@ -30,14 +30,17 @@ internal fun neteaseAudioQuality(level: String, format: String, bitRate: Int,
 }
 
 internal fun neteasePlaybackSource(value: JSONObject, requested: AudioQuality,
-    inspect: (String) -> QqFlacInfo? = { readQqFlacInfo(it) }): PlaybackSource {
-    val url = value.optString("url").takeIf { it.isNotBlank() && it != "null" }?.asNeteaseHttpsUrl()
+    inspect: (String, Map<String, String>) -> QqFlacInfo? = { url, headers ->
+        readQqFlacInfo(url, timeoutMs = 4_000, headers = headers)
+    }): PlaybackSource {
+    val url = value.optString("url").asNeteasePlaybackUrl()
         ?: throw PlatformApiException("歌曲暂无可用播放地址")
+    val requestHeaders = neteasePlaybackRequestHeaders()
     val format = value.optString("type").ifBlank { value.optString("encodeType") }.ifBlank { "audio" }
     val bitRate = value.optInt("br").coerceAtLeast(0)
     val sampleRate = value.optInt("sr")
     val bitDepth = value.optInt("bitDepth", value.optInt("bitdepth"))
-    val info = if (format.equals("flac", true)) inspect(url) ?: if (sampleRate > 0 && bitDepth in 1..32)
+    val info = if (format.equals("flac", true)) inspect(url, requestHeaders) ?: if (sampleRate > 0 && bitDepth in 1..32)
         QqFlacInfo(0, sampleRate, bitDepth) else null else null
     val actualQuality = neteaseAudioQuality(value.optString("level"), format, bitRate, info)
     val trial = value.has("freeTrialInfo") && !value.isNull("freeTrialInfo")
@@ -45,7 +48,8 @@ internal fun neteasePlaybackSource(value: JSONObject, requested: AudioQuality,
         "source song=${value.optString("id")} requested=${requested.providerLevel} " +
             "returned=${value.optString("level")} actual=${actualQuality.providerLevel} format=$format " +
             "bitrate=$bitRate sampleRate=$sampleRate bitDepth=$bitDepth trial=$trial")
-    return PlaybackSource(url, requested, actualQuality, bitRate, format, trial, actualFormat = info?.description)
+    return PlaybackSource(url, requested, actualQuality, bitRate, format, trial,
+        actualFormat = info?.description, requestHeaders = requestHeaders)
 }
 
 internal const val NETEASE_PLAYBACK_LOG_TAG = "NeteasePlayback"

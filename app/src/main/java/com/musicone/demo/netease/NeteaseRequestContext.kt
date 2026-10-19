@@ -42,6 +42,11 @@ internal fun neteaseUserAgent(profile: NeteaseRequestProfile): String = when (pr
         "Dalvik/2.1.0 (Linux; U; Android ${Build.VERSION.RELEASE}; ${Build.MODEL} Build/${Build.ID})"
 }
 
+internal fun neteasePlaybackRequestHeaders(): Map<String, String> = mapOf(
+    "Referer" to "https://music.163.com/",
+    "User-Agent" to neteaseUserAgent(NeteaseRequestProfile.ANDROID),
+)
+
 private fun androidResolution(): String = runCatching {
     val metrics = Resources.getSystem().displayMetrics
     "${metrics.widthPixels}x${metrics.heightPixels}"

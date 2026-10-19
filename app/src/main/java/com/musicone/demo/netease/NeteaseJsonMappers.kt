@@ -2,6 +2,7 @@ package com.musicone.demo
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.URI
 
 internal fun JSONObject.toMusicAccount(): MusicAccount {
     val profile = optJSONObject("profile") ?: throw NeteaseApiException("网易云登录状态已失效", 301)
@@ -224,6 +225,15 @@ private fun artworkColors(key: String): Pair<Long, Long> {
 }
 
 internal fun String.asNeteaseHttpsUrl(): String = trim().replaceFirst(Regex("^http://", RegexOption.IGNORE_CASE), "https://")
+
+internal fun String.asNeteasePlaybackUrl(): String? {
+    val value = trim()
+    val uri = runCatching { URI(value) }.getOrNull() ?: return null
+    return value.takeIf {
+        uri.isAbsolute && !uri.host.isNullOrBlank() &&
+            (uri.scheme.equals("http", ignoreCase = true) || uri.scheme.equals("https", ignoreCase = true))
+    }
+}
 
 internal fun parseLrc(value: String): List<TimedLyric> {
     val timestamp = Regex("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?]")
