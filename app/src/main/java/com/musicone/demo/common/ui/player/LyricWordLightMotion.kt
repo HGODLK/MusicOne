@@ -1,24 +1,19 @@
 package com.musicone.demo
 
-import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import kotlin.math.abs
 
-/** 明暗跟随演唱时间，微缩放独立使用固定时长；共用行级帧循环。 */
+/** 明暗跟随演唱时间，共用行级帧循环。 */
 internal class LyricWordLightMotion {
     private var ranges = emptyList<LyricHighlightRange>()
     private var samples = emptyList<LyricFlowSample>()
-    private var scales = emptyList<LyricMotionValue>()
-    private val scaleSpec = tween<Float>(500, easing = CubicBezierEasing(.4f, 0f, .6f, 1f))
     private var progressMs: (() -> Long)? = null
     private var enabled = false
     private var focused = false
     private var animate = true
     private var strength = LyricFlowSample(0f, 0f)
-    private var scaleStrength = LyricFlowSample(0f, 0f)
     private var initialized = false
     private var drawRevision by mutableIntStateOf(0)
     internal val renderRevision: Int get() = drawRevision
@@ -54,7 +49,6 @@ internal class LyricWordLightMotion {
         if (!initialized || this.ranges != ranges ||
             (enabled && !this.enabled && strength.position == 0f)) {
             samples = ranges.map { LyricFlowSample(target(it.word, position), 0f) }
-            scales = ranges.map { LyricMotionValue(scaleTarget(it.word, position)) }
         }
         this.ranges = ranges
         this.enabled = enabled && progressMs != null
@@ -62,9 +56,7 @@ internal class LyricWordLightMotion {
         this.animate = animate
         if (!initialized || !animate) {
             strength = LyricFlowSample(if (this.enabled) 1f else 0f, 0f)
-            scaleStrength = LyricFlowSample(if (this.focused) 1f else 0f, 0f)
             samples = ranges.map { LyricFlowSample(target(it.word, position), 0f) }
-            scales = ranges.map { LyricMotionValue(scaleTarget(it.word, position)) }
             drawRevision++
         }
         initialized = true
@@ -76,11 +68,9 @@ internal class LyricWordLightMotion {
 
     val running: Boolean get() {
         if (lightDeadlineNanos != null) return true
-        if (moving(strength, if (enabled) 1f else 0f) ||
-            moving(scaleStrength, if (focused) 1f else 0f)) return true
+        if (moving(strength, if (enabled) 1f else 0f)) return true
         val position = observedPosition() ?: return false
-        return samples.indices.any { moving(samples[it], target(ranges[it].word, position)) ||
-            scales[it].running || scales[it].value != scaleTarget(ranges[it].word, position) }
+        return samples.indices.any { moving(samples[it], target(ranges[it].word, position)) }
     }
 
     fun advance(seconds: Float, finish: Boolean = false) {
@@ -92,23 +82,12 @@ internal class LyricWordLightMotion {
         if (finishingTail && (snap || position >= tailDeadlineMs ||
             (position >= (ranges[tailIndex].word?.endMs ?: 0L) && !moving(samples[tailIndex], 1f)))) cancelTail()
         val nextStrength = follow(strength, if (enabled) 1f else 0f, seconds, snap)
-        val nextScale = follow(scaleStrength, if (focused) 1f else 0f, seconds, snap)
-        var changed = lightDue || strength.position != nextStrength.position || scaleStrength.position != nextScale.position
+        var changed = lightDue || strength.position != nextStrength.position
         strength = nextStrength
-        scaleStrength = nextScale
         samples = samples.mapIndexed { index, sample ->
             val next = follow(sample, target(ranges[index].word, position), seconds, snap)
             changed = changed || sample.position != next.position
             next
-        }
-        scales.forEachIndexed { index, scale ->
-            val before = scale.value
-            val target = scaleTarget(ranges[index].word, position)
-            if (snap) scale.snapTo(target) else {
-                scale.retarget(target, scaleSpec)
-                scale.advance((seconds * 1_000_000_000L).toLong())
-            }
-            changed = changed || before != scale.value
         }
         if (finishingTail && position >= (ranges[tailIndex].word?.endMs ?: 0L) &&
             !moving(samples[tailIndex], 1f)) {
@@ -122,30 +101,21 @@ internal class LyricWordLightMotion {
 
     val drawing: Boolean get() {
         drawRevision
-        return strength.position > 0f || scaleStrength.position > 0f
+        return strength.position > 0f
     }
 
     fun alpha(index: Int, horizontalFraction: Float = .5f): Float {
         drawRevision
         if (ranges[index].word == null) return 1f
-        val progress = samples[index].position
-        // 整词同时提亮，左侧稍早、右侧稍晚；首尾一致，不形成硬边扫光。
-        val stagger = if (animate) .4f * progress * (1f - progress) *
-            (1f - 2f * horizontalFraction.coerceIn(0f, 1f)) else 0f
-        return 1f - .2f * (1f - progress - stagger) * strength.position
+        return lyricWordSweepAlpha(samples[index].position, horizontalFraction, strength.position, animate)
     }
 
-    fun scale(index: Int): Float {
-        drawRevision
-        if (ranges[index].word == null) return 1f
-        return 1f - .015f * (1f - scales[index].value) * scaleStrength.position
-    }
+    internal fun sweepProgress(index: Int): Float = if (ranges[index].word == null) 1f else samples[index].position
+    internal val sweepStrength: Float get() = strength.position
+    internal val spatialLight: Boolean get() = animate
 
     private fun target(word: LyricWord?, position: Long): Float =
-        if (word == null) 1f else ((lyricWordAlpha(word, position) - .8f) / .2f).coerceIn(0f, 1f)
-
-    private fun scaleTarget(word: LyricWord?, position: Long): Float =
-        if (word == null || position >= word.startMs) 1f else 0f
+        if (word == null) 1f else ((lyricWordAlpha(word, position) - .7f) / .3f).coerceIn(0f, 1f)
 
     private fun moving(sample: LyricFlowSample, target: Float): Boolean =
         abs(sample.position - target) > .0001f || abs(sample.velocity) > .002f
@@ -157,4 +127,15 @@ internal class LyricWordLightMotion {
         val bounded = next.position.coerceIn(0f, 1f)
         return if (bounded != next.position) LyricFlowSample(bounded, 0f) else next
     }
+}
+
+/** 柔边占整个词宽的 80%，从词外进入并完全离开，保证首尾亮度准确。 */
+internal const val LYRIC_WORD_SWEEP_WIDTH = .8f
+
+internal fun lyricWordSweepAlpha(progress: Float, fraction: Float, strength: Float, spatial: Boolean): Float {
+    val bright = if (spatial) {
+        ((progress * (1f + LYRIC_WORD_SWEEP_WIDTH) - fraction.coerceIn(0f, 1f)) /
+            LYRIC_WORD_SWEEP_WIDTH).coerceIn(0f, 1f)
+    } else progress
+    return 1f - .3f * (1f - bright) * strength
 }

@@ -227,8 +227,8 @@ internal fun lyricWordHighlightRanges(line: TimedLyric): List<LyricHighlightRang
 /** 当前句已由行级样式强调，词级只在保留对比度的范围内柔和变化。 */
 internal fun lyricWordAlpha(word: LyricWord, positionMs: Long): Float = when {
     positionMs >= word.endMs -> 1f
-    positionMs < word.startMs -> .8f
-    else -> .8f + .2f * ((positionMs - word.startMs).toFloat() /
+    positionMs < word.startMs -> .7f
+    else -> .7f + .3f * ((positionMs - word.startMs).toFloat() /
         (word.endMs - word.startMs).coerceAtLeast(1L)).coerceIn(0f, 1f)
 }
 

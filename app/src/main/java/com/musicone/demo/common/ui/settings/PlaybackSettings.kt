@@ -127,6 +127,7 @@ internal fun AboutSettings() {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("关于", style = MaterialTheme.typography.titleLarge)
         Text("MusicOne · $version")
+        SettingsOptimizationNotice()
         Text("开发者", style = MaterialTheme.typography.titleMedium)
         DeveloperCredits()
     }

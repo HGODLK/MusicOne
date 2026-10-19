@@ -392,7 +392,7 @@ internal class QqApiClient {
         quality: String? = null,
         origin: QqRequestOrigin = QqRequestOrigin.OTHER,
     ): JSONObject {
-        QqSessionRequestCoordinator.beforeTicketRequest(cookie)
+        QqSessionRequestCoordinator.beforeTicketRequest(cookie, showVerification = origin != QqRequestOrigin.PRELOAD)
         val uin = normalizeUin(cookie).ifBlank { "0" }
         val mids = JSONArray()
         val types = JSONArray()

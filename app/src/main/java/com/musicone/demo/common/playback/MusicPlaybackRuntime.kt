@@ -20,7 +20,7 @@ class MusicPlaybackRuntime(private val application: Application) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     internal val playlistLibrary = PlaylistLibrary(application)
     private val playbackResolver = PlatformPlaybackResolver(application)
-    private val nextAudioPreloader = QqNextAudioPreloader(application, scope)
+    private val nextAudioPreloader = PlaybackPreloader(application, scope)
     private val qualityPreferences = PlaybackQualityPreferences(application)
     private val playbackSession = PlaybackSessionCoordinator(application)
     private val playbackHistory = PlaybackHistory()

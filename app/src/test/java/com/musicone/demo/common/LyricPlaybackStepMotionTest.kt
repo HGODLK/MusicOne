@@ -33,9 +33,9 @@ class LyricPlaybackStepMotionTest {
     @Test fun naturalRowsUseRequestedStaggerStrength() {
         assertEquals(200f, lyricPlaybackRowStiffness(-1), 0f)
         assertEquals(200f, lyricPlaybackRowStiffness(0), 0f)
-        assertEquals(175f, lyricPlaybackRowStiffness(1), 0f)
-        assertEquals(150f, lyricPlaybackRowStiffness(2), 0f)
-        assertEquals(135f, lyricPlaybackRowStiffness(3), 0f)
+        assertEquals(170f, lyricPlaybackRowStiffness(1), 0f)
+        assertEquals(140f, lyricPlaybackRowStiffness(2), 0f)
+        assertEquals(115f, lyricPlaybackRowStiffness(3), 0f)
     }
 
     @Test fun naturalEntryHandsItsOffsetsOverWithoutResettingFocus() = checkMotion {
@@ -95,7 +95,7 @@ class LyricPlaybackStepMotionTest {
             assertEquals(1f, motion.row(0).played.value, 0f)
             assertTrue(motion.row(1).played.value > 0f)
             assertEquals(0f, motion.row(2).played.value, 0f)
-            assertTrue(motion.row(1).opacity.value > .6f)
+            assertTrue(motion.row(1).opacity.value > .5f)
             assertTrue(motion.offsetPx(3) > motion.offsetPx(2))
             frames(150)
             assertTrue(job.isCompleted)

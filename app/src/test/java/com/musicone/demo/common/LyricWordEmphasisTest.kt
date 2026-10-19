@@ -209,8 +209,8 @@ class LyricWordEmphasisTest {
         val playingAlpha = lyricHighlightAlpha(ranges[0].word, 1500)
         val afterAlpha = lyricHighlightAlpha(ranges[0].word, 2500)
 
-        assertEquals(0.8f, beforeAlpha, 0.0001f)
-        assertEquals(0.9f, playingAlpha, 0.0001f)
+        assertEquals(0.7f, beforeAlpha, 0.0001f)
+        assertEquals(0.85f, playingAlpha, 0.0001f)
         assertEquals(1.0f, afterAlpha, 0.0001f)
 
         // 字符范围保持稳定不变

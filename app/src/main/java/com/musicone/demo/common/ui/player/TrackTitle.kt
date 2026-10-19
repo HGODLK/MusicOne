@@ -55,7 +55,7 @@ internal fun TrackTitle(
         )
         if (showBadges) {
             OfflineTrackBadge(track, badgeOnDark)
-            qqDisplayedAccessBadge(track)?.let { badge ->
+            if (LocalTrackAccessBadgesVisible.current) qqDisplayedAccessBadge(track)?.let { badge ->
                 MusicAccessBadgeLabel(badge, badgeOnDark, Modifier.padding(start = 5.dp),
                     label = if (track.source == MusicSource.QQ && badge == MusicAccessBadge.VIP) "VIP" else badge.label)
             }

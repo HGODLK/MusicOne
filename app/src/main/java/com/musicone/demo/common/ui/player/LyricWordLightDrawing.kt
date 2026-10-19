@@ -22,9 +22,19 @@ internal class LyricWordLightDrawing(bitmap: ImageBitmap, origin: Offset) {
     private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or
         android.graphics.Paint.FILTER_BITMAP_FLAG)
 
-    fun draw(scope: DrawScope, left: Float, right: Float, leftAlpha: Float, rightAlpha: Float) {
-        val mask = LinearGradient(left, 0f, right.coerceAtLeast(left + 1f), 0f,
-            alphaColor(leftAlpha), alphaColor(rightAlpha), Shader.TileMode.CLAMP)
+    fun draw(scope: DrawScope, left: Float, right: Float, progress: Float, strength: Float,
+        lightStart: Float, lightEnd: Float, spatial: Boolean) {
+        // 把整词的移动柔边映射到当前视觉行，跨行时不从头开始。
+        val width = (right - left).coerceAtLeast(1f)
+        val span = (lightEnd - lightStart).coerceAtLeast(.0001f)
+        val edge = progress * (1f + LYRIC_WORD_SWEEP_WIDTH)
+        val start = left + (edge - LYRIC_WORD_SWEEP_WIDTH - lightStart) / span * width
+        val end = start + LYRIC_WORD_SWEEP_WIDTH / span * width
+        val mask = if (spatial) LinearGradient(start, 0f, end, 0f,
+            alphaColor(1f), alphaColor(1f - .3f * strength), Shader.TileMode.CLAMP)
+        else LinearGradient(left, 0f, left + width, 0f,
+            alphaColor(lyricWordSweepAlpha(progress, 0f, strength, false)),
+            alphaColor(lyricWordSweepAlpha(progress, 1f, strength, false)), Shader.TileMode.CLAMP)
         paint.shader = ComposeShader(ink, mask, PorterDuff.Mode.DST_IN)
         scope.drawIntoCanvas { canvas ->
             canvas.nativeCanvas.drawRect(0f, 0f, scope.size.width, scope.size.height, paint)

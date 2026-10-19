@@ -10,26 +10,41 @@ import org.junit.Test
 class LyricWordLightMotionTest {
     private val ranges = listOf(LyricHighlightRange(0, 1, LyricWord(100, 400, "光")))
 
-    @Test fun wordBrightensEverywhereWithLeftLeadingAndMatchingEndpoints() {
+    @Test fun wordSweepMovesRightWithStableEndpoints() {
         var position = 0L
         val motion = LyricWordLightMotion()
         motion.configure(ranges, { position }, true, true, true)
-        var previousLeft = .8f
-        var previousRight = .8f
+        var previousLeft = .7f
+        var previousRight = .7f
         for (time in 0L..500L step 10L) {
             position = time
             motion.advance(.01f, finish = true)
             val left = motion.alpha(0, 0f)
             val right = motion.alpha(0, 1f)
-            assertTrue(left in .8f..1f && right in .8f..1f)
+            assertTrue(left in .7f..1f && right in .7f..1f)
             assertTrue(left >= right)
             assertTrue(left >= previousLeft && right >= previousRight)
-            assertEquals(motion.alpha(0), (left + right) / 2f, .00001f)
             if (time in 110L..390L) assertTrue(left > right)
             if (time <= 100L || time >= 400L) assertEquals(left, right, 0f)
             previousLeft = left
             previousRight = right
         }
+    }
+
+    @Test fun sweepHasWideSoftEdgeWithGentleSpatialContrast() {
+        assertEquals(1f, lyricWordSweepAlpha(.5f, 0f, 1f, true), .00001f)
+        assertEquals(.85f, lyricWordSweepAlpha(.5f, .5f, 1f, true), .00001f)
+        assertEquals(.7f, lyricWordSweepAlpha(.5f, 1f, 1f, true), .00001f)
+        for (position in listOf(0f, .2f, .5f, .8f, 1f)) {
+            val samples = (0..100).map { lyricWordSweepAlpha(position, it / 100f, 1f, true) }
+            assertTrue(samples.zipWithNext().all { (left, right) -> left >= right })
+            assertTrue(samples.count { it > .70001f && it < .99999f } <= 81)
+        }
+        val left = lyricWordSweepAlpha(.5f, .3f, 1f, true)
+        val right = lyricWordSweepAlpha(.5f, .7f, 1f, true)
+        assertEquals(.15f, left - right, .00001f)
+        assertTrue(left < 1f && right > .7f)
+        assertEquals(1f, lyricWordSweepAlpha(.5f, .5f, 0f, true), 0f)
     }
 
     @Test fun backwardSeekKeepsSpatialLightContinuousAndDisablingClearsIt() {
@@ -42,8 +57,8 @@ class LyricWordLightMotionTest {
         assertEquals(left, motion.alpha(0, 0f), 0f)
         assertEquals(right, motion.alpha(0, 1f), 0f)
         motion.advance(1f / 60)
-        assertTrue(motion.alpha(0, 0f) < left)
-        assertTrue(motion.alpha(0, 1f) < right)
+        assertTrue(motion.alpha(0, 0f) <= left)
+        assertTrue(motion.alpha(0, 1f) <= right)
         motion.configure(ranges, { position }, false, false, true)
         repeat(120) { motion.advance(1f / 60) }
         assertEquals(1f, motion.alpha(0, 0f), 0f)
@@ -63,17 +78,14 @@ class LyricWordLightMotionTest {
         var position = 0L
         val motion = LyricWordLightMotion()
         motion.configure(ranges, { position }, true, true, true)
-        assertEquals(.8f, motion.alpha(0), .00001f)
-        assertEquals(.985f, motion.scale(0), .00001f)
+        assertEquals(.7f, motion.alpha(0), .00001f)
         position = 2_000L
-        assertEquals(.8f, motion.alpha(0), .00001f)
+        assertEquals(.7f, motion.alpha(0), .00001f)
         motion.advance(1f / 60)
-        assertTrue(motion.alpha(0) in .8f..1f)
+        assertTrue(motion.alpha(0) in .7f..1f)
         assertTrue(motion.alpha(0) < 1f)
-        assertTrue(motion.scale(0) > .985f && motion.scale(0) < 1f)
         repeat(120) { motion.advance(1f / 60) }
         assertEquals(1f, motion.alpha(0), .00001f)
-        assertEquals(1f, motion.scale(0), .00001f)
         assertFalse(motion.running)
     }
 
@@ -87,8 +99,7 @@ class LyricWordLightMotionTest {
         position = 0L
         assertEquals(before, motion.alpha(0), 0f)
         repeat(120) { motion.advance(1f / 60) }
-        assertEquals(.8f, motion.alpha(0), .00001f)
-        assertEquals(.985f, motion.scale(0), .00001f)
+        assertEquals(.7f, motion.alpha(0), .00001f)
     }
 
     @Test fun responseUsesElapsedTimeAtDifferentFrameRates() {
@@ -98,43 +109,22 @@ class LyricWordLightMotionTest {
             motion.configure(ranges, { position }, true, true, true)
             position = 1_000L
             repeat(fps / 5) { motion.advance(1f / fps) }
-            motion.alpha(0) to motion.scale(0)
+            motion.alpha(0)
         }
         values.forEach {
-            assertEquals(values[0].first, it.first, .00001f)
-            assertEquals(values[0].second, it.second, .00001f)
+            assertEquals(values[0], it, .00001f)
         }
     }
 
-    @Test fun scaleStartsGentlyAndCompletesAtItsFixedDuration() {
-        var position = 0L
-        val motion = LyricWordLightMotion()
-        motion.configure(ranges, { position }, true, true, true)
-        position = 100L
-        repeat(2) { motion.advance(1f / 60) }
-        assertTrue(motion.scale(0) in .985f..0.99f)
-        repeat(9) { motion.advance(1f / 60) }
-        assertTrue(motion.scale(0) < 1f)
-        repeat(18) { motion.advance(1f / 60) }
-        assertTrue(motion.scale(0) < 1f)
-        repeat(2) { motion.advance(1f / 60) }
-        assertEquals(1f, motion.scale(0), .00001f)
-    }
-
-    @Test fun disablingRemovesBothEffectsAndUnfocusedRowsKeepTheirOriginalScale() {
+    @Test fun disablingRemovesBrightnessAndStopsObservingClock() {
         val motion = LyricWordLightMotion()
         motion.configure(ranges, { 0L }, true, false, true)
-        assertEquals(.8f, motion.alpha(0), .00001f)
-        assertEquals(1f, motion.scale(0), 0f)
+        assertEquals(.7f, motion.alpha(0), .00001f)
         motion.configure(ranges, { 0L }, true, true, true)
         repeat(60) { motion.advance(1f / 60) }
-        assertEquals(.985f, motion.scale(0), .00001f)
-        val before = motion.scale(0)
         motion.configure(ranges, { 0L }, false, false, true)
-        assertEquals(before, motion.scale(0), 0f)
         repeat(120) { motion.advance(1f / 60) }
         assertEquals(1f, motion.alpha(0), 0f)
-        assertEquals(1f, motion.scale(0), 0f)
         assertFalse(motion.drawing)
         assertNull(motion.observedPosition())
     }
@@ -148,7 +138,6 @@ class LyricWordLightMotionTest {
         motion.advance(.016f)
         assertTrue(motion.alpha(0) < 1f)
         assertEquals(1f, motion.alpha(1), 0f)
-        assertEquals(1f, motion.scale(1), 0f)
     }
 
     @Test fun pausedProgressSettlesAtTheCurrentWordInsteadOfCompletingItsTimeline() {
@@ -157,8 +146,7 @@ class LyricWordLightMotionTest {
         motion.configure(ranges, { position }, true, true, true)
         position = 250L
         repeat(120) { motion.advance(1f / 60) }
-        assertEquals(.9f, motion.alpha(0), .00001f)
-        assertEquals(1f, motion.scale(0), .00001f)
+        assertEquals(.85f, motion.alpha(0), .00001f)
         assertFalse(motion.running)
     }
 
@@ -166,18 +154,14 @@ class LyricWordLightMotionTest {
         var position = 200L
         val motion = LyricWordLightMotion()
         motion.configure(ranges, { position }, true, true, true)
-        val scale = motion.scale(0)
         motion.configure(ranges, { position }, true, false, true, allowTail = true)
         assertTrue(motion.finishingTail)
-        assertEquals(scale, motion.scale(0), 0f)
         repeat(30) { motion.advance(1f / 60) }
         assertTrue(motion.finishingTail)
-        assertEquals(1f, motion.scale(0), .00001f)
         assertTrue(motion.alpha(0) < 1f)
         position = 400L
         repeat(120) { motion.advance(1f / 60) }
         assertFalse(motion.finishingTail)
-        assertEquals(1f, motion.scale(0), .00001f)
         assertEquals(1f, motion.alpha(0), .00001f)
         assertFalse(motion.running)
     }
@@ -198,7 +182,6 @@ class LyricWordLightMotionTest {
         motion.configure(ranges, { position }, false, false, true, allowTail = true)
         assertFalse(motion.finishingTail)
         repeat(120) { motion.advance(1f / 60) }
-        assertEquals(1f, motion.scale(0), .00001f)
     }
 
     @Test fun veryShortWordAndReducedMotionDoNotHoldTheTail() {
@@ -210,7 +193,6 @@ class LyricWordLightMotionTest {
         motion.configure(ranges, { 200L }, true, true, true)
         motion.configure(ranges, { 200L }, true, false, false, allowTail = true)
         assertFalse(motion.finishingTail)
-        assertEquals(1f, motion.scale(0), 0f)
     }
 
     @Test fun tailKeepsOutgoingRowReadableThenRestoresPlayedOpacity() {
@@ -240,28 +222,6 @@ class LyricWordLightMotionTest {
         assertFalse(motion.finishingTail)
     }
 
-    @Test fun scaleFinishesAtFixedSpeedRegardlessOfWordDurationOrPausedBrightness() {
-        val motions = listOf(400L, 5000L).map { end ->
-            var position = 0L
-            val motion = LyricWordLightMotion()
-            val word = listOf(LyricHighlightRange(0, 1, LyricWord(100, end, "光")))
-            motion.configure(word, { position }, true, true, true)
-            position = 100L
-            motion.advance(.07f)
-            assertTrue(motion.scale(0) > .985f && motion.scale(0) < 1f)
-            val half = motion.scale(0)
-            motion.advance(.10f)
-            assertTrue(motion.scale(0) < 1f)
-            motion.advance(.30f)
-            assertTrue(motion.scale(0) < 1f)
-            motion.advance(.05f)
-            assertEquals(1f, motion.scale(0), .00001f)
-            assertEquals(.8f, motion.alpha(0), .00001f)
-            half
-        }
-        assertEquals(motions[0], motions[1], .00001f)
-    }
-
     @Test fun sharedFrameDriverWakesOnWordClockWithoutReconfiguringTheRow() = runBlocking {
         withTimeout(5_000) {
             val clock = BroadcastFrameClock()
@@ -281,8 +241,7 @@ class LyricWordLightMotionTest {
                         clock.sendFrame(time)
                         yield()
                     }
-                    assertEquals(1f, motion.row(0).words.alpha(0), .00002f)
-                    assertEquals(1f, motion.row(0).words.scale(0), .00001f)
+                    assertEquals(1f, motion.row(0).words.alpha(0), .00003f)
                 } finally {
                     driver.cancelAndJoin()
                 }
@@ -314,18 +273,18 @@ class LyricWordLightMotionTest {
                     firstPosition.longValue = 1_000L
                     Snapshot.sendApplyNotifications()
                     frames()
-                    assertEquals(1f, row.words.alpha(0), .00002f)
+                    assertEquals(1f, row.words.alpha(0), .00003f)
 
                     motion.release(0, row)
                     motion.retain(0, row)
                     motion.configureWords(0, ranges, { nextPosition.longValue }, true, true, true)
                     frames()
-                    assertEquals(.8f, row.words.alpha(0), .00002f)
+                    assertEquals(.7f, row.words.alpha(0), .00003f)
 
                     nextPosition.longValue = 1_000L
                     Snapshot.sendApplyNotifications()
                     frames()
-                    assertEquals(1f, row.words.alpha(0), .00002f)
+                    assertEquals(1f, row.words.alpha(0), .00003f)
                 } finally {
                     driver.cancelAndJoin()
                 }

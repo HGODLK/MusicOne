@@ -290,14 +290,20 @@ internal class LyricPlaybackRowMotion(val index: Int, current: Int, initialPosit
 }
 
 private fun lyricRowOpacity(index: Int, current: Int): Float =
-    if (index == current) 1f else if (index == current + 1) .6f else .28f
+    when {
+        index == current -> 1f
+        index == current + 1 -> .5f
+        index == current + 2 -> .3f
+        index > current + 2 -> .18f
+        else -> .28f
+    }
 
 private fun rowPositionSpec(relative: Int): FiniteAnimationSpec<Float> =
     musicSpring(lyricPlaybackRowStiffness(relative), visibilityThreshold = .1f)
 
 internal fun lyricPlaybackRowStiffness(relative: Int): Float = when {
     relative <= 0 -> 200f
-    relative == 1 -> 175f
-    relative == 2 -> 150f
-    else -> 135f
+    relative == 1 -> 170f
+    relative == 2 -> 140f
+    else -> 115f
 }

@@ -1,5 +1,6 @@
 package com.musicone.demo
 
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.Dp
 
@@ -44,10 +45,12 @@ internal fun PlatformHomeScreen(
         onRefreshRecommendations,
         onRefreshRecommendedTracks,
     )
-    when (source) {
-        MusicSource.NETEASE -> NeteaseHomeScreen(state, catalog, viewModel, bottomInset, actions)
-        MusicSource.QQ -> QqHomeScreen(state, catalog, viewModel, sessionRevision, bottomInset, actions)
-        MusicSource.KUGOU -> KugouHomeScreen(state, catalog, viewModel, bottomInset, actions)
-        MusicSource.LOCAL, MusicSource.BILIBILI -> Unit
+    CompositionLocalProvider(LocalTrackAccessBadgesVisible provides false) {
+        when (source) {
+            MusicSource.NETEASE -> NeteaseHomeScreen(state, catalog, viewModel, bottomInset, actions)
+            MusicSource.QQ -> QqHomeScreen(state, catalog, viewModel, sessionRevision, bottomInset, actions)
+            MusicSource.KUGOU -> KugouHomeScreen(state, catalog, viewModel, bottomInset, actions)
+            MusicSource.LOCAL, MusicSource.BILIBILI -> Unit
+        }
     }
 }

@@ -12,8 +12,8 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.ceil
 
 /**
- * 正文录制完整字形；外伸词段使用独立墨迹，明暗与缩放不参与测量排版。
- * 跨视觉行的词段分别围绕原基线缩放，路径仅随实际文字布局变化重新缓存。
+ * 正文录制完整字形；外伸词段使用独立墨迹，明暗不参与测量排版。
+ * 跨视觉行的词段保持原排版位置，路径仅随实际文字布局变化重新缓存。
  */
 @Composable
 internal fun Modifier.lyricWordAlphaDrawing(

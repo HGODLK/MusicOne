@@ -58,10 +58,10 @@ class ContinuousLyricClockTest {
         val words = listOf(LyricWord(0, 100, "光"), LyricWord(100, 200, "光"), LyricWord(200, 200, "。"))
         val line = TimedLyric(0, "光光。", words = words)
         assertEquals(listOf(0, 1, 2), lyricWordRanges(line).map { it.start })
-        assertEquals(.8f, lyricWordAlpha(words[0], -1), .00001f)
-        assertEquals(.9f, lyricWordAlpha(words[0], 50), .00001f)
+        assertEquals(.7f, lyricWordAlpha(words[0], -1), .00001f)
+        assertEquals(.85f, lyricWordAlpha(words[0], 50), .00001f)
         assertEquals(1f, lyricWordAlpha(words[0], 100), .00001f)
-        assertEquals(.8f, lyricWordAlpha(words[1], 50), .00001f)
+        assertEquals(.7f, lyricWordAlpha(words[1], 50), .00001f)
         assertEquals(1f, lyricWordAlpha(words[2], 200), .00001f)
     }
 
