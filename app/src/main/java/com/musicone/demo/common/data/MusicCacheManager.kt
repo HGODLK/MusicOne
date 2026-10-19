@@ -4,206 +4,277 @@ import android.content.Context
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheWriter
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 internal data class MusicCacheState(
     val playlists: List<MusicPlaylist> = emptyList(),
+    val cachedTracks: List<MusicTrack> = emptyList(),
     val statuses: Map<String, String> = emptyMap(),
+    val blocked: Map<String, String> = emptyMap(),
+    val protected: Set<String> = emptySet(),
+    val usage: CacheUsage = CacheUsage(),
+    val limits: CacheLimits = CacheLimits(),
+    val appliedLimits: CacheLimits = CacheLimits(),
     val busyPlaylist: String? = null,
+    val busyTrack: String? = null,
     val message: String? = null,
     val loading: Boolean = false,
+    val initialized: Boolean = false,
 )
 
-/** 缓存工作独立于设置页面，退出页面后本次队列继续执行。 */
+/** 缓存工作与界面生命周期分离，进度变化不替换歌单目录或重启页面入场。 */
+@OptIn(FlowPreview::class)
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class MusicCacheManager private constructor(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val snapshots = CachedPlaylistStore(context)
+    private val directory = CachePlaylistDirectory(context)
     private val offline = OfflineMusicStore(context)
-    private val catalog = PlatformCatalogRepository(context)
-    private val mutable = MutableStateFlow(MusicCacheState())
+    private val disk = MusicDiskCache.get(context)
+    private val mutable = MutableStateFlow(MusicCacheState(limits = disk.limits.value, appliedLimits = disk.limits.value))
     val state = mutable.asStateFlow()
-    private var namespace = ""
+    @Volatile private var owners = emptyList<Pair<String, String>>()
+    private val statusLock = Any()
+    private var supplied = emptyList<MusicPlaylist>()
+    private var configured = false
     private var batch: Job? = null
     private var loadJob: Job? = null
     private val operationMutex = Mutex()
     @Volatile private var writer: CacheWriter? = null
+    private val settingsDraft = CacheSettingsDraft()
 
-    fun configure(source: MusicSource, supplied: List<MusicPlaylist>) {
-        val session = PlatformPreferences(context).readSession(source)
-        val nextNamespace = session.cacheNamespace()
-        if (namespace != nextNamespace) {
-            cancel()
-            loadJob?.cancel()
-            namespace = nextNamespace
-            mutable.value = MusicCacheState()
-        }
+    @Synchronized fun stageCapacity(independent: Boolean, capacity: CacheCapacity) {
+        val next = settingsDraft.select(disk.limits.value, independent, capacity)
+        mutable.update { it.copy(limits = next) }
+    }
+
+    @Synchronized fun applyPendingSettings() {
+        val pending = settingsDraft.consume() ?: return
+        disk.applyLimits(pending)
+    }
+
+    fun clear(all: Boolean) {
+        val oldBatch = batch
+        cancel()
+        scope.launch { oldBatch?.join(); operationMutex.withLock {
+            try { if (all) disk.clearAll() else disk.clearOrdinary() }
+            catch (error: Exception) { mutable.update { it.copy(message = "部分缓存暂时无法清理，请稍后重试") } }
+            refreshStatuses()
+        } }
+    }
+
+    init {
+        scope.launch { disk.audioRevision.debounce(250).collect { refreshStatuses() } }
+        scope.launch { MusicLibraryStore.get(context).state.collect { library ->
+            mutable.update { old -> old.copy(playlists = (old.playlists.filter { it.source != MusicSource.LOCAL } + library.playlists)
+                .distinctBy(::cachePlaylistKey)) }
+            refreshStatuses()
+        } }
+    }
+
+    fun configure(source: MusicSource, incoming: List<MusicPlaylist>) {
+        val nextOwners = directory.signature()
+        if (configured && nextOwners == owners && supplied == incoming) return
+        val accountChanged = owners != nextOwners
+        if (accountChanged) cancel()
+        configured = true
+        supplied = incoming
+        owners = nextOwners
         loadJob?.cancel()
         loadJob = scope.launch {
-            val saved = snapshots.read(nextNamespace)
-            val incoming = supplied.filter { it.source == source }
-            val localTracks = (offline.savedTracks(source) +
-                if (source == MusicSource.QQ) QqPlaybackSnapshotStore(context).read()?.queue.orEmpty() else emptyList())
-                .distinctBy { it.id }.filter { offline.keys(it).isNotEmpty() }
-            val localPlaylist = localTracks.takeIf { it.isNotEmpty() }?.let {
-                MusicPlaylist("local-cached-${source.name}", source, "已缓存歌曲", "本机音频", "", it.size,
-                    0, 0, "缓", it)
+            val cached = directory.cached(source, incoming)
+            if (accountChanged) mutable.update { it.copy(playlists = cached, cachedTracks = emptyList(), statuses = emptyMap(), message = null) }
+            else mutable.update { it.copy(playlists = (cached + it.playlists).distinctBy(::cachePlaylistKey)) }
+            refreshStatuses()
+            if (!offline.hasNetwork()) return@launch
+            for (provider in listOf(MusicSource.QQ, MusicSource.NETEASE, MusicSource.KUGOU)) {
+                try {
+                    val remote = directory.remote(provider)
+                    ensureActive()
+                    if (owners != nextOwners || directory.signature() != nextOwners) return@launch
+                    if (remote.isNotEmpty()) {
+                        val old = mutable.value.playlists
+                        val merged = remote.map { playlist ->
+                            val previous = old.firstOrNull { cachePlaylistKey(it) == cachePlaylistKey(playlist) }
+                            if (playlist.tracks.size < playlist.count && previous != null) playlist.copy(tracks = previous.tracks) else playlist
+                        }
+                        mutable.update { it.copy(playlists = (it.playlists.filter { p -> p.source != provider } + merged)
+                            .distinctBy(::cachePlaylistKey)) }
+                        directory.save(mutable.value.playlists)
+                        refreshStatuses()
+                        remote.filter { it.isPrimaryCachePlaylist }.forEach { favorite ->
+                            val detail = directory.load(favorite)
+                            ensureActive()
+                            if (owners == nextOwners) updatePlaylist(detail)
+                        }
+                    }
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { /* 刷新失败保留已保存的目录，打开歌单时可以重试。 */ }
             }
-            val merged = (incoming + listOfNotNull(localPlaylist) + saved).distinctBy { it.id }.map { playlist ->
-                val stored = saved.firstOrNull { it.id == playlist.id }
-                if (playlist.tracks.isEmpty() && stored != null) playlist.copy(tracks = stored.tracks) else playlist
-            }.sortedBy { if (it.id == QQ_FAVORITES_PLAYLIST_ID || it.title.contains("我喜欢")) 0 else 1 }
-            ensureActive()
-            if (namespace != nextNamespace) return@launch
-            mutable.update { it.copy(playlists = merged) }
-            snapshots.save(nextNamespace, merged)
             refreshStatuses()
         }
     }
 
     fun open(playlist: MusicPlaylist) {
-        if (playlist.tracks.size >= playlist.count && playlist.tracks.isNotEmpty() || !offline.hasNetwork()) {
-            scope.launch { refreshStatuses() }; return
-        }
-        val requestedNamespace = namespace
+        val requestedOwners = owners
         scope.launch {
+            if ((playlist.tracks.size >= playlist.count && playlist.tracks.isNotEmpty()) || !offline.hasNetwork()) {
+                refreshStatuses(); return@launch
+            }
             mutable.update { it.copy(loading = true, message = null) }
             try {
-                val detail = loadPlaylist(playlist)
-                if (namespace == requestedNamespace) updatePlaylist(detail)
+                val detail = directory.load(playlist)
+                if (owners == requestedOwners && directory.signature() == requestedOwners) updatePlaylist(detail)
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { if (namespace == requestedNamespace) mutable.update { it.copy(message = error.asUserMessage()) } }
-            finally { if (namespace == requestedNamespace) mutable.update { it.copy(loading = false) } }
-            refreshStatuses()
+            catch (error: Exception) { mutable.update { it.copy(message = error.asUserMessage()) } }
+            finally { mutable.update { it.copy(loading = false) }; refreshStatuses() }
+        }
+    }
+
+    fun play(playlist: MusicPlaylist, onReady: (MusicPlaylist) -> Unit) {
+        val requestedOwners = owners
+        scope.launch {
+            try {
+                val detail = if (offline.hasNetwork() && playlist.tracks.size < playlist.count) directory.load(playlist) else playlist
+                if (owners != requestedOwners || directory.signature() != requestedOwners) return@launch
+                if (detail.tracks.isEmpty()) { mutable.update { it.copy(message = "暂无可播放歌曲") }; return@launch }
+                updatePlaylist(detail)
+                withContext(Dispatchers.Main) { onReady(detail) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { mutable.update { it.copy(message = error.asUserMessage()) } }
         }
     }
 
     fun cache(playlist: MusicPlaylist) {
         if (batch?.isCompleted == false) return
-        val requestedNamespace = namespace
-        mutable.update { it.copy(busyPlaylist = playlist.id, message = null) }
+        val requestedOwners = owners
+        mutable.update { it.copy(busyPlaylist = cachePlaylistKey(playlist), message = null) }
         batch = scope.launch {
             operationMutex.withLock {
-            try {
-                if (!offline.hasNetwork()) throw PlatformApiException("请联网后缓存歌曲")
-                val detail = if (playlist.tracks.isEmpty() || playlist.tracks.size < playlist.count) loadPlaylist(playlist) else playlist
-                ensureActive()
-                if (namespace != requestedNamespace) return@launch
-                updatePlaylist(detail)
-                val resolver = PlatformPlaybackResolver(context, qqCacheRequests = true)
-                val preferred = PlaybackQualityPreferences(context).read(detail.source)
-                var failed = 0
-                for (track in detail.tracks.distinctBy { it.id }) {
+                try {
+                    if (!offline.hasNetwork()) throw PlatformApiException("请联网后缓存歌曲")
+                    val detail = if (playlist.tracks.size < playlist.count || playlist.tracks.isEmpty()) directory.load(playlist) else playlist
                     ensureActive()
-                    setStatus(track, "等待缓存")
-                    try {
-                        val resolved = resolver.resolvePreferred(track, preferred)
-                        if (resolved.source.trial) throw PlatformApiException("只有试听音源")
+                    check(directory.signature() == requestedOwners) { "账号已变化，缓存任务已停止" }
+                    updatePlaylist(detail)
+                    val resolver = PlatformPlaybackResolver(context, qqCacheRequests = true)
+                    var failed = 0
+                    for (track in detail.tracks.distinctBy { it.cacheIdentity() }) {
                         ensureActive()
-                        val key = playbackCacheKey(context, resolved.track)
-                        val disk = MusicDiskCache.get(context)
-                        disk.pinAudio(key)
-                        val upstream = DefaultDataSource.Factory(context, DefaultHttpDataSource.Factory()
-                            .setUserAgent(PlatformHttp.DEFAULT_USER_AGENT).setConnectTimeoutMs(8_000).setReadTimeoutMs(8_000))
-                        val dataSource = CacheDataSource.Factory().setCache(disk.audio)
-                            .setUpstreamDataSourceFactory(upstream).createDataSource()
-                        val currentWriter = CacheWriter(dataSource,
-                            DataSpec.Builder().setUri(resolved.source.url).setKey(key).build(), null) { length, bytes, _ ->
+                        check(directory.signature() == requestedOwners) { "账号已变化，缓存任务已停止" }
+                        mutable.update { it.copy(busyTrack = track.title) }
+                        try {
+                            if (track.source == MusicSource.LOCAL) { setStatus(track, "本地文件 · 无需缓存"); continue }
+                            if (offline.keys(track).any(offline::complete)) { setStatus(track, offline.status(track)); continue }
+                            disk.blockReason(track)?.let { throw CacheQuotaException(it) }
+                            setStatus(track, "等待缓存")
+                            val preferred = PlaybackQualityPreferences(context).read(track.source)
+                            val resolved = resolver.resolvePreferred(track, preferred)
+                            if (resolved.source.trial) throw PlatformApiException("只有试听音源")
                             ensureActive()
-                            setStatus(track, if (length > 0) "正在缓存 ${(bytes * 100 / length).coerceIn(0, 100)}%" else "正在缓存")
-                        }
-                        writer = currentWriter
-                        ensureActive()
-                        currentWriter.cache()
-                        ensureActive()
-                        if (resolved.source.verificationPending) {
-                            val duration = cachedAudioDuration(disk.audio, key, resolved.source.url)
-                            val full = duration != null && qqMediaDurationMatches(duration, track.durationMs)
-                            offline.verify(key, full)
-                            if (!full) {
-                                offline.remove(track)
-                                throw PlatformApiException("该音源不是完整歌曲")
+                            check(directory.signature() == requestedOwners) { "账号已变化，缓存任务已停止" }
+                            val key = playbackCacheKey(context, resolved.track)
+                            val url = cacheDownloadUrl(resolved.source)
+                            val upstream = DefaultDataSource.Factory(context, DefaultHttpDataSource.Factory()
+                                .setDefaultRequestProperties(mapOf("User-Agent" to PlatformHttp.DEFAULT_USER_AGENT))
+                                .setConnectTimeoutMs(8_000).setReadTimeoutMs(8_000))
+                            val dataSource = disk.streamingFactory(upstream, strict = true).createDataSource()
+                            val currentWriter = CacheWriter(dataSource, DataSpec.Builder().setUri(url).setKey(key).setFlags(DataSpec.FLAG_ALLOW_CACHE_FRAGMENTATION)
+                                .setHttpRequestHeaders(resolved.source.requestHeaders).build(), null) { length, bytes, _ ->
+                                ensureActive()
+                                setStatus(track, if (length > 0) "正在缓存 ${(bytes * 100 / length).coerceIn(0, 100)}%" else "正在缓存")
                             }
-                        }
-                        if (!offline.complete(key)) throw PlatformApiException("音频未完整缓存，请重试")
-                        disk.audioChanged()
-                        setStatus(track, offline.status(track))
-                        try { resolver.lyrics(resolved.track) }
-                        catch (cancelled: CancellationException) { throw cancelled }
-                        catch (_: Exception) { /* 歌词暂时不可用不影响已完成的音频缓存。 */ }
-                    } catch (cancelled: CancellationException) { throw cancelled }
-                    catch (required: PlatformSecurityVerificationRequired) { throw required }
-                    catch (session: QqSessionRequestException) { throw session }
-                    catch (error: Exception) { failed++; setStatus(track, "缓存失败 · ${error.asUserMessage()}") }
-                    finally { writer = null }
+                            writer = currentWriter
+                            try { currentWriter.cache() } finally { writer = null }
+                            ensureActive()
+                            if (resolved.source.verificationPending) {
+                                val duration = cachedAudioDuration(disk.audio, key, url)
+                                val full = duration != null && qqMediaDurationMatches(duration, track.durationMs)
+                                offline.verify(key, full)
+                                if (!full) { offline.remove(track); throw PlatformApiException("该音源不是完整歌曲") }
+                            }
+                            if (!offline.complete(key)) throw PlatformApiException("音频未完整缓存，请重试")
+                            disk.audioChanged()
+                            setStatus(track, offline.status(track))
+                            try { resolver.lyrics(resolved.track) }
+                            catch (cancelled: CancellationException) { throw cancelled }
+                            catch (_: Exception) { /* 歌词失败不影响已完成的音频。 */ }
+                        } catch (cancelled: CancellationException) { throw cancelled }
+                        catch (required: PlatformSecurityVerificationRequired) { throw required }
+                        catch (session: QqSessionRequestException) { throw session }
+                        catch (quota: CacheQuotaException) { setStatus(track, quota.message.orEmpty()); throw quota }
+                        catch (error: Exception) { failed++; setStatus(track, "缓存失败 · ${error.asUserMessage()}") }
+                    }
+                    mutable.update { it.copy(message = if (failed == 0) "本次缓存处理完成" else "$failed 首缓存失败，可重试") }
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: Exception) { mutable.update { it.copy(message = error.asUserMessage()) } }
+                finally {
+                    mutable.update { it.copy(busyPlaylist = null, busyTrack = null) }
+                    refreshStatuses()
                 }
-                mutable.update { it.copy(message = when {
-                    detail.tracks.size < detail.count -> "已处理 ${detail.tracks.size} 首，平台尚未返回歌单全部歌曲"
-                    failed == 0 -> "歌单缓存完成"
-                    else -> "$failed 首缓存失败，可重新缓存重试"
-                }) }
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { if (namespace == requestedNamespace) mutable.update { it.copy(message = error.asUserMessage()) } }
-            finally {
-                if (namespace == requestedNamespace) {
-                    mutable.update { it.copy(busyPlaylist = null) }
-                    refreshStatuses(preserveFailures = true)
-                }
-            }
             }
         }
     }
 
+    fun cacheTrack(track: MusicTrack) = cache(singleTrackPlaylist(track))
+    fun removeTrack(track: MusicTrack) = remove(singleTrackPlaylist(track))
     fun cancel() { writer?.cancel(); batch?.cancel() }
+    private fun singleTrackPlaylist(track: MusicTrack) = MusicPlaylist("cache-track:${track.id}", track.source,
+        track.title, "", "", 1, track.artworkStart, track.artworkEnd, track.artworkMark, listOf(track), track.artworkUrl)
 
     fun remove(playlist: MusicPlaylist) {
         val oldBatch = batch
-        val requestedNamespace = namespace
         cancel()
         scope.launch {
             oldBatch?.join()
-            if (namespace != requestedNamespace) return@launch
             operationMutex.withLock {
-            try {
-                playlist.tracks.forEach(offline::remove)
-                refreshStatuses()
-                mutable.update { it.copy(message = "已删除歌单音频缓存，正在播放的文件会在切歌后删除") }
-            } catch (error: Exception) { mutable.update { it.copy(message = error.asUserMessage()) } }
+                try {
+                    playlist.tracks.forEach(offline::remove)
+                    refreshStatuses()
+                    mutable.update { it.copy(message = null) }
+                } catch (error: Exception) { mutable.update { it.copy(message = error.asUserMessage()) } }
             }
         }
     }
 
-    private suspend fun loadPlaylist(playlist: MusicPlaylist): MusicPlaylist {
-        if (playlist.id.startsWith("local-cached-")) return playlist
-        if (playlist.id == QQ_FAVORITES_PLAYLIST_ID) {
-            val session = PlatformPreferences(context).readSession(MusicSource.QQ)
-            return QqLibraryClient().favoritePlaylist(session.credential, session.account?.userId.orEmpty(),
-                session.account?.hasVipAccess == true)
-        }
-        return catalog.playlistDetail(playlist)
-    }
-
     private fun updatePlaylist(playlist: MusicPlaylist) {
-        mutable.update { state -> state.copy(playlists = state.playlists.map { if (it.id == playlist.id) playlist else it }) }
-        snapshots.save(namespace, mutable.value.playlists)
+        mutable.update { state -> state.copy(playlists = (state.playlists.filterNot { cachePlaylistKey(it) == cachePlaylistKey(playlist) } + playlist)
+            .distinctBy(::cachePlaylistKey)) }
+        directory.save(mutable.value.playlists)
     }
 
-    private fun refreshStatuses(preserveFailures: Boolean = false) {
-        val statuses = mutable.value.playlists.flatMap { it.tracks }.distinctBy { it.id }.associate { it.id to offline.status(it) }
-        mutable.update { state -> state.copy(statuses = statuses.mapValues { (id, status) ->
-            state.statuses[id]?.takeIf { (preserveFailures && it.startsWith("缓存失败")) ||
-                (state.busyPlaylist != null && (it.startsWith("正在缓存") || it == "等待缓存")) } ?: status
-        }) }
+    private fun refreshStatuses() = synchronized(statusLock) {
+        val playlists = mutable.value.playlists
+        val requestedOwners = owners
+        val tracks = (playlists.flatMap { it.tracks } + MusicSource.entries.flatMap(offline::savedTracks))
+            .distinctBy { it.cacheIdentity() }
+        val protected = disk.protectedIdentities()
+        val snapshot = offline.snapshot()
+        val cached = tracks.filter { it.source != MusicSource.LOCAL && it.cacheIdentity() in snapshot.cached }
+        val statuses = tracks.associate { track -> track.cacheIdentity() to if (track.source == MusicSource.LOCAL) "本地文件 · 无需缓存"
+            else when (track.cacheIdentity()) {
+                in snapshot.complete -> "已缓存 · ${if (track.cacheIdentity() in protected) "受保护" else "可被清理"}"
+                in snapshot.cached -> "部分缓存"
+                else -> "未缓存"
+            } }
+        val usage = disk.usage()
+        val blocked = disk.blockReasons(tracks, usage)
+        if (owners != requestedOwners || mutable.value.playlists != playlists) return@synchronized
+        mutable.update { state -> state.copy(initialized = true, cachedTracks = cached, protected = protected, usage = usage,
+            limits = settingsDraft.pending ?: disk.limits.value, appliedLimits = disk.limits.value,
+            blocked = blocked, statuses = statuses.mapValues { (id, text) ->
+                state.statuses[id]?.takeIf { it.startsWith("缓存失败") || (state.busyPlaylist != null && (it.startsWith("正在缓存") || it == "等待缓存")) } ?: text
+            }) }
     }
     private fun setStatus(track: MusicTrack, text: String) {
-        mutable.update { if (it.statuses[track.id] == text) it else it.copy(statuses = it.statuses + (track.id to text)) }
+        val id = track.cacheIdentity()
+        mutable.update { if (it.statuses[id] == text) it else it.copy(statuses = it.statuses + (id to text)) }
     }
 
     companion object {
@@ -211,5 +282,6 @@ internal class MusicCacheManager private constructor(private val context: Contex
         fun get(context: Context): MusicCacheManager = instance ?: synchronized(this) {
             instance ?: MusicCacheManager(context.applicationContext).also { instance = it }
         }
+        fun available(): MusicCacheManager? = instance
     }
 }

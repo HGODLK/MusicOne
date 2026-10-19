@@ -16,25 +16,35 @@ internal class SupplementalOfflineMusicStore(private val context: Context) {
     fun remember(playback: ResolvedPlayback) {
         val source = playback.source
         val key = source.cacheKey ?: return
-        val namespace = owner().let { if (it.isBlank()) "bili-guest-" else "bili-mid-$it-" }
-        if (!key.startsWith(namespace)) return
-        preferences.edit().putString(key, playback.track.toQqStoredTrackJson()
+        MusicDiskCache.get(context).trust(key, true)
+        val reference = "${owner()}|${playback.track.id}|${cacheResourceVariant(key)}"
+        preferences.edit().putString(reference, playback.track.toQqStoredTrackJson().put("cacheKey", key)
             .put("owner", owner()).put("manifest", source.url).put("quality", source.actualQuality.name)
             .put("bitrate", source.bitRate).put("format", source.format).toString()).apply()
     }
     private fun records(trackId: String? = null): List<Pair<String, JSONObject>> = preferences.all.mapNotNull { (key, value) ->
         val row = runCatching { JSONObject(value as String) }.getOrNull() ?: return@mapNotNull null
-        if (row.optString("owner") != owner() || (trackId != null && row.optString("id") != trackId)) null else key to row
+        if (row.optString("owner") != owner() || (trackId != null && row.optString("id") != trackId)) null else row.optString("cacheKey", key) to row
     }
     fun complete(key: String): Boolean {
         val cache = MusicDiskCache.get(context).audio
         val length = ContentMetadata.getContentLength(cache.getContentMetadata(key))
         return length > 0 && cache.isCached(key, 0, length)
     }
-    fun keys(track: MusicTrack) = records(track.id).map { it.first }.filter { it in MusicDiskCache.get(context).audio.keys }
+    fun keys(track: MusicTrack) = records(track.id).map { it.first }.distinct()
+        .filter { MusicDiskCache.get(context).audio.getCachedSpans(it).isNotEmpty() }
     fun savedTracks() = records().mapNotNull { it.second.toQqStoredTrack() }.distinctBy { it.id }
+    fun cacheRecords(): List<Pair<String, JSONObject>> = records()
     fun completeTrackIds() = records().filter { complete(it.first) }.mapTo(hashSetOf()) { it.second.optString("id") }
-    fun remove(track: MusicTrack) { records(track.id).forEach { (key, _) -> MusicDiskCache.get(context).removeAudio(key); preferences.edit().remove(key).apply() } }
+    fun remove(track: MusicTrack) {
+        records(track.id).forEach { (key, _) -> MusicDiskCache.get(context).removeAudio(key) }
+        val edit = preferences.edit()
+        preferences.all.forEach { (key, value) ->
+            val row = runCatching { JSONObject(value as String) }.getOrNull()
+            if (row?.optString("owner") == owner() && row.optString("id") == track.id) edit.remove(key)
+        }
+        edit.apply()
+    }
     suspend fun resolve(track: MusicTrack, preferred: AudioQuality, allowOther: Boolean): ResolvedPlayback? = withContext(Dispatchers.IO) {
         records(track.id).sortedByDescending { it.second.optString("quality") == preferred.name }.firstNotNullOfOrNull { (key, row) ->
             val quality = AudioQuality.entries.firstOrNull { it.name == row.optString("quality") } ?: return@firstNotNullOfOrNull null

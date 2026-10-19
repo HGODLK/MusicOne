@@ -28,11 +28,7 @@ internal fun SettingsHomeScreen(state: PlatformSettingsUiState, onBack: () -> Un
                 item { LibraryActionRow("本地音乐库", "文件、关联目录与 .msco 备份", onClick = onOpenLibrary) }
                 item { LibraryActionRow("补充音源", "B站账号、分 P 导入与收藏夹订阅", onClick = onOpenSupplemental) }
                 item { DisplaySettings() }
-                item { CacheSettings() }
-                item {
-                    ListItem(headlineContent = { Text("缓存音乐") }, supportingContent = { Text("歌单缓存与离线播放") },
-                        trailingContent = { Text("›") }, modifier = Modifier.clickable(onClick = onOpenCachedMusic))
-                }
+                item { CacheManagementEntry(onOpenCachedMusic) }
                 item { AboutSettings() }
                 item { VersionUpdateSettings() }
             }

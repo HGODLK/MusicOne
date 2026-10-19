@@ -69,13 +69,13 @@ internal class QqNextAudioPreloader(
                 val key = playbackCacheKey(context, resolved.track)
                 if (offlinePlaybackKey(resolved.source.url) == null) {
                     val disk = MusicDiskCache.get(context)
+                    if (disk.blockReason(target) != null) return@launch
                     val upstream = DefaultDataSource.Factory(context, DefaultHttpDataSource.Factory()
                         .setUserAgent(PlatformHttp.DEFAULT_USER_AGENT)
                         .setConnectTimeoutMs(5_000).setReadTimeoutMs(5_000))
-                    val dataSource = CacheDataSource.Factory().setCache(disk.audio)
-                        .setUpstreamDataSourceFactory(upstream).createDataSource()
+                    val dataSource = disk.streamingFactory(upstream, strict = true).createDataSource()
                     val currentWriter = CacheWriter(dataSource, DataSpec.Builder()
-                        .setUri(resolved.source.url).setKey(key).setPosition(0)
+                        .setUri(resolved.source.url).setKey(key).setPosition(0).setFlags(DataSpec.FLAG_ALLOW_CACHE_FRAGMENTATION)
                         .setLength(qqAudioPreloadBytes(resolved.source.bitRate)).build(), null) { _, _, _ ->
                         ensureActive()
                     }
@@ -110,6 +110,8 @@ internal class QqNextAudioPreloader(
 
     fun take(track: MusicTrack, quality: AudioQuality): ResolvedPlayback? {
         val saved = ready ?: return null
+        // 断网后不能交付预取时保存的在线地址，交由完整离线缓存重新解析。
+        if (!context.hasMusicNetwork() && offlinePlaybackKey(saved.playback.source.url) == null) return null
         if (!DolbyPlaybackPolicy.permits(saved.playback.source.actualQuality)) return null
         if (track.source != MusicSource.QQ || saved.request.trackId != track.id ||
             saved.request.quality != quality ||

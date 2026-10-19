@@ -2,11 +2,14 @@ package com.musicone.demo
 
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 internal val LocalPlaylistPagination = staticCompositionLocalOf<PlaylistPageActions?> { null }
 
@@ -18,11 +21,13 @@ internal class PlaylistPageActions(
     private val sort: () -> PlaylistSort,
     private val playback: MusicPlaybackRuntime,
     private val preparePlayback: () -> Unit,
+    private val isOnline: () -> Boolean,
+    private val cachedTrackIds: suspend () -> Set<String>,
 ) {
     private var playJob: Job? = null
     private var completeJob: Job? = null
 
-    suspend fun first() { attempt { controller.first(playlist()) } }
+    suspend fun first() { if (isOnline()) attempt { controller.first(playlist()) } }
 
     suspend fun selectionTracks(): List<MusicTrack> {
         val full = controller.complete(playlist())
@@ -34,12 +39,12 @@ internal class PlaylistPageActions(
     }
 
     fun more() {
-        if (entry.loading) return
+        if (entry.loading || !isOnline()) return
         scope.launch { attempt { controller.more(playlist()) } }
     }
 
     fun remaining() {
-        if (completeJob?.isActive == true) return
+        if (completeJob?.isActive == true || !isOnline()) return
         completeJob = scope.launch { attempt { controller.complete(playlist()) } }
     }
 
@@ -47,11 +52,17 @@ internal class PlaylistPageActions(
         playJob?.cancel()
         playJob = scope.launch {
             attempt {
-                val full = controller.complete(playlist())
+                val online = isOnline()
+                val full = playlistForPlayback(entry.page?.playlist ?: playlist(), online, cachedTrackIds) {
+                    controller.complete(playlist())
+                }
                 val sorted = if (full.isQqSearchAlbum) full else
                     full.copy(tracks = sortedPlaylistTracks(full.tracks, sort()))
+                val selected = if (online) track else track?.let { wanted ->
+                    sorted.tracks.firstOrNull { it.id == wanted.id } ?: error("这首歌曲尚未完整缓存")
+                }
                 preparePlayback()
-                if (track != null) playback.playPlaylistTrack(sorted, track)
+                if (selected != null) playback.playPlaylistTrack(sorted, selected)
                 else playback.playPlaylist(sorted, shuffle = shuffle)
             }
         }
@@ -60,7 +71,7 @@ internal class PlaylistPageActions(
     private suspend fun attempt(action: suspend () -> Unit) {
         try { action() }
         catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: Exception) { /* 分页状态已保留错误和游标，交给列表尾部重试。 */ }
+        catch (error: Exception) { entry.error = error.asUserMessage() }
     }
 }
 
@@ -69,13 +80,15 @@ internal fun rememberPlaylistPageActions(
     controller: PlaylistPagingController, entry: PlaylistPagingEntry, playlist: MusicPlaylist,
     sort: PlaylistSort, playback: MusicPlaybackRuntime, preparePlayback: () -> Unit,
 ): PlaylistPageActions {
+    val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     val currentPlaylist = rememberUpdatedState(playlist)
     val currentSort = rememberUpdatedState(sort)
     val prepare = rememberUpdatedState(preparePlayback)
-    return remember(controller, entry, playback) {
+    return remember(controller, entry, playback, context) {
         PlaylistPageActions(entry, controller, scope, { currentPlaylist.value }, { currentSort.value }, playback,
-            { prepare.value() })
+            { prepare.value() }, { context.hasMusicNetwork() },
+            { withContext(Dispatchers.IO) { OfflineMusicStore(context).availableTrackIds() } })
     }
 }
 

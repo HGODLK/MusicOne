@@ -55,7 +55,7 @@ internal class BiliApi(context: Context) {
     fun getFavoriteVideos(folderId: Long, page: Int, cookie: String, query: String = ""): BiliFavVideoPage {
         val headers = auth.webHeaders(cookie)
         val keyword = query.trim().takeIf(String::isNotEmpty)?.let { "&keyword=${it.urlEncoded()}" }.orEmpty()
-        val resp = PlatformHttp.get("https://api.bilibili.com/x/v3/fav/resource/list?media_id=$folderId&pn=$page&ps=20&platform=web$keyword", headers = headers)
+        val resp = PlatformHttp.get("https://api.bilibili.com/x/v3/fav/resource/list?media_id=$folderId&pn=$page&ps=20&order=mtime&platform=web$keyword", headers = headers)
         val json = JSONObject(resp.text)
         val code = json.optInt("code")
         if (code != 0) throw PlatformApiException(json.optString("message", "加载收藏夹内容失败(code=$code)"))

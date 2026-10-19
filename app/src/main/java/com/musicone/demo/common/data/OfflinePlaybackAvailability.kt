@@ -35,7 +35,7 @@ internal class OfflinePlaybackAvailability private constructor(context: Context)
         musicNetworkChanges(context),
         merge(changes, MusicDiskCache.get(context).audioRevision.map { Unit }),
         offline::availableTrackIds,
-    ).stateIn(scope, SharingStarted.WhileSubscribed(5_000), OfflinePlaybackAvailabilityState())
+    ).stateIn(scope, SharingStarted.WhileSubscribed(5_000), OfflinePlaybackAvailabilityState(online = context.hasMusicNetwork()))
 
     companion object {
         @Volatile private var instance: OfflinePlaybackAvailability? = null

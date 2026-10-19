@@ -41,7 +41,7 @@ internal class TrackPlaybackAvailability private constructor(context: Context) {
 /** 所有列表与标题消费同一结果；有效离线缓存优先于在线权限状态。 */
 @Composable
 internal fun displayedPlaybackTrack(track: MusicTrack): MusicTrack {
-    if (track.source !in setOf(MusicSource.QQ, MusicSource.KUGOU, MusicSource.NETEASE)) return track
+    if (track.source == MusicSource.LOCAL) return track
     val context = LocalContext.current
     val availability = remember(context) { TrackPlaybackAvailability.get(context) }
     val failures by availability.state.collectAsStateWithLifecycle()
@@ -49,12 +49,12 @@ internal fun displayedPlaybackTrack(track: MusicTrack): MusicTrack {
     val latestTrack by rememberUpdatedState(track)
     LaunchedEffect(availability, track.id, failures.revision, lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            availability.refresh(latestTrack)
+            if (track.source != MusicSource.BILIBILI) availability.refresh(latestTrack)
             awaitCancellation()
         }
     }
     val offline by remember(context) { OfflinePlaybackAvailability.get(context) }.state.collectAsStateWithLifecycle()
     val entitlements by QqEntitlements.state.collectAsStateWithLifecycle()
     val ready = if (track.source == MusicSource.QQ) QqEntitlements.displayTrack(track, entitlements) else track
-    return displayedTrackAvailability(ready, failures.unavailable[track.id], track.id in offline.trackIds)
+    return displayedTrackAvailability(ready, failures.unavailable[track.id], track.id in offline.trackIds, offline.online)
 }

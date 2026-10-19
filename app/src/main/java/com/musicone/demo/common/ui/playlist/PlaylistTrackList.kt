@@ -118,6 +118,7 @@ internal fun PlaylistTrackRow(
     modifier: Modifier,
     onMore: ((Rect) -> Unit)? = null,
     enabled: Boolean = true,
+    supportingContent: (@Composable () -> Unit)? = null,
 ) {
     val qqMenu = LocalQqPlaylistSongMenu.current
     val displayed = displayedPlaybackTrack(track)
@@ -150,6 +151,7 @@ internal fun PlaylistTrackRow(
                     color = if (!displayed.playable) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .5f)
                         else if (current) trackPlaybackColor(track.source) else MaterialTheme.colorScheme.onSurface)
                 Text(track.artists, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                supportingContent?.invoke()
             }
             if (selection?.active == true) {
                 Box(Modifier.size(48.dp).toggleable(track.id in selection.ids, enabled = enabled, role = Role.Checkbox,

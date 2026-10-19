@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.geometry.Rect
@@ -13,7 +14,9 @@ import androidx.compose.ui.unit.dp
 @Composable
 internal fun SettingsPageHost(navigation: SettingsNavigation, state: PlatformSettingsUiState,
     model: PlatformSettingsViewModel, motion: PageMotion, bottomInset: androidx.compose.ui.unit.Dp,
-    cachePlaylists: List<MusicPlaylist> = emptyList(), onPlayCached: (MusicTrack) -> Unit = {}) {
+    cachePlaylists: List<MusicPlaylist> = emptyList(), onPlayCached: (MusicTrack) -> Unit = {},
+    currentTrackId: String? = null, playing: Boolean = false) {
+    val cachePages = rememberSaveableStateHolder()
     var retained by remember { mutableStateOf(SettingsDestination.SETTINGS) }
     var origin by remember { mutableStateOf(Rect.Zero) }
     var loginBack by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -39,6 +42,7 @@ internal fun SettingsPageHost(navigation: SettingsNavigation, state: PlatformSet
         }
         motion.request(navigation.destination != SettingsDestination.CLOSED)
     }
+    ApplyCacheSettingsOnExit(navigation.destination, motion.mounted) { MusicCacheManager.available()?.applyPendingSettings() }
     if (!motion.mounted) return
     SettingsPlatformTheme(state.selectedSource, state.sessionStatus != SessionStatus.CONNECTED) {
     // 齿轮仅由背景录制层之外的页头绘制，展开表面不能再画一份被齿轮自身采样。
@@ -62,10 +66,13 @@ internal fun SettingsPageHost(navigation: SettingsNavigation, state: PlatformSet
                         SettingsDestination.SUPPLEMENTAL -> Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
                             BiliSupplementalSettings(bottomInset, navigation::backPage, { supplementalBack = it })
                         }
-                        SettingsDestination.CACHED_MUSIC, SettingsDestination.CACHED_PLAYLIST -> CachedMusicScreen(
-                            state.selectedSource, cachePlaylists,
-                            if (displayed == SettingsDestination.CACHED_PLAYLIST) navigation.cachedPlaylistId else null,
-                            navigation::back, navigation::openCachedPlaylist, onPlayCached, bottomInset)
+                        SettingsDestination.CACHED_MUSIC, SettingsDestination.CACHED_PLAYLIST -> {
+                            val selectedCacheId = if (displayed == SettingsDestination.CACHED_PLAYLIST) navigation.cachedPlaylistId else null
+                            cachePages.SaveableStateProvider(selectedCacheId ?: "cache-home") {
+                                CachedMusicScreen(state.selectedSource, cachePlaylists, selectedCacheId,
+                                    navigation::back, navigation::openCachedPlaylist, onPlayCached, bottomInset, currentTrackId, playing)
+                            }
+                        }
                         SettingsDestination.SOURCES -> SourceSettingsScreen(
                             state = state,
                             onBack = navigation::back,

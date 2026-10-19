@@ -137,9 +137,10 @@ internal class PlatformPlaybackResolver(
             }
         } ?: trialFallback ?: throw (uncertain ?: unavailable ?: PlatformApiException("歌曲暂无可用播放地址"))
         source.cacheKey?.let { SupplementalPlaybackRequests.register(source.url, source.requestHeaders, it) }
-        if (track.source == MusicSource.KUGOU && source.requestHeaders.isNotEmpty()) {
-            SupplementalPlaybackRequests.register(source.url, source.requestHeaders,
-                playbackCacheKey(context, resolvedTrack.copy(previewUrl = source.url)))
+        if (source.cacheKey == null) {
+            val key = if (source.trial) "uncached-trial:${resolvedTrack.cacheIdentity()}"
+                else MusicDiskCache.get(context).register(networkPlaybackCacheKey(context, resolvedTrack.copy(previewUrl = source.url)), resolvedTrack)
+            SupplementalPlaybackRequests.register(source.url, source.requestHeaders, key)
         }
         return ResolvedPlayback(resolvedTrack.copy(previewUrl = source.url), source)
             .also { offline.remember(it, preferredQuality) }

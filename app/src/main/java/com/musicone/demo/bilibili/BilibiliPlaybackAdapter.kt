@@ -10,7 +10,7 @@ import kotlinx.coroutines.withContext
  * 遵循 [PlatformPlaybackAdapter] 接口规范，只返回纯音频 DASH 清单（仅含选定音轨），
  * 并根据设备能力策略 [DolbyPlaybackPolicy] 自动匹配杜比/Hi-Res/普通音质。
  */
-internal class BilibiliPlaybackAdapter(context: Context) : PlatformPlaybackAdapter {
+internal class BilibiliPlaybackAdapter(private val context: Context) : PlatformPlaybackAdapter {
     override val source: MusicSource = MusicSource.BILIBILI
 
     private val api = BiliApi(context.applicationContext)
@@ -68,13 +68,14 @@ internal class BilibiliPlaybackAdapter(context: Context) : PlatformPlaybackAdapt
         val isDolby = selected.isDolby
 
         // 构造稳定缓存键（不带签名参数）
-        val cacheKey = BiliDashBuilder.buildCacheKey(
+        val rawCacheKey = BiliDashBuilder.buildCacheKey(
             accountMid = session?.mid.orEmpty(),
             bvid = bvid,
             cid = cid,
             streamId = stream.id,
             codecs = stream.codecs,
         )
+        val cacheKey = MusicDiskCache.get(context).register(rawCacheKey, track)
 
         val requestHeaders = webSession.headers(cookie, "https://www.bilibili.com/video/$bvid")
 

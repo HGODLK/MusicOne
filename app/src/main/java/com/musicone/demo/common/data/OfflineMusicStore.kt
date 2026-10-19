@@ -19,7 +19,9 @@ internal class OfflineMusicStore(private val context: Context) {
         if (resolved.source.trial) return
         val track = resolved.track
         val key = playbackCacheKey(context, track)
-        store.edit().putString(key, track.toQqStoredTrackJson()
+        MusicDiskCache.get(context).trust(key, !resolved.source.verificationPending)
+        val reference = prefix(track) + cacheResourceVariant(key)
+        store.edit().putString(reference, track.toQqStoredTrackJson().put("cacheKey", key)
             .put("url", resolved.source.url).put("quality", resolved.source.actualQuality.name)
             .put("preferredQuality", preferred.name)
             .put("pending", resolved.source.verificationPending).toString()).apply()
@@ -27,8 +29,16 @@ internal class OfflineMusicStore(private val context: Context) {
 
     fun hasNetwork(): Boolean = context.hasMusicNetwork()
 
-    private fun record(key: String): JSONObject? = store.getString(key, null)
-        ?.let { runCatching { JSONObject(it) }.getOrNull() }
+    private fun records(source: MusicSource? = null): List<Pair<String, JSONObject>> {
+        val namespaces = (source?.let(::listOf) ?: MusicSource.entries).map { preferences.readSession(it).cacheNamespace() }.toSet()
+        return store.all.mapNotNull { (key, value) ->
+            if (key.substringBefore('|') !in namespaces) return@mapNotNull null
+            runCatching { JSONObject(value as String) }.getOrNull()?.let { key to it }
+        }
+    }
+
+    private fun physical(reference: String, record: JSONObject) = record.optString("cacheKey", reference)
+    private fun record(key: String): JSONObject? = records().firstOrNull { physical(it.first, it.second) == key }?.second
 
     // 只在 IO 线程调用；未完成播放前校验的整首缓存也能在断网后补验。
     fun verifiedComplete(key: String): Boolean {
@@ -39,15 +49,14 @@ internal class OfflineMusicStore(private val context: Context) {
     }
 
     fun availableTrackIds(): Set<String> = playbackTrace("MusicOne:offline-index-scan") {
-        val namespaces = MusicSource.entries.map { preferences.readSession(it).cacheNamespace() }.toSet()
-        MusicDiskCache.get(context).audio.keys.asSequence()
-            .filter { it.substringBefore('|') in namespaces }
-            .filter { offlineRecordQuality(it, record(it)) != null && verifiedComplete(it) }
-            .map { it.substringAfter('|').substringBefore('|') }.toSet() + supplemental.completeTrackIds()
+        records().filter { (reference, row) ->
+            val key = physical(reference, row)
+            offlineRecordQuality(key, row) != null && verifiedComplete(key)
+        }.mapTo(hashSetOf()) { it.second.optString("id") } + supplemental.completeTrackIds()
     }
 
     fun complete(key: String): Boolean {
-        val record = store.getString(key, null)?.let { runCatching { JSONObject(it) }.getOrNull() }
+        val record = record(key)
         if (record?.optBoolean("pending") == true || record?.optBoolean("trial") == true) return false
         return completeBytes(key)
     }
@@ -59,13 +68,21 @@ internal class OfflineMusicStore(private val context: Context) {
     }
 
     fun verify(key: String, full: Boolean) {
-        val raw = store.getString(key, null) ?: return
-        val record = runCatching { JSONObject(raw) }.getOrNull() ?: return
-        store.edit().putString(key, record.put("pending", false).put("trial", !full).toString()).apply()
+        val edit = store.edit()
+        records().filter { physical(it.first, it.second) == key }.forEach { (reference, row) ->
+            edit.putString(reference, row.put("pending", false).put("trial", !full).toString())
+        }
+        edit.apply()
+        MusicDiskCache.get(context).trust(key, full)
     }
 
     fun keys(track: MusicTrack): List<String> = if (track.source == MusicSource.BILIBILI) supplemental.keys(track)
-        else MusicDiskCache.get(context).audio.keys.filter { it.startsWith(prefix(track)) }
+        else {
+            val cache = MusicDiskCache.get(context).audio
+            val referenced = records(track.source).filter { it.second.optString("id") == track.id }
+                .map { physical(it.first, it.second) }
+            (referenced + cache.keys.filter { it.startsWith(prefix(track)) }).distinct().filter { cache.getCachedSpans(it).isNotEmpty() }
+        }
 
     fun status(track: MusicTrack): String {
         val keys = keys(track)
@@ -74,6 +91,33 @@ internal class OfflineMusicStore(private val context: Context) {
             keys.isNotEmpty() -> "部分缓存"
             else -> "未缓存"
         }
+    }
+
+    /** 管理页一次扫描共享索引，不能为每一行反复解析整份离线元数据。 */
+    fun snapshot(): OfflineCacheSnapshot {
+        val cache = MusicDiskCache.get(context).audio
+        val keys = cache.keys.filterTo(hashSetOf()) { cache.getCachedSpans(it).isNotEmpty() }
+        val cached = hashSetOf<String>()
+        val complete = hashSetOf<String>()
+        val rows = records().map { (reference, row) -> physical(reference, row) to row } + supplemental.cacheRecords()
+        rows.forEach { (key, row) ->
+            if (key !in keys) return@forEach
+            val source = MusicSource.entries.firstOrNull { it.name == row.optString("source") } ?: MusicSource.QQ
+            val identity = cacheTrackIdentity(source, row.optString("id"))
+            cached += identity
+            val length = ContentMetadata.getContentLength(cache.getContentMetadata(key))
+            if (!row.optBoolean("pending") && !row.optBoolean("trial") && length > 0 && cache.isCached(key, 0, length)) complete += identity
+        }
+        val owned = MusicSource.entries.map { preferences.readSession(it).cacheNamespace() }.toSet()
+        val indexedKeys = rows.mapTo(hashSetOf()) { it.first }
+        keys.filter { it !in indexedKeys && it.substringBefore('|') in owned }.forEach { key ->
+            val source = MusicSource.entries.firstOrNull { it.name == key.substringBefore(':') } ?: return@forEach
+            val identity = cacheTrackIdentity(source, key.substringAfter('|').substringBefore('|'))
+            cached += identity
+            val length = ContentMetadata.getContentLength(cache.getContentMetadata(key))
+            if (length > 0 && cache.isCached(key, 0, length)) complete += identity
+        }
+        return OfflineCacheSnapshot(cached, complete)
     }
 
     suspend fun resolve(track: MusicTrack, preferred: AudioQuality, allowOtherQuality: Boolean): ResolvedPlayback? = withContext(Dispatchers.IO) {
@@ -100,15 +144,16 @@ internal class OfflineMusicStore(private val context: Context) {
         if (track.source == MusicSource.BILIBILI) { supplemental.remove(track); return }
         keys(track).forEach { key ->
             MusicDiskCache.get(context).removeAudio(key)
-            store.edit().remove(key).apply()
+            val edit = store.edit()
+            records().filter { physical(it.first, it.second) == key }.forEach { edit.remove(it.first) }
+            edit.apply()
         }
     }
 
     fun savedTracks(source: MusicSource): List<MusicTrack> {
         if (source == MusicSource.BILIBILI) return supplemental.savedTracks()
-        val namespace = preferences.readSession(source).cacheNamespace() + "|"
-        return store.all.filterKeys { it.startsWith(namespace) }.values.mapNotNull { raw ->
-            runCatching { JSONObject(raw as String).toQqStoredTrack() }.getOrNull()
-        }.distinctBy { it.id }
+        return records(source).mapNotNull { it.second.toQqStoredTrack() }.distinctBy { it.id }
     }
 }
+
+internal data class OfflineCacheSnapshot(val cached: Set<String>, val complete: Set<String>)

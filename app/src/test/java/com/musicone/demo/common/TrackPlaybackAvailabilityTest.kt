@@ -32,6 +32,18 @@ class TrackPlaybackAvailabilityTest {
         assertEquals(local, displayedTrackAvailability(local, null, false))
     }
 
+    @Test fun offlineDisablesIncompleteAudioAndCompleteAudioOverridesOnlineDenial() {
+        for (source in listOf(MusicSource.QQ, MusicSource.KUGOU, MusicSource.NETEASE, MusicSource.BILIBILI)) {
+            val track = song.copy(source = source)
+            assertFalse(displayedTrackAvailability(track, null, false, online = false).playable)
+            val cached = displayedTrackAvailability(track, "在线无权限", true, online = false)
+            assertTrue(cached.playable)
+            assertNull(cached.unavailableReason)
+        }
+        val local = song.copy(source = MusicSource.LOCAL, playable = false)
+        assertEquals(local, displayedTrackAvailability(local, null, true, online = false))
+    }
+
     @Test fun purchaseCheckMustBelongToCurrentAccountAndCurrentTime() {
         assertNotNull(confirmedQqPlaybackRestriction(denied, "owner", null, now))
         for (info in listOf(denied.copy(payStatus = null), denied.copy(payStatus = 1),

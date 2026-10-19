@@ -88,6 +88,9 @@ internal fun ImmersiveLyrics(
     onRetryLyrics: () -> Unit = {},
 ) {
     val onlineLines = rememberOnlineLyricLines(track)
+    val wordProgress = remember(verbatimProgressMs, track.source) {
+        verbatimProgressMs?.let { clock -> { lyricWordDisplayPosition(clock(), track.source) } }
+    }
     val lines = remember(track.id, onlineLines, track.retryable) {
         onlineLines.ifEmpty { listOf(TimedLyric(0L, if (track.retryable) "歌词加载失败，点击重试" else "暂无歌词")) }
     }
@@ -453,7 +456,7 @@ internal fun ImmersiveLyrics(
                         boundaryWindow = boundaryWindow,
                         paneOffset = { controller.paneTranslation(currentDisplayPane) },
                         lyricSettleProgress = { if (outgoing) 1f else lyricSettle.value },
-                        smoothProgressMs = if (outgoing) null else verbatimProgressMs,
+                        smoothProgressMs = if (outgoing) null else wordProgress,
                         onLineClick = lineClick@{ index, line ->
                             if (track.retryable) {
                                 onRetryLyrics()

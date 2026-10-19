@@ -346,7 +346,7 @@ private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
                     listOfNotNull(qqLibraryState.favoritePlaylist) + qqLibraryState.createdPlaylists +
                         qqLibraryState.collectedPlaylists + listOfNotNull(kugouLibraryState.favoritePlaylist) +
                         kugouLibraryState.createdPlaylists + kugouLibraryState.collectedPlaylists +
-                        catalogState.recommendations, viewModel::playTrackNext)
+                        catalogState.recommendations, viewModel::playTrackNext, state.currentTrack?.id, state.isPlaying)
             }
 
             if (settingsNavigation.destination == SettingsDestination.CLOSED) {

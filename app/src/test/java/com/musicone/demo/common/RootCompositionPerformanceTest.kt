@@ -10,6 +10,38 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class RootCompositionPerformanceTest {
+    @Test fun cacheSettingsApplyOnlyAfterLeavingEntireSettingsAndClosingAnimationFinishes() = withComposition {
+        var destination by mutableStateOf(SettingsDestination.CACHED_MUSIC)
+        var mounted by mutableStateOf(true)
+        var progressText by mutableStateOf("未缓存")
+        var applies = 0
+        val draft = CacheSettingsDraft()
+        val applied = CacheLimits()
+        composition.setContent {
+            progressText
+            ApplyCacheSettingsOnExit(destination, mounted) { if (draft.consume() != null) applies++ }
+        }
+        frames()
+        draft.select(applied, false, CacheCapacity.GB20)
+        repeat(8) { progressText = "正在缓存 $it"; frames() }
+        destination = SettingsDestination.CACHED_PLAYLIST
+        frames()
+        destination = SettingsDestination.CACHED_MUSIC
+        frames()
+        destination = SettingsDestination.SETTINGS
+        frames()
+        assertEquals(0, applies)
+        destination = SettingsDestination.CLOSED
+        frames()
+        assertEquals(0, applies)
+        mounted = false
+        frames()
+        assertEquals(1, applies)
+        progressText = "已缓存"
+        frames()
+        assertEquals(1, applies)
+    }
+
     @Test fun biliFolderRowsStayVisibleWhileTheRootPlaylistIsClosedOrMoving() = withComposition {
         val rootMotion = PageMotion(CoroutineScope(kotlin.coroutines.coroutineContext), initialOpen = false,
             enterMillis = 360, exitMillis = 280)

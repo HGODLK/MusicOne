@@ -72,7 +72,10 @@ internal class TrackAvailabilityStore(
 }
 
 /** 在线列表中的历史标志不能代替本轮确认，完整离线音源仍优先。 */
-internal fun displayedTrackAvailability(track: MusicTrack, reason: String?, offline: Boolean): MusicTrack {
+internal fun displayedTrackAvailability(track: MusicTrack, reason: String?, offline: Boolean, online: Boolean = true): MusicTrack {
+    if (!online && track.source != MusicSource.LOCAL) return track.copy(
+        playable = offline, unavailableReason = if (offline) null else "这首歌曲尚未完整缓存，请联网后缓存",
+    )
     if (track.source !in setOf(MusicSource.QQ, MusicSource.KUGOU, MusicSource.NETEASE)) return track
     return track.copy(playable = offline || reason == null, unavailableReason = reason.takeUnless { offline })
 }

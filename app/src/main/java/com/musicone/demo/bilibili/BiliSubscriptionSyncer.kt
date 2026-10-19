@@ -56,15 +56,13 @@ internal class BiliSubscriptionSyncer(
         if (isCancelled()) throw CancellationException()
         if (libraryStore.state.value.subscriptions.firstOrNull { it.playlistId == targetPlaylistId } != originalSubscription) throw CancellationException()
 
-        // 仅在列表完整分页成功后才执行 merge；保留现有 subscription.manualOrder。
-        val existingSub = libraryStore.state.value.subscriptions.firstOrNull { it.playlistId == targetPlaylistId }
-        val manualOrder = existingSub?.manualOrder ?: false
+        // 仅在列表完整分页成功后同步顺序，失败时保留原订阅内容。
 
         val subscription = LibrarySubscription(
             playlistId = targetPlaylistId,
             folderId = folder.id,
             ownerId = account.mid,
-            manualOrder = manualOrder,
+            manualOrder = false,
         )
         libraryStore.mergeSubscription(subscription, allTracks, originalSubscription, isCancelled = {
             operation.ensureActive()

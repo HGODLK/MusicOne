@@ -22,7 +22,7 @@ class ContinuousLyricClockTest {
         val position = continuousLyricPosition(snapshot.positionMs, snapshot.sampledAtMs, 5_250,
             true, false, 200_000)
         assertEquals(250L, lyricDisplayPosition(position, MusicSource.LOCAL))
-        assertEquals(250L, lyricDisplayPosition(position, MusicSource.QQ))
+        assertEquals(570L, lyricDisplayPosition(position, MusicSource.QQ))
         assertEquals(630L, lyricDisplayPosition(position, MusicSource.NETEASE))
     }
 

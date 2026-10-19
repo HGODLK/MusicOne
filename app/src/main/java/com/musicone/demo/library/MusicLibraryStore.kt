@@ -61,6 +61,24 @@ internal class MusicLibraryStore private constructor(context: Context) {
             while (rows.moveToNext()) folders += LibraryFolder(rows.text("id"), rows.text("uri"), rows.text("title"), rows.number("copy_files") != 0L)
         }
         changes.value = LibrarySnapshot(songs.values.toList(), lists, folders, subscriptions, lyricRevision)
+        MusicDiskCache.available()?.setLibraryPrimary(primaryCacheMembers())
+    }
+
+    internal fun primaryCacheMembers(): List<Pair<String, Long>> = helper.readableDatabase.rawQuery(
+        "SELECT songs.data,members.added_at FROM members JOIN songs ON songs.id=members.song_id " +
+            "WHERE playlist_id=? AND hidden=0 ORDER BY added_at DESC,position,members.rowid",
+        arrayOf(UNIFIED_PLAYLIST_ID),
+    ).use { rows ->
+        buildList {
+            var timestamp = -1L
+            var withinBatch = 0L
+            while (rows.moveToNext()) {
+                val added = rows.getLong(1)
+                if (timestamp != added) { timestamp = added; withinBatch = 0 }
+                val track = runCatching { JSONObject(rows.getString(0)).toQqStoredTrack() }.getOrNull()
+                if (track != null) add(track.cacheIdentity() to (added * 1_000_000 - withinBatch++))
+            }
+        }
     }
 
     private suspend fun <T> write(onCommitted: () -> Unit = {}, block: (SQLiteDatabase) -> T): T = withContext(Dispatchers.IO) {
@@ -227,14 +245,14 @@ internal class MusicLibraryStore private constructor(context: Context) {
     suspend fun mergeSubscription(subscription: LibrarySubscription, tracks: List<MusicTrack>, previous: LibrarySubscription?,
                                   isCancelled: () -> Boolean, onCommitted: () -> Unit = {}) = write(onCommitted) { db ->
         if (isCancelled()) throw kotlinx.coroutines.CancellationException()
-        val manualOrder = db.rawQuery("SELECT remote_folder,owner,manual_order FROM playlists WHERE id=?",
+        db.rawQuery("SELECT remote_folder,owner FROM playlists WHERE id=?",
             arrayOf(subscription.playlistId)).use {
             check(it.moveToFirst()) { "订阅关系已变化，请重新刷新" }
             check(if (previous == null) it.isNull(0) && it.isNull(1) else
                 !it.isNull(0) && it.getLong(0) == previous.folderId && it.getString(1) == previous.ownerId) { "订阅关系已变化，请重新刷新" }
-            it.getInt(2) != 0
         }
-        db.execSQL("UPDATE playlists SET remote_folder=?,owner=? WHERE id=?", arrayOf<Any>(subscription.folderId, subscription.ownerId, subscription.playlistId))
+        // 订阅始终跟随收藏夹顺序，同时清除旧版本留下的手动排序标记。
+        db.execSQL("UPDATE playlists SET remote_folder=?,owner=?,manual_order=0 WHERE id=?", arrayOf<Any>(subscription.folderId, subscription.ownerId, subscription.playlistId))
         // 只接收已完整分页的结果；调用方在账号代次校验后才提交。
         val remoteIds = tracks.mapTo(hashSetOf()) { it.id }
         val oldMemberIds = mutableListOf<String>()
@@ -242,24 +260,21 @@ internal class MusicLibraryStore private constructor(context: Context) {
             while (it.moveToNext()) oldMemberIds += it.getString(0)
         }
         oldMemberIds.filter { it !in remoteIds }.forEach { db.delete("members", "playlist_id=? AND song_id=? AND hidden=0", arrayOf(subscription.playlistId, it)) }
-        var append = db.nextPosition(subscription.playlistId)
         tracks.distinctBy { it.id }.forEachIndexed { index, song ->
             db.upsertSong(song)
             db.insertWithOnConflict("members", null, ContentValues().apply {
                 put("playlist_id", subscription.playlistId); put("song_id", song.id)
-                put("position", if (manualOrder) append++ else index.toLong())
+                put("position", index.toLong())
                 put("remote_member", 1)
             }, SQLiteDatabase.CONFLICT_IGNORE)
-            if (!manualOrder) db.execSQL("UPDATE members SET position=? WHERE playlist_id=? AND song_id=? AND remote_member=1", arrayOf<Any>(index, subscription.playlistId, song.id))
+            db.execSQL("UPDATE members SET position=? WHERE playlist_id=? AND song_id=? AND remote_member=1", arrayOf<Any>(index, subscription.playlistId, song.id))
         }
-        if (!manualOrder) {
-            var position = tracks.distinctBy { it.id }.size
-            val manual = mutableListOf<String>()
-            db.rawQuery("SELECT song_id FROM members WHERE playlist_id=? AND remote_member=0 ORDER BY position,rowid", arrayOf(subscription.playlistId)).use {
-                while (it.moveToNext()) manual += it.getString(0)
-            }
-            manual.forEach { id -> db.execSQL("UPDATE members SET position=? WHERE playlist_id=? AND song_id=?", arrayOf<Any>(position++, subscription.playlistId, id)) }
+        var position = tracks.distinctBy { it.id }.size
+        val manual = mutableListOf<String>()
+        db.rawQuery("SELECT song_id FROM members WHERE playlist_id=? AND remote_member=0 ORDER BY position,rowid", arrayOf(subscription.playlistId)).use {
+            while (it.moveToNext()) manual += it.getString(0)
         }
+        manual.forEach { id -> db.execSQL("UPDATE members SET position=? WHERE playlist_id=? AND song_id=?", arrayOf<Any>(position++, subscription.playlistId, id)) }
         if (isCancelled()) throw kotlinx.coroutines.CancellationException()
     }
 
