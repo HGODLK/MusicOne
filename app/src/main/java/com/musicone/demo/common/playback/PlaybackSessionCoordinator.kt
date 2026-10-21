@@ -12,8 +12,8 @@ internal data class LivePlaybackRestore(
 )
 
 /** 会话持有播放器连接、进度归属和持久化，页面重建时优先接管仍在播放的服务。 */
-internal class PlaybackSessionCoordinator(private val context: Context) {
-    private val connection = ServicePlaybackConnection()
+internal class PlaybackSessionCoordinator(private val context: Context, requestConnection: () -> Unit = {}) {
+    private val connection = ServicePlaybackConnection(requestConnection)
     private val positionOwner = PlaybackPositionOwner()
     private val pendingSeek = PlaybackPendingSeek()
     private val persistence = MixedPlaybackPersistence(context)

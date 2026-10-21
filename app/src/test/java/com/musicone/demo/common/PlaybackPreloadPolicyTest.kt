@@ -65,8 +65,10 @@ class PlaybackPreloadPolicyTest {
     }
     @Test fun preloadProbeAndDownloadScheduleFollowsConfirmedTiming() {
         assertEquals(listOf(0L, 2_000L, 5_000L, 6_500L, 8_000L), (0..4).map(::playbackProbeDelayMs))
-        assertEquals(2_000L, playbackDownloadDelayMs(0))
-        assertEquals(10_000L, playbackDownloadDelayMs(1))
+        assertEquals(280L, playbackDownloadDelayMs(0))
+        assertEquals(2_000L, playbackDownloadDelayMs(1))
+        assertEquals(3_000L, playbackDownloadDelayMs(0, conservative = true))
+        assertEquals(10_000L, playbackDownloadDelayMs(1, conservative = true))
         assertNull(playbackDownloadDelayMs(2))
         assertEquals(5, PLAYBACK_PRELOAD_PROBE_COUNT)
         assertEquals(2, PLAYBACK_PRELOAD_DOWNLOAD_COUNT)

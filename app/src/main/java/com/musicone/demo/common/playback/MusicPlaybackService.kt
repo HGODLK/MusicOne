@@ -27,6 +27,8 @@ class MusicPlaybackService : MediaSessionService() {
     private var routingProvider: RoutingAudioTrackProvider? = null
     private var runtime: MusicPlaybackRuntime? = null
     private var notificationDiagnostics: SystemMediaNotificationDiagnostics? = null
+    private var hyperOsLyrics: HyperOsLyricsCoordinator? = null
+    private var hyperOsNotifications: HyperOsMediaNotificationProvider? = null
     private val timerHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val timerTick = object : Runnable {
         override fun run() {
@@ -38,14 +40,20 @@ class MusicPlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         notificationDiagnostics = SystemMediaNotificationDiagnostics(this, foreground = { isPlaybackOngoing })
-            .also { setMediaNotificationProvider(it) }
+        val notifications = requireNotNull(notificationDiagnostics)
+        if (HyperOsIslandAccess.supported(this)) {
+            hyperOsNotifications = HyperOsMediaNotificationProvider(this, notifications)
+            setMediaNotificationProvider(requireNotNull(hyperOsNotifications))
+        } else setMediaNotificationProvider(notifications)
         PlaybackOptions.initialize(this)
         DevicePlaybackOptions.initialize(this)
+        val preloadBandwidth = PlaybackPreloadBandwidth()
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             // 工厂专用 UA 会覆盖 DataSpec 的请求头；默认属性允许补充音源携带自己的 UA。
             .setDefaultRequestProperties(mapOf("User-Agent" to PlatformHttp.DEFAULT_USER_AGENT))
         val upstreamDataSourceFactory = SupplementalPlaybackRequests.factory(
-            MusicDiskCache.get(this).factory(DefaultDataSource.Factory(this, httpDataSourceFactory)),
+            MusicDiskCache.get(this).factory(DefaultDataSource.Factory(this,
+                playbackPreloadNetworkFactory(httpDataSourceFactory, preloadBandwidth))),
         )
         val defaultMediaSourceFactory = DefaultMediaSourceFactory(upstreamDataSourceFactory)
         val mediaSourceFactory = NativeAudioRoutingMediaSourceFactory(
@@ -106,7 +114,13 @@ class MusicPlaybackService : MediaSessionService() {
         mediaSession = sessionBuilder.build()
         // 在恢复待播放请求之前注册会话，后台通知管理不依赖页面控制器连接时机。
         addSession(requireNotNull(mediaSession))
-        playback.attachPlayer(player)
+        playback.attachPlayer(player, preloadBandwidth)
+        if (HyperOsIslandAccess.supported(this)) {
+            hyperOsLyrics = HyperOsLyricsCoordinator(
+                this, playbackSystemPresentations(this, playback, player), requireNotNull(hyperOsNotifications),
+                loadArtwork = ::loadSystemArtwork,
+            ).also { it.start() }
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
@@ -123,12 +137,17 @@ class MusicPlaybackService : MediaSessionService() {
     override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
         super.onUpdateNotification(session, startInForegroundRequired)
         notificationDiagnostics?.inspectAfterUpdate()
+        if (android.os.Build.VERSION.SDK_INT >= 26) hyperOsLyrics?.refreshAccess()
     }
 
     override fun onDestroy() {
         android.util.Log.i("MusicPlaybackService", "播放服务销毁")
         notificationDiagnostics?.close()
         notificationDiagnostics = null
+        if (android.os.Build.VERSION.SDK_INT >= 26) hyperOsNotifications?.close()
+        hyperOsNotifications = null
+        if (android.os.Build.VERSION.SDK_INT >= 26) hyperOsLyrics?.close()
+        hyperOsLyrics = null
         exoPlayer?.let { runtime?.detachPlayer(it) }
         MusicPlaybackRuntimeOwner.release(this)
         runtime = null

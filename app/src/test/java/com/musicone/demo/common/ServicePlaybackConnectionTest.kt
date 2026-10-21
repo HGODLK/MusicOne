@@ -40,4 +40,43 @@ class ServicePlaybackConnectionTest {
         connection.attach(player())
         assertEquals(0, calls)
     }
+
+    @Test fun commandAfterDismissalRequestsANewServiceAndKeepsLatestIntent() {
+        var reconnects = 0
+        val connection = ServicePlaybackConnection { reconnects++ }
+        val old = player()
+        val replacement = player()
+        connection.attach(old)
+        connection.detach(old)
+        var shouldPlay = true
+        val applied = mutableListOf<Pair<Player, Boolean>>()
+        connection.whenReady { applied += it to shouldPlay }
+        shouldPlay = false
+        connection.whenReady { applied += it to shouldPlay }
+        assertEquals(2, reconnects)
+        connection.attach(replacement)
+        assertEquals(2, applied.size)
+        assertTrue(applied.all { it.first === replacement && !it.second })
+        connection.detach(old)
+        assertSame(replacement, connection.player)
+    }
+
+    @Test fun synchronousReconnectCannotLoseTheCommandThatRequestedIt() {
+        val replacement = player()
+        lateinit var connection: ServicePlaybackConnection
+        connection = ServicePlaybackConnection { connection.attach(replacement) }
+        var received: Player? = null
+        connection.whenReady { received = it }
+        assertSame(replacement, received)
+    }
+
+    @Test fun releaseRejectsLateCommandsAndLateServiceAttachments() {
+        var reconnects = 0
+        val connection = ServicePlaybackConnection { reconnects++ }
+        connection.release()
+        connection.whenReady { fail("已关闭连接不能执行新操作") }
+        connection.attach(player())
+        assertNull(connection.player)
+        assertEquals(0, reconnects)
+    }
 }

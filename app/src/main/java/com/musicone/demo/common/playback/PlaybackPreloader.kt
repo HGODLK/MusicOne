@@ -6,7 +6,7 @@ import kotlinx.coroutines.*
 
 /**
  * 后台预加载：当前歌起播后按 0s／2s／5s 探测后续五首，
- * 只在 +2s／+10s 下载前两首的二十秒片段，其余仅更新音质缓存。
+ * 默认在 +280ms／+2s 下载前两首；三次带宽不足卡顿后改为稳定播放 +3s／+10s。
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class PlaybackPreloader(private val context: Context, private val scope: CoroutineScope) {
@@ -23,7 +23,6 @@ internal class PlaybackPreloader(private val context: Context, private val scope
         val key: Key,
         val roleIndex: Int,
         val probeDelayMs: Long,
-        val downloadDelayMs: Long?,
         val prefetch: PlaybackAudioPrefetch?,
     ) {
         var probeJob: Job? = null
@@ -57,7 +56,8 @@ internal class PlaybackPreloader(private val context: Context, private val scope
     private val tasks = linkedMapOf<Key, Task>()
     private val compared = mutableSetOf<Key>()
     private var currentKey: Pair<MusicSource, String>? = null
-    private var startedAtMs = 0L
+    private val timing = PlaybackPreloadTiming()
+    private var monitor: PlaybackPreloadMonitor? = null
     private var observeJob: Job? = null
     @Volatile private var probeGateUntilMs = 0L
     @Volatile private var mayProbe = false
@@ -67,40 +67,54 @@ internal class PlaybackPreloader(private val context: Context, private val scope
 
     fun observe(state: () -> MusicOneUiState, switching: () -> Boolean, player: () -> Player?) {
         if (observeJob != null) return
+        val feedback = PlaybackPreloadMonitor(timing, state, switching, context::hasMusicNetwork)
+        monitor = feedback
         observeJob = scope.launch {
-            while (isActive) {
-                val snapshot = state()
-                val current = snapshot.currentTrack
-                val transport = player()
-                val matches = current != null && transport?.currentMediaItem?.mediaId == current.id
-                val playing = transport != null && matches && transport.isPlaying
-                val active = current != null && snapshot.isPlaying && !snapshot.qualityChanging &&
-                    !switching() && context.hasMusicNetwork()
-                val canProbe = active && playing && playbackPreloadCanProbe(playing)
-                val buffered = transport?.let { (it.bufferedPosition - it.currentPosition).coerceAtLeast(0L) } ?: 0L
-                val local = current?.source == MusicSource.LOCAL
-                val canDownload = canProbe && playbackPreloadCanDownload(playing, buffered, local)
-                mayProbe = canProbe
-                mayDownload = canDownload
-                if (!canProbe) {
-                    stop()
-                } else {
-                    val identity = current.source to current.id
-                    if (identity != currentKey) {
-                        currentKey = identity
-                        startedAtMs = nowMs()
-                        compared.clear()
-                        probeGateUntilMs = 0L
-                        clearTasks()
+            try {
+                while (isActive) {
+                    feedback.refresh()
+                    val snapshot = state()
+                    val current = snapshot.currentTrack
+                    val transport = player()
+                    val matches = current != null && transport?.currentMediaItem?.mediaId == current.id
+                    val playing = transport != null && matches && transport.isPlaying
+                    val active = current != null && snapshot.isPlaying && !snapshot.qualityChanging &&
+                        !switching() && context.hasMusicNetwork()
+                    val canProbe = active && playing && playbackPreloadCanProbe(playing)
+                    val buffered = transport?.let { (it.bufferedPosition - it.currentPosition).coerceAtLeast(0L) } ?: 0L
+                    val local = current?.source == MusicSource.LOCAL
+                    val canDownload = canProbe && playbackPreloadCanDownload(playing, buffered, local)
+                    mayProbe = canProbe
+                    mayDownload = canDownload
+                    if (!canProbe) {
+                        stop()
+                    } else {
+                        val identity = current.source to current.id
+                        if (identity != currentKey) {
+                            currentKey = identity
+                            compared.clear()
+                            probeGateUntilMs = 0L
+                            clearTasks()
+                        }
+                        if (!canDownload) cancelDownloads()
+                        val elapsed = timing.elapsedMs(nowMs())
+                        reconcile(snapshot, elapsed, canDownload)
+                        lyrics.update(nextPlaybackPreloadTracks(snapshot, PRELOAD_LYRIC_SOURCES, PLAYBACK_PRELOAD_PROBE_COUNT))
                     }
-                    if (!canDownload) cancelDownloads()
-                    val elapsed = (nowMs() - startedAtMs).coerceAtLeast(0L)
-                    reconcile(snapshot, elapsed, canDownload)
-                    lyrics.update(nextPlaybackPreloadTracks(snapshot, PRELOAD_LYRIC_SOURCES, PLAYBACK_PRELOAD_PROBE_COUNT))
+                    // 让 280ms 阈值直接唤醒，不能被固定 250ms 轮询推迟到 500ms。
+                    val elapsed = timing.elapsedMs(nowMs())
+                    val remaining = (0 until PLAYBACK_PRELOAD_DOWNLOAD_COUNT).mapNotNull(timing::downloadDelayMs)
+                        .map { it - elapsed }.filter { it > 0L }.minOrNull() ?: 250L
+                    delay(minOf(250L, remaining))
                 }
-                delay(250L)
-            }
+            } finally { feedback.close() }
         }
+    }
+
+    fun attachPlayer(player: Player, bandwidth: PlaybackPreloadBandwidth) { monitor?.attach(player, bandwidth) }
+    fun detachPlayer() { monitor?.close() }
+    fun foregroundChanged(visible: Boolean) {
+        if (monitor?.foregroundChanged(visible) == true) cancelDownloads()
     }
 
     private fun reconcile(snapshot: MusicOneUiState, elapsed: Long, canDownload: Boolean) {
@@ -119,13 +133,12 @@ internal class PlaybackPreloader(private val context: Context, private val scope
                 tasks.remove(key)
             }
             val task = tasks.getOrPut(key) {
-                val downloadDelay = playbackDownloadDelayMs(index)
+                val downloadDelay = timing.downloadDelayMs(index)
                 Task(
                     track = track,
                     key = key,
                     roleIndex = index,
                     probeDelayMs = playbackProbeDelayMs(index),
-                    downloadDelayMs = downloadDelay,
                     prefetch = if (downloadDelay != null) PlaybackAudioPrefetch(context) else null,
                 )
             }
@@ -147,8 +160,9 @@ internal class PlaybackPreloader(private val context: Context, private val scope
                     probeStarted = true
                 }
             }
-            if (canDownload && task.probeFinished && task.downloadDelayMs != null &&
-                elapsed >= task.downloadDelayMs && task.resolved != null && !task.downloaded &&
+            val downloadDelay = timing.downloadDelayMs(index)
+            if (canDownload && task.probeFinished && downloadDelay != null &&
+                elapsed >= downloadDelay && task.resolved != null && !task.downloaded &&
                 task.downloadJob?.isActive != true &&
                 entries.work(key, now) == PlaybackPreloadEntries.Work.DOWNLOAD) {
                 startDownload(task)
@@ -195,7 +209,7 @@ internal class PlaybackPreloader(private val context: Context, private val scope
             // 票据被换成更高档时，停止可能已经开始写入的旧档片段。
             if (previous != null && previous !== resolved) task.cancelDownload()
             task.resolved = resolved
-            if (task.downloadDelayMs != null) resolver.rememberPreloaded(resolved, preferred)
+            if (task.prefetch != null) resolver.rememberPreloaded(resolved, preferred)
             PlaybackPreloadDiagnostics.stage("取源就绪", track)
         } catch (cancelled: CancellationException) {
             throw cancelled

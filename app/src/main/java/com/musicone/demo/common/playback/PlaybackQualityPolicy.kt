@@ -5,9 +5,9 @@ package com.musicone.demo
 internal const val PLAYBACK_PRELOAD_PROBE_COUNT = 5
 internal const val PLAYBACK_PRELOAD_DOWNLOAD_COUNT = 2
 internal const val PLAYBACK_PRELOAD_NEXT_PROBE_DELAY_MS = 0L
-internal const val PLAYBACK_PRELOAD_NEXT_DOWNLOAD_DELAY_MS = 2_000L
+internal const val PLAYBACK_PRELOAD_NEXT_DOWNLOAD_DELAY_MS = 280L
 internal const val PLAYBACK_PRELOAD_SECOND_PROBE_DELAY_MS = 2_000L
-internal const val PLAYBACK_PRELOAD_SECOND_DOWNLOAD_DELAY_MS = 10_000L
+internal const val PLAYBACK_PRELOAD_SECOND_DOWNLOAD_DELAY_MS = 2_000L
 internal const val PLAYBACK_PRELOAD_THIRD_PROBE_DELAY_MS = 5_000L
 internal const val PLAYBACK_PRELOAD_PROBE_GAP_MS = 1_500L
 internal const val PLAYBACK_PRELOAD_LOW_BUFFER_MS = 3_000L
@@ -39,9 +39,9 @@ internal fun playbackProbeDelayMs(index: Int): Long = when {
 }
 
 /** 只下载前两首；返回 null 表示这首只探测、不下载。 */
-internal fun playbackDownloadDelayMs(index: Int): Long? = when (index) {
-    0 -> PLAYBACK_PRELOAD_NEXT_DOWNLOAD_DELAY_MS
-    1 -> PLAYBACK_PRELOAD_SECOND_DOWNLOAD_DELAY_MS
+internal fun playbackDownloadDelayMs(index: Int, conservative: Boolean = false): Long? = when (index) {
+    0 -> if (conservative) 3_000L else PLAYBACK_PRELOAD_NEXT_DOWNLOAD_DELAY_MS
+    1 -> if (conservative) 10_000L else PLAYBACK_PRELOAD_SECOND_DOWNLOAD_DELAY_MS
     else -> null
 }
 

@@ -7,8 +7,15 @@ import androidx.lifecycle.AndroidViewModel
 class MusicOneViewModel(application: Application) : AndroidViewModel(application) {
     val playback = MusicPlaybackRuntimeOwner.acquire(application, this)
     private val connection = SystemPlaybackConnection(application)
+    private val requestConnection = connection::ensureConnected
+
+    init {
+        playback.serviceConnectionRequester = requestConnection
+        connection.ensureConnected()
+    }
 
     override fun onCleared() {
+        if (playback.serviceConnectionRequester === requestConnection) playback.serviceConnectionRequester = null
         connection.release()
         MusicPlaybackRuntimeOwner.release(this)
     }

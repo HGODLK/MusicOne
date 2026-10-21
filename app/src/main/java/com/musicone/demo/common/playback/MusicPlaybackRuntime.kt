@@ -23,7 +23,9 @@ class MusicPlaybackRuntime(private val application: Application) {
     private val nextAudioPreloader = PlaybackPreloader(application, scope)
     private val qualityPreferences = PlaybackQualityPreferences(application)
     private val qualityCache = PlaybackQualityCache(application)
-    private val playbackSession = PlaybackSessionCoordinator(application)
+    internal var serviceConnectionRequester: (() -> Unit)? = null
+    internal fun ensureServiceConnection() { serviceConnectionRequester?.invoke() }
+    private val playbackSession = PlaybackSessionCoordinator(application, ::ensureServiceConnection)
     private val playbackHistory = PlaybackHistory()
     private val cachedLyrics = CachedLyricsStore(application)
     private val _state = MutableStateFlow(MusicOneUiState())
@@ -270,11 +272,7 @@ class MusicPlaybackRuntime(private val application: Application) {
             return
         }
         val existingQueue = snapshot.queue
-        val queue = if (existingQueue.any { it.id == track.id }) {
-            existingQueue
-        } else {
-            existingQueue.take(999) + track
-        }
+        val queue = appendPlaybackTrack(existingQueue, track)
         playbackHistory.remember(snapshot.currentTrack?.id, track.id)
         startTrack(track, queue)
     }
@@ -374,7 +372,7 @@ class MusicPlaybackRuntime(private val application: Application) {
     fun togglePlay() = setPlaying(!_state.value.isPlaying)
 
     fun playPlaylistTrack(playlist: MusicPlaylist, track: MusicTrack) {
-        _state.update { it.withPlaylistQueue(playlist.tracks, it.shuffle) }
+        _state.update { it.withPlaylistQueue(playlist.tracks, it.shuffle, selectedTrack = track) }
         playbackHistory.clear()
         playTrack(track)
     }
@@ -404,7 +402,6 @@ class MusicPlaybackRuntime(private val application: Application) {
             _playbackActivity.value = PlaybackActivity(track.id, false)
             playbackPresentation.present(playbackPresentationKey(track), false)
         }
-        _state.update { it.copy(playbackMessage = "USB 音频输出已断开，已暂停") }
     }
 
     internal fun setPlaying(shouldPlay: Boolean) {
@@ -863,15 +860,29 @@ class MusicPlaybackRuntime(private val application: Application) {
     private fun playbackPresentationKey(track: MusicTrack): PlaybackPresentationKey =
         PlaybackPresentationKey(track.id, playbackRequestGeneration)
 
-    internal fun attachPlayer(player: Player) {
+    internal fun preloadForegroundChanged(visible: Boolean) { nextAudioPreloader.foregroundChanged(visible) }
+
+    internal fun attachPlayer(player: Player, bandwidth: PlaybackPreloadBandwidth) {
+        nextAudioPreloader.attachPlayer(player, bandwidth)
         player.addListener(playerListener)
         playbackSession.attach(player)
     }
 
     internal fun detachPlayer(player: Player) {
-        rapidTrackSwitch.setPresentationActive(false)
+        if (playbackSession.player !== player) return
+        val position = currentPlaybackPosition()
+        playbackSession.save(_state.value, position)
+        ++playbackRequestGeneration
+        cancelPendingTrackWork()
+        rapidTrackSwitch.cancel()
+        nextAudioPreloader.stop()
+        playWhenReadyRequested = false
+        playbackPresentation.cancel()
+        _playbackActivity.value = PlaybackActivity(_state.value.currentTrack?.id, false)
+        _state.update { it.copy(isPlaying = false, qualityLoading = false, qualityChanging = false) }
+        updateProgress(position)
         player.removeListener(playerListener)
-        playbackSession.save(_state.value, currentPlaybackPosition())
+        nextAudioPreloader.detachPlayer()
         playbackSession.detach(player)
     }
 

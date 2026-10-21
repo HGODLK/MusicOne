@@ -13,3 +13,13 @@ internal data class PlaybackActivity(
     val trackId: String? = null,
     val advancing: Boolean = false,
 )
+
+/** 页面和系统歌词共用单调时钟推算，暂停和缓冲期间不自行推进。 */
+internal fun continuousLyricPosition(
+    positionMs: Long, sampledAtMs: Long, nowMs: Long,
+    advancing: Boolean, seeking: Boolean, durationMs: Long,
+): Long {
+    val elapsed = if (advancing && !seeking && sampledAtMs > 0L) (nowMs - sampledAtMs).coerceAtLeast(0L) else 0L
+    val position = positionMs.coerceAtLeast(0L) + elapsed
+    return if (durationMs > 0L) position.coerceAtMost(durationMs) else position
+}
