@@ -21,7 +21,9 @@ data class PlaybackQueueOrder(
         copy(originalIds = restore(queue).map(MusicTrack::id))
 
     fun insert(queue: List<MusicTrack>, current: MusicTrack?, selected: MusicTrack): PlaybackQueueOrder =
-        copy(originalIds = insertTrackAfterCurrent(restore(queue), current, selected).map(MusicTrack::id))
+        // 原始顺序只按实际队列淘汰的歌曲收敛，不能再按原始末尾淘汰一次。
+        copy(originalIds = insertTrackAfterCurrent(restore(queue), current, selected,
+            capacity = Int.MAX_VALUE).map(MusicTrack::id))
 }
 
 internal fun MusicOneUiState.withPlaybackMode(
@@ -49,8 +51,9 @@ internal fun MusicOneUiState.withPlaylistQueue(
     shuffle: Boolean,
     random: Random = Random.Default,
     resetRepeatMode: Boolean = false,
+    selectedTrack: MusicTrack? = null,
 ): MusicOneUiState {
-    val original = tracks.distinctBy(MusicTrack::id)
+    val original = limitPlaybackQueue(tracks.distinctBy(MusicTrack::id), selectedTrack)
     return copy(queue = if (shuffle) original.shuffled(random) else original,
         queueOrder = PlaybackQueueOrder(original.map(MusicTrack::id)),
         shuffle = shuffle, repeatMode = if (resetRepeatMode) RepeatMode.ALL else repeatMode)

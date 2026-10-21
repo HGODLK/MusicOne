@@ -85,11 +85,13 @@ internal class QqPlaylistArtworkAliasResolver(
 
 /** 歌单没有独立封面时，在歌曲封面补全后同步派生首曲封面。 */
 internal fun MusicPlaylist.withResolvedTrackArtwork(resolvedTracks: List<MusicTrack>): MusicPlaylist {
+    if (source == MusicSource.QQ && id == QQ_FAVORITES_PLAYLIST_ID)
+        return copy(tracks = resolvedTracks).withQqFavoriteArtwork()
     val resolvedArtwork = artworkUrl?.takeIf(String::isNotBlank)
         ?: resolvedTracks.firstOrNull()?.artworkUrl?.takeIf(String::isNotBlank)
     return copy(tracks = resolvedTracks, artworkUrl = resolvedArtwork)
 }
 
 internal fun MusicPlaylist.needsQqFirstTrackArtworkAlias(): Boolean =
-    source == MusicSource.QQ && artworkUrl.isNullOrBlank() &&
+    source == MusicSource.QQ && (id == QQ_FAVORITES_PLAYLIST_ID || artworkUrl.isNullOrBlank()) &&
         tracks.firstOrNull()?.artworkUrl.isNullOrBlank()

@@ -6,15 +6,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.EmptyCoroutineContext
 
-internal fun continuousLyricPosition(
-    positionMs: Long, sampledAtMs: Long, nowMs: Long,
-    advancing: Boolean, seeking: Boolean, durationMs: Long,
-): Long {
-    val elapsed = if (advancing && !seeking && sampledAtMs > 0L) (nowMs - sampledAtMs).coerceAtLeast(0L) else 0L
-    val position = positionMs.coerceAtLeast(0L) + elapsed
-    return if (durationMs > 0L) position.coerceAtMost(durationMs) else position
-}
-
 /** 一个歌词窗口共用一个帧循环，采样时间来自播放器，暂停和预览不自行推进。 */
 @Composable
 internal fun rememberContinuousLyricClock(

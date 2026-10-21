@@ -34,9 +34,10 @@ internal class MixedPlaybackPersistence(context: Context) {
         if (queue.isEmpty()) return null
         val session = platform.readSession(MusicSource.QQ)
         val member = QqEntitlements.state.value.membership
-        val restoredQueue = queue.map { track -> if (track.source == MusicSource.QQ)
-            track.withQqAccess(session.account?.userId.orEmpty(), member?.vip == true, member?.superVip == true) else track }
         val currentId = saved?.optString("current") ?: legacySnapshot?.currentTrackId
+        val boundedQueue = limitPlaybackQueue(queue, queue.firstOrNull { it.id == currentId })
+        val restoredQueue = boundedQueue.map { track -> if (track.source == MusicSource.QQ)
+            track.withQqAccess(session.account?.userId.orEmpty(), member?.vip == true, member?.superVip == true) else track }
         val current = restoredQueue.firstOrNull { it.id == currentId } ?: restoredQueue.first()
         val order = saved?.optJSONArray("order")?.let { list -> (0 until list.length()).map { list.optString(it) } }
             ?: legacySnapshot?.originalQueueIds.orEmpty()

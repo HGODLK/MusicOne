@@ -58,7 +58,7 @@ internal class PlaylistPagingController(
         return result
     }
 
-    private fun checkCurrent(playlist: MusicPlaylist, target: PlaylistPagingEntry) {
+    fun checkCurrent(playlist: MusicPlaylist, target: PlaylistPagingEntry) {
         if (entries[playlist.id] !== target) throw CancellationException("歌单会话已更新")
     }
 

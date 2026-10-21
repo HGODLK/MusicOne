@@ -76,7 +76,7 @@ class PlaylistInteractionTest {
         val first = track("1").copy(artworkUrl = "https://example.com/first-cover.jpg")
         val playlistCover = "https://example.com/playlist-cover.jpg"
 
-        val updated = playlist(listOf(first)).copy(artworkUrl = playlistCover)
+        val updated = playlist(listOf(first)).copy(id = "qq-ordinary", artworkUrl = playlistCover)
             .withResolvedTrackArtwork(listOf(first))
 
         assertEquals(playlistCover, updated.artworkUrl)
@@ -85,7 +85,7 @@ class PlaylistInteractionTest {
     @Test fun onlyMissingQqPlaylistAndFirstTrackNeedArtworkAliasResolution() {
         val missing = playlist(listOf(track("1").copy(artworkUrl = null)))
         assertTrue(missing.needsQqFirstTrackArtworkAlias())
-        assertFalse(missing.copy(artworkUrl = "https://example.com/playlist.jpg")
+        assertFalse(missing.copy(id = "qq-ordinary", artworkUrl = "https://example.com/playlist.jpg")
             .needsQqFirstTrackArtworkAlias())
         assertFalse(missing.copy(tracks = listOf(
             track("1").copy(artworkUrl = "https://example.com/first.jpg"),

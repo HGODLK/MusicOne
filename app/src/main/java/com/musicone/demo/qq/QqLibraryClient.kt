@@ -4,67 +4,41 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 internal class QqLibraryClient(
-    private val favoriteGet: (String, String, Map<String, String>) -> String =
-        { url, cookie, headers -> PlatformHttp.get(url, cookie, headers).text },
+    private val playlistPaging: QqPlaylistPaging = QqPlaylistPaging(),
 ) {
     fun favoritePlaylist(cookie: String, userId: String, hasVipAccess: Boolean): MusicPlaylist =
         collectPlaylistTrackPages { favoritePlaylistPage(cookie, userId, hasVipAccess, it?.offset ?: 0) }
 
-    private fun favoriteData(cookie: String, userId: String, offset: Int): JSONObject {
+    fun favoritePlaylistPage(cookie: String, userId: String, hasVipAccess: Boolean, offset: Int = 0,
+        resolveAccess: Boolean = true): PlaylistTrackPage {
         requireLogin(cookie, userId)
-        val response = JSONObject(favoriteGet(
-            "$PROFILE_ASSET_API?${profileAssetQuery(userId, "1", offset, PLAYLIST_TRACK_PAGE_SIZE)}",
-            cookie,
-            webHeaders(),
-        ).qqLibraryJson())
-        requireSuccess(response, "我喜欢的音乐加载失败")
-        return response.optJSONObject("data") ?: throw PlatformApiException("QQ 音乐没有返回收藏内容")
-    }
-
-    fun favoritePlaylistPage(cookie: String, userId: String, hasVipAccess: Boolean, offset: Int = 0): PlaylistTrackPage {
-        val data = favoriteData(cookie, userId, offset)
-        val tracks = data.optJSONArray("songlist").qqLibraryObjects { item ->
-            (item.optJSONObject("data") ?: item).toQqTrack(hasVipAccess)
-        }
-        val first = tracks.firstOrNull()
-        val playlist = MusicPlaylist(
-            id = FAVORITES_ID,
+        // 我喜欢使用固定目录 201 的歌曲分页，资料摘要接口不能可靠读取大收藏。
+        val shell = MusicPlaylist(
+            id = QQ_FAVORITES_PLAYLIST_ID,
             source = MusicSource.QQ,
             title = "我喜欢的音乐",
             subtitle = "QQ 音乐",
             description = "你在 QQ 音乐收藏的歌曲",
-            count = data.optInt("totalsong").takeIf { it > 0 } ?: tracks.size,
-            artworkStart = first?.artworkStart ?: 0xFF71DCC1,
-            artworkEnd = first?.artworkEnd ?: 0xFF2A7F72,
+            count = 0,
+            artworkStart = 0xFF71DCC1,
+            artworkEnd = 0xFF2A7F72,
             artworkMark = "喜",
-            tracks = QqTrackAccessResolver().resolve(tracks, cookie),
-            artworkUrl = data.qqCoverUrl() ?: first?.artworkUrl,
+            tracks = emptyList(),
         )
-        return PlaylistTrackPage(playlist, nextPlaylistTrackCursor(offset,
-            data.optJSONArray("songlist")?.length() ?: 0, data.optInt("totalsong")))
+        val page = playlistPaging.page(shell, cookie, hasVipAccess, offset, resolveAccess)
+        val first = page.playlist.tracks.firstOrNull()
+        return page.copy(playlist = page.playlist.copy(title = shell.title, subtitle = shell.subtitle,
+            description = shell.description, artworkMark = shell.artworkMark,
+            artworkStart = first?.artworkStart ?: shell.artworkStart,
+            artworkEnd = first?.artworkEnd ?: shell.artworkEnd,
+            artworkUrl = first?.artworkUrl).withQqFavoriteArtwork())
     }
 
     fun likedTrackIds(cookie: String, userId: String): Set<String> {
-        var offset = 0
-        val seen = mutableSetOf<List<String>>()
-        return buildSet {
-            do {
-                val data = favoriteData(cookie, userId, offset)
-                val raw = data.optJSONArray("songlist") ?: JSONArray()
-                val identities = mutableListOf<String>()
-                for (index in 0 until raw.length()) {
-                    val item = raw.optJSONObject(index)?.let { it.optJSONObject("data") ?: it } ?: continue
-                    val mid = item.optString("songmid").ifBlank { item.optString("mid") }
-                    val id = item.optString("songid").ifBlank { item.optString("id") }
-                    identities += mid.ifBlank { id }
-                    mid.takeIf(String::isNotBlank)?.let { add("qq-$it") }
-                    id.toLongOrNull()?.takeIf { it > 0 }?.let { add("qq-$it") }
-                }
-                check(identities.isEmpty() || seen.add(identities)) { "收藏分页返回了重复内容，请重试" }
-                val next = nextPlaylistTrackCursor(offset, raw.length(), data.optInt("totalsong"))
-                offset = next?.offset ?: break
-            } while (true)
+        val full = collectPlaylistTrackPages {
+            favoritePlaylistPage(cookie, userId, false, it?.offset ?: 0, resolveAccess = false)
         }
+        return full.tracks.flatMapTo(hashSetOf()) { it.qqFavoriteIdentityIds() }
     }
 
     fun createdPlaylists(cookie: String, userId: String): List<MusicPlaylist> {
@@ -276,7 +250,6 @@ internal class QqLibraryClient(
     ).asQuery()
 
     private companion object {
-        const val FAVORITES_ID = "qq-profile:favorites"
         const val PROFILE_DIRECTORY_PREFIX = "profile:dir:"
         const val CREATED_PLAYLIST_API = "https://c.y.qq.com/rsc/fcgi-bin/fcg_user_created_diss"
         const val PROFILE_ASSET_API = "https://c.y.qq.com/fav/fcgi-bin/fcg_get_profile_order_asset.fcg"

@@ -54,7 +54,12 @@ internal class PlaylistPageActions(
             attempt {
                 val online = isOnline()
                 val full = playlistForPlayback(entry.page?.playlist ?: playlist(), online, cachedTrackIds) {
-                    controller.complete(playlist())
+                    completePlaylistForSelectedTrack({
+                        controller.checkCurrent(playlist(), entry)
+                        entry.page?.playlist ?: playlist()
+                    }, track) {
+                        controller.complete(playlist())
+                    }
                 }
                 val sorted = if (full.isQqSearchAlbum) full else
                     full.copy(tracks = sortedPlaylistTracks(full.tracks, sort()))

@@ -6,17 +6,20 @@ internal fun qqPlaylistPageRequest(playlist: MusicPlaylist, offset: Int, cookie:
     JSONObject().put("comm", qqPlaybackComm(cookie)).put("playlist", JSONObject()
         .put("module", "music.srfDissInfo.DissInfo").put("method", "CgiGetDiss")
         .put("param", JSONObject()
-            .put("disstid", playlist.remoteId().toLong())
-            .put("dirid", 0).put("song_begin", offset).put("song_num", PLAYLIST_TRACK_PAGE_SIZE)
+            .put("disstid", if (playlist.id == QQ_FAVORITES_PLAYLIST_ID) 0L else playlist.remoteId().toLong())
+            .put("dirid", if (playlist.id == QQ_FAVORITES_PLAYLIST_ID) 201 else 0)
+            .put("song_begin", offset).put("song_num", PLAYLIST_TRACK_PAGE_SIZE)
             .put("tag", true).put("userinfo", true).put("orderlist", true).put("onlysonglist", false)))
 
-internal class QqPlaylistPaging {
+internal class QqPlaylistPaging(
+    private val request: (JSONObject, String) -> JSONObject = { body, cookie ->
+        JSONObject(PlatformHttp.postJson("https://u.y.qq.com/cgi-bin/musicu.fcg", body.toString(), cookie,
+            mapOf("Referer" to "https://y.qq.com/", "User-Agent" to "QQMusic 2005000982(android 14)")).text)
+    },
+) {
     fun page(playlist: MusicPlaylist, cookie: String, hasVipAccess: Boolean, offset: Int,
         resolveAccess: Boolean = true): PlaylistTrackPage {
-        val raw = PlatformHttp.postJson("https://u.y.qq.com/cgi-bin/musicu.fcg",
-            qqPlaylistPageRequest(playlist, offset, cookie).toString(), cookie,
-            mapOf("Referer" to "https://y.qq.com/", "User-Agent" to "QQMusic 2005000982(android 14)"))
-        val root = JSONObject(raw.text)
+        val root = request(qqPlaylistPageRequest(playlist, offset, cookie), cookie)
         val response = root.optJSONObject("playlist") ?: throw PlatformApiException("QQ 音乐没有返回歌单内容")
         if (root.optInt("code", 0) != 0 || response.optInt("code", -1) != 0) {
             throw PlatformApiException("QQ 音乐歌单内容加载失败")

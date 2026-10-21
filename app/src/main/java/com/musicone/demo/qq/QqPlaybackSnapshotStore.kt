@@ -31,7 +31,8 @@ internal fun MusicOneUiState.toQqPlaybackSnapshot(positionMs: Long): QqPlaybackS
 }
 
 internal fun MusicOneUiState.withQqPlaybackSnapshot(snapshot: QqPlaybackSnapshot?): MusicOneUiState {
-    val queue = snapshot?.queue.orEmpty().filter { it.source == MusicSource.QQ }
+    val stored = snapshot?.queue.orEmpty().filter { it.source == MusicSource.QQ }
+    val queue = limitPlaybackQueue(stored, stored.firstOrNull { it.id == snapshot?.currentTrackId })
     val current = queue.firstOrNull { it.id == snapshot?.currentTrackId } ?: queue.firstOrNull()
     return copy(
         currentTrack = current,

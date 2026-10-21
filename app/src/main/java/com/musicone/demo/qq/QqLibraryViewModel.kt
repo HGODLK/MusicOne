@@ -279,6 +279,7 @@ internal fun MusicPlaylist.withFavoriteChanges(changes: Map<String, Pair<MusicTr
     val additions = changes.values.filter { (track, liked) ->
         liked && track.source == source && kept.none { it.id == track.id }
     }.map { it.first }
-    val updated = additions + kept
+    val updated = (if (id == QQ_FAVORITES_PLAYLIST_ID) additions.asReversed() else additions) + kept
     return copy(tracks = updated, count = (count + updated.size - tracks.size).coerceAtLeast(0))
+        .withQqFavoriteArtwork()
 }

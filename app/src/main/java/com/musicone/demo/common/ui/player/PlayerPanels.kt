@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,7 +42,9 @@ internal fun QueueRow(index: Int, track: MusicTrack, current: Boolean, playing: 
         Row(Modifier.fillMaxWidth().onGloballyPositioned { anchor.value = it.boundsInRoot() }
             .background(backgroundColor,
             RoundedCornerShape(14.dp)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("${index + 1}", color = Color.White.copy(alpha = .45f), fontSize = 11.sp, modifier = Modifier.width(28.dp))
+            Text("${index + 1}", color = Color.White.copy(alpha = .45f), fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace, maxLines = 1, softWrap = false,
+                modifier = Modifier.width(44.dp).padding(end = 8.dp))
             RemoteArtwork(track.artworkUrl, track.artworkStart, track.artworkEnd, track.artworkMark,
                 Modifier.size(46.dp), 19.sp, RoundedCornerShape(16.dp))
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
