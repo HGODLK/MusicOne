@@ -71,7 +71,7 @@ internal fun QqPlaylistEditorOverlay(editor: QqPlaylistEditorState, host: Rect, 
         val animatedY by androidx.compose.animation.core.animateDpAsState(panelY, musicMotion(300), label = "编辑窗口位置")
         MusicOneBackdropGlass(backdrop, backdropBounds,
             Modifier.offset(panelX, animatedY).width(panelWidth)
-                .then(if (target != null) Modifier.height(cardSize) else Modifier)
+                .then(if (target != null && actions) Modifier.height(cardSize) else Modifier)
                 .graphicsLayer {
                     alpha = progress.value
                 }, RoundedCornerShape(24.dp), containerColor = playlistMenuContainer) {
