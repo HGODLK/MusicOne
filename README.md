@@ -108,6 +108,8 @@ MusicOne 践行“音源即能力”的设计理念，以播放能力为核心�
 - **AcFeng-J** ([@AcFeng-J](https://github.com/AcFeng-J))
 - **ZJiaYi106** ([@ZJiaYi106](https://github.com/ZJiaYi106))
 - **Flam1ng** ([@Flam1ngQAQ](https://github.com/Flam1ngQAQ))
+- **几番**
+- **Megumi** ([@5CMSM](https://github.com/5CMSM))
 
 ---
 
