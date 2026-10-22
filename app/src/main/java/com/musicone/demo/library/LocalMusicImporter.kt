@@ -25,7 +25,7 @@ private val NON_AUDIO_NAMES = setOf(
 )
 
 private val NON_AUDIO_EXTENSIONS = setOf(
-    "lrc", "txt", "nomedia", "database_uuid", "msco",
+    "lrc", "xlrc", "spl", "txt", "nomedia", "database_uuid", "msco",
     "jpg", "jpeg", "png", "webp", "gif", "bmp",
     "cue", "log", "nfo", "ini", "xml", "json", "db", "md",
     "zip", "rar", "7z", "tar", "gz"
@@ -98,7 +98,10 @@ internal class LocalMusicImporter(private val context: Context, private val stor
         val audio = File(store.assets, "audio").apply { mkdirs() }
         val artwork = File(store.assets, "artwork").apply { mkdirs() }
         val lyrics = File(store.assets, "lyrics").apply { mkdirs() }
-        val sidecars = documents.filter { it.name.endsWith(".lrc", true) }.associateBy { it.relativePath.substringBeforeLast('.') }
+        // 同名歌词优先保留原有 LRC 选择；只有扩展格式时也能随目录导入。
+        val sidecars = documents.filter { it.name.substringAfterLast('.', "").lowercase() in localLyricExtensions }
+            .sortedByDescending { localLyricExtensions.indexOf(localLyricExtension(it.name)) }
+            .associateBy { it.relativePath.substringBeforeLast('.') }
         for (item in documents.filter { isLocalAudioCandidate(it.name, it.mimeType) }) {
             currentCoroutineContext().ensureActive()
             progress("正在读取：${item.name}")
@@ -156,12 +159,13 @@ internal class LocalMusicImporter(private val context: Context, private val stor
                     val sidecar = sidecars[item.relativePath.substringBeforeLast('.')]
                     val embedded = if (sidecar == null) readEmbeddedLocalLyrics(context, item.uri) else null
                     if (sidecar != null || !embedded.isNullOrBlank()) {
-                        val destination = File(lyrics, "$id-${UUID.randomUUID()}.default.lrc")
+                        val extension = sidecar?.let { localLyricExtension(it.name) } ?: "lrc"
+                        val destination = File(lyrics, "$id-${UUID.randomUUID()}.default.$extension")
                         lyricFile = destination
                         if (sidecar != null) context.contentResolver.openInputStream(sidecar.uri)?.use { input -> destination.outputStream().use { input.copyTo(it) } }
                             ?: error("无法读取同名歌词")
                         else destination.writeText(embedded.orEmpty())
-                        require(parseLibraryLyrics(destination.readText()).isNotEmpty()) { "未找到有效歌词时间轴" }
+                        require(parseLibraryLyrics(destination.readText(), extension).isNotEmpty()) { "未找到有效歌词时间轴" }
                         store.setDefaultLyrics(id, destination.absolutePath, onCommitted = { lyricFile = null })
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }

@@ -17,6 +17,19 @@ internal class QqPlaylistPaging(
             mapOf("Referer" to "https://y.qq.com/", "User-Agent" to "QQMusic 2005000982(android 14)")).text)
     },
 ) {
+    /** 只取一首以获得目录标题，避免为修复标题加载整页歌曲或查询歌曲权限。 */
+    fun title(playlist: MusicPlaylist, cookie: String): String? {
+        val body = qqPlaylistPageRequest(playlist, 0, cookie)
+        body.getJSONObject("playlist").getJSONObject("param").put("song_num", 1)
+        val root = request(body, cookie)
+        val response = root.optJSONObject("playlist") ?: return null
+        if (root.optInt("code", 0) != 0 || response.optInt("code", -1) != 0) return null
+        val data = response.optJSONObject("data") ?: return null
+        if (data.optInt("code", 0) != 0 || data.optInt("subcode", 0) != 0) return null
+        val info = data.optJSONObject("dirinfo") ?: return null
+        return info.optString("title").ifBlank { info.optString("dissname") }.takeIf(String::isNotBlank)
+    }
+
     fun page(playlist: MusicPlaylist, cookie: String, hasVipAccess: Boolean, offset: Int,
         resolveAccess: Boolean = true): PlaylistTrackPage {
         val root = request(qqPlaylistPageRequest(playlist, offset, cookie), cookie)

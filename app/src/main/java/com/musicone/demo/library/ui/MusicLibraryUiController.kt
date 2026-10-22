@@ -105,13 +105,18 @@ internal class MusicLibraryUiController(val context: Context, private val scope:
         store.updateOverrides(track.id, old.first, old.second, null)
     }
     fun importLyrics(track: MusicTrack, uri: Uri) = work("正在导入歌词…") {
-        val file = File(store.assets, "lyrics/${track.id}-${UUID.randomUUID()}.lrc")
+        val extension = withContext(Dispatchers.IO) {
+            context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                if (it.moveToFirst()) localLyricExtension(it.getString(0).orEmpty()) else null
+            } ?: localLyricExtension(uri.lastPathSegment.orEmpty())
+        }
+        val file = File(store.assets, "lyrics/${track.id}-${UUID.randomUUID()}.$extension")
         var committed = false
         try {
             withContext(Dispatchers.IO) {
                 file.parentFile?.mkdirs()
                 context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyTo(it) } } ?: error("无法读取歌词")
-                require(parseLibraryLyrics(file.readText()).isNotEmpty()) { "未找到有效歌词时间轴" }
+                require(parseLibraryLyrics(file.readText(), extension).isNotEmpty()) { "未找到有效歌词时间轴" }
                 store.setLyrics(track.id, file.absolutePath, onCommitted = { committed = true })
             }
             message = "歌词已保存"

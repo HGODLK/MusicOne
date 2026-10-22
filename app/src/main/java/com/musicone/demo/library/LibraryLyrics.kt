@@ -3,7 +3,6 @@ package com.musicone.demo
 import android.content.Context
 import android.net.Uri
 import java.io.File
-import java.nio.charset.Charset
 
 /** 原文保留，偏移只在装载时间线时应用一次，逐字与点击跳转使用同一结果。 */
 internal fun MusicLibraryStore.lyrics(track: MusicTrack): List<TimedLyric> {
@@ -12,34 +11,11 @@ internal fun MusicLibraryStore.lyrics(track: MusicTrack): List<TimedLyric> {
         ?: defaultLyrics(track.id)?.let(::File)?.takeIf(File::isFile)
         ?: File(assets, "lyrics/${track.id}.default.lrc").takeIf(File::isFile)
         ?: return emptyList()
-    return parseLibraryLyrics(file.readText()).map { line -> line.copy(
+    return parseLibraryLyrics(file.readText(), localLyricExtension(file.name)).map { line -> line.copy(
         timeMs = line.timeMs + offset,
         words = line.words.map { it.copy(startMs = it.startMs + offset, endMs = it.endMs + offset) },
     ) }
 }
-
-internal fun parseLibraryLyrics(raw: String): List<TimedLyric> {
-    val time = Regex("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?]")
-    val word = Regex("<(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?>")
-    fun MatchResult.millis(): Long = groupValues[1].toLong() * 60_000 + groupValues[2].toLong() * 1_000 +
-        groupValues[3].padEnd(3, '0').take(3).toLongOrNull().orZero()
-    val fileOffset = Regex("\\[offset:([+-]?\\d+)]", RegexOption.IGNORE_CASE).find(raw)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
-    return raw.lineSequence().flatMap { row ->
-        val stamps = time.findAll(row).toList()
-        val body = row.substringAfterLast(']').trim()
-        val words = word.findAll(body).toList()
-        val text = body.replace(word, "")
-        stamps.map { stamp ->
-            val segments = words.mapIndexedNotNull { index, match ->
-                val next = words.getOrNull(index + 1)
-                val content = body.substring(match.range.last + 1, next?.range?.first ?: body.length)
-                content.takeIf(String::isNotEmpty)?.let { LyricWord(match.millis() + fileOffset, (next?.millis() ?: match.millis() + 500) + fileOffset, it) }
-            }
-            TimedLyric(stamp.millis() + fileOffset, text, words = segments)
-        }
-    }.filter { it.text.isNotBlank() }.sortedBy { it.timeMs }.toList()
-}
-private fun Long?.orZero() = this ?: 0L
 
 /** 读取常见 ID3 USLT 和 FLAC Vorbis 歌词，不按扩展名决定音频能否播放。 */
 internal fun readEmbeddedLocalLyrics(context: Context, uri: Uri): String? = runCatching {

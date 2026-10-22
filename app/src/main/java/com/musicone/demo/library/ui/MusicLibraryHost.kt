@@ -75,7 +75,7 @@ internal fun MusicLibraryHost(playback: MusicPlaybackRuntime, content: @Composab
     SideEffect {
         ui.chooseFiles = { files.launch(arrayOf("audio/*", "application/octet-stream")) }
         ui.chooseDirectory = { relink = it; directory.launch(null) }
-        // 不同文件管理器给 .lrc 返回的 MIME 类型不一致，先放宽选择范围，再由歌词时间轴校验内容。
+        // LRC / XLRC / SPL 的 MIME 类型因文件管理器而异，全部可选，再按格式校验时间轴。
         ui.chooseLyrics = { lyricTarget = it; lyrics.launch(arrayOf("*/*")) }
         ui.chooseCover = { coverTarget = it; cover.launch(arrayOf("image/*")) }
         ui.chooseRelinkFile = { relinkTarget = it; relinkFile.launch(arrayOf("audio/*", "application/octet-stream")) }

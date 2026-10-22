@@ -54,10 +54,11 @@ internal class QqLibraryClient(
         val response = JSONObject(PlatformHttp.get("$CREATED_PLAYLIST_API?$query", cookie, webHeaders()).text.qqLibraryJson())
         requireSuccess(response, "创建的歌单加载失败")
         val data = response.optJSONObject("data") ?: JSONObject()
-        return buildList {
+        val playlists = buildList {
             data.optJSONArray("disslist").qqLibraryObjects { item -> createdPlaylist(item, userId) }.forEach(::add)
             data.optJSONArray("list").qqLibraryObjects { item -> legacyCreatedPlaylist(item, userId) }.forEach(::add)
         }.distinctBy(MusicPlaylist::id).filterNot(MusicPlaylist::isQqHiddenCreatedPlaylist)
+        return restoreQqPlaylistTitles(playlists) { playlistPaging.title(it, cookie) }
     }
 
     fun collectedPlaylists(cookie: String, userId: String): List<MusicPlaylist> {
@@ -68,7 +69,7 @@ internal class QqLibraryClient(
             webHeaders(),
         ).text.qqLibraryJson())
         requireSuccess(response, "收藏的歌单加载失败")
-        return response.optJSONObject("data")?.optJSONArray("cdlist").qqLibraryObjects { item ->
+        val playlists = response.optJSONObject("data")?.optJSONArray("cdlist").qqLibraryObjects { item ->
             val id = item.optString("dissid").trim()
             val title = item.optString("dissname").trim()
             if (id.isBlank() || title.isBlank()) throw IllegalArgumentException("无效歌单")
@@ -81,6 +82,7 @@ internal class QqLibraryClient(
                 cover = item.qqCoverUrl().orEmpty(),
             )
         }.distinctBy(MusicPlaylist::id).filterNot(MusicPlaylist::isQqFavoritesShortcut)
+        return restoreQqPlaylistTitles(playlists) { playlistPaging.title(it, cookie) }
     }
 
     fun profileDirectoryDetail(

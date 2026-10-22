@@ -130,7 +130,7 @@ private fun musicOneAnnotatedString(
             }
         }
         appendFontSpan(text.substring(start), current, display, editorial)
-    }
+    }.withMusicOneSymbolFallback()
 }
 
 private fun AnnotatedString.Builder.appendFontSpan(

@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -257,7 +258,7 @@ internal fun QqLibraryPlaylistCard(
             48.sp, RoundedCornerShape(20.dp), Alignment.Center,
             sourceKey = sourceKey, imageUrl = playlist.artworkUrl,
         )
-        Text(playlist.title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
+        Text(AnnotatedString(playlist.title).withMusicOneSymbolFallback(), fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
             minLines = if (reserveTwoTitleLines) 2 else 1, maxLines = 2,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.graphicsLayer {
                 alpha = transition?.alphaFor(sourceKey) ?: 1f
