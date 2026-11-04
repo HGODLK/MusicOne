@@ -1,0 +1,6 @@
+-keep class com.musicone.source.bilibili.BilibiliSourceEntry { *; }
+-keep class com.musicone.source.bilibili.BiliGeetestBridge { *; }
+-keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }
+-dontwarn androidx.**
+-dontwarn kotlinx.coroutines.**
+-repackageclasses com.musicone.source.bilibili.optimized

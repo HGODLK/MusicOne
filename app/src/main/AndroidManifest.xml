@@ -20,7 +20,7 @@
         android:theme="@style/Theme.MusicOne">
         <profileable android:shell="${musiconeTrace}" />
         <activity
-            android:name=".MainActivity"
+            android:name="com.musicone.MainActivity"
             android:configChanges="density|orientation|screenLayout|screenSize|smallestScreenSize"
             android:exported="true"
             android:screenOrientation="unspecified"
@@ -31,7 +31,7 @@
             </intent-filter>
         </activity>
         <service
-            android:name=".MusicPlaybackService"
+            android:name="com.musicone.MusicPlaybackService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>

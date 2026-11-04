@@ -1,0 +1,35 @@
+{
+  "id": "com.musicone.source.netease",
+  "name": "网易云音乐",
+  "kind": "MAIN",
+  "versionCode":1,
+  "versionName": "0.1",
+  "entryClass": "com.musicone.source.netease.NeteaseSourceEntry",
+  "apiVersion": 1,
+  "minHostVersionCode": 4,
+  "minHostVersionName": "0.3.0-麦辣鸡腿堡",
+  "minAndroid": 23,
+  "kotlinVersion": "2.3.21",
+  "composeVersion": "1.11.4",
+  "capabilities": [
+    "HOME",
+    "SEARCH",
+    "ACCOUNT",
+    "PLAYLIST",
+    "PLAYBACK",
+    "LYRICS",
+    "SETTINGS"
+  ],
+  "useCustomPages": true,
+  "requiresLogin": true,
+  "permissions": {
+    "editTrackMetadata": false,
+    "replaceManualLyrics": false,
+    "adjustLineOffset": true
+  },
+  "presentation": {
+    "pageColorArgb": 4293414736,
+    "lineLeadMs": 565,
+    "wordLeadMs": 0
+  }
+}

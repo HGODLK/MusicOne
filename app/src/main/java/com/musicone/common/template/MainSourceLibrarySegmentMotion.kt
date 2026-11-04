@@ -1,0 +1,154 @@
+package com.musicone
+
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.unit.IntSize
+import kotlin.math.floor
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.clipRect
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+
+/** 保留切换前的完整网格，以标题坐标差补偿列表缩短时系统自动夹紧的滚动位置。 */
+internal class MainSourceLibrarySegmentMotion {
+    var moving by mutableStateOf(false)
+    var headerTop = 0f
+    var sourceHeaderTop = 0f
+    var contentTop = 0f
+    var viewportTop = 0f
+    var direction = 1f
+    var ready: CompletableDeferred<Unit>? = null
+    var snapshot: ImageBitmap? = null
+    var snapshotTop = 0
+    var capture: (suspend () -> ImageBitmap)? = null
+    var sourceDrawReady by mutableStateOf<CompletableDeferred<Unit>?>(null)
+    val progress = Animatable(1f)
+
+    suspend fun awaitSourceDraw() {
+        val completion = CompletableDeferred<Unit>()
+        sourceDrawReady = completion
+        try {
+            completion.await()
+        } finally {
+            sourceDrawReady = null
+        }
+    }
+}
+
+@Composable
+internal fun rememberLibrarySegmentSwitch(
+    selected: Int,
+    scroll: LazyGridState,
+    headerInset: Float,
+    onSelected: (Int) -> Unit,
+): Pair<MainSourceLibrarySegmentMotion, (Int) -> Unit> {
+    val motion = remember { MainSourceLibrarySegmentMotion() }
+    val scope = rememberCoroutineScope()
+    val current by rememberUpdatedState(selected)
+    val revealInset by rememberUpdatedState(headerInset)
+    val select by rememberUpdatedState(onSelected)
+    val switch: (Int) -> Unit = { target ->
+        if (target != current && !motion.moving) {
+            motion.direction = if (target < current) -1f else 1f
+            motion.moving = true
+            scope.launch {
+                try {
+                    // 两个方向都按真实位置补位，绘制完成后再截取完整的旧画面。
+                    motion.awaitSourceDraw()
+                    val distance = (motion.headerTop - motion.viewportTop - revealInset).coerceAtMost(0f)
+                    if (distance < -1f) {
+                        scroll.animateScrollBy(distance, musicMotion(360))
+                        motion.awaitSourceDraw()
+                    }
+                    motion.sourceHeaderTop = motion.headerTop
+                    motion.progress.snapTo(0f)
+                    motion.snapshot = motion.capture?.invoke()
+                    motion.ready = CompletableDeferred()
+                    select(target)
+                    // 等新数据进入组合后，接收对应网格的真实绘制回调。
+                    withFrameNanos { }
+                    motion.ready?.await()
+                    motion.progress.animateTo(1f, musicMotion(360))
+                } finally {
+                    motion.sourceDrawReady = null
+                    motion.ready = null
+                    motion.snapshot = null
+                    motion.moving = false
+                }
+            }
+        }
+    }
+    return motion to switch
+}
+
+@Composable
+internal fun Modifier.librarySegmentMotion(motion: MainSourceLibrarySegmentMotion, selected: Int): Modifier {
+    val previous = rememberGraphicsLayer()
+    val incoming = rememberGraphicsLayer()
+    val captureLayer = rememberGraphicsLayer()
+    val fadePaint = remember { Paint() }
+    val recordedSelection = remember { arrayOf<Int?>(null) }
+    val background = MaterialTheme.colorScheme.background
+
+    return drawWithContent {
+        // 旧资料区从不参与退场，只截取分区内容，文字与封面仍保持原像素。
+        motion.capture = {
+            val top = librarySegmentSnapshotTop(motion.contentTop, motion.viewportTop, previous.size.height)
+            motion.snapshotTop = top
+            captureLayer.record(size = IntSize(previous.size.width, (previous.size.height - top).coerceAtLeast(1))) {
+                translate(top = -top.toFloat()) { drawLayer(previous) }
+            }
+            captureLayer.toImageBitmap()
+        }
+        if (!motion.moving || recordedSelection[0] == null || recordedSelection[0] == selected) {
+            previous.record { this@drawWithContent.drawContent() }
+            recordedSelection[0] = selected
+            drawLayer(previous)
+            motion.sourceDrawReady?.complete(Unit)
+        } else {
+            incoming.record { this@drawWithContent.drawContent() }
+            val p = motion.progress.value
+            val delta = motion.sourceHeaderTop - motion.headerTop
+            val verticalShift = delta * (1f - p)
+            // 裁剪线直接跟随新画面的按钮底部，避免固定区域与歌单区域之间出现缺口。
+            val boundary = (motion.contentTop - motion.viewportTop + verticalShift).coerceIn(0f, size.height)
+            // 与编辑菜单复用八分之一宽度的横移动效；上下滚动补偿独立保留。
+            val travel = size.width / 8f * motion.direction
+            drawRect(background)
+            // 固定区域仅跟随纵向位置，不让资料、我喜欢和分区按钮横向退场。
+            incoming.alpha = 1f
+            clipRect(bottom = boundary) {
+                translate(top = verticalShift) { drawLayer(incoming) }
+            }
+            clipRect(top = boundary) {
+                translate(left = -travel * p, top = -delta * p) {
+                    motion.snapshot?.let { image ->
+                        translate(top = motion.snapshotTop.toFloat()) { drawImage(image, alpha = 1f - p) }
+                    }
+                }
+                // 分区内包括空态和加载提示，统一交接，不单独突然切换。
+                fadePaint.alpha = p
+                drawContext.canvas.saveLayer(Rect(0f, 0f, size.width, size.height), fadePaint)
+                translate(left = travel * (1f - p), top = verticalShift) {
+                    clipRect(top = motion.contentTop - motion.viewportTop) { drawLayer(incoming) }
+                }
+                drawContext.canvas.restore()
+            }
+            motion.ready?.complete(Unit)
+        }
+    }
+}
+
+/** 向下取整采样起点，保留跨越分区边界的抗锯齿像素。 */
+internal fun librarySegmentSnapshotTop(contentTop: Float, viewportTop: Float, height: Int): Int =
+    floor(contentTop - viewportTop).toInt().coerceIn(0, (height - 1).coerceAtLeast(0))

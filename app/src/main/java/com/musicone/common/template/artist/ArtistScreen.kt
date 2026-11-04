@@ -1,0 +1,243 @@
+package com.musicone
+
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.pager.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.*
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.*
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.collect
+
+@Composable
+internal fun ArtistScreen(singer: MainSourceArtist, player: MusicOneUiState, bottomInset: Dp,
+    created: List<MusicPlaylist>, onBack: () -> Unit,
+    onPlay: (List<MusicTrack>, MusicTrack?) -> Unit, onChanged: (MusicPlaylist) -> Unit) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val data = remember(singer.source.id, singer.id) { ArtistPageState(singer, MainSourceArtistRepository(context, singer), scope) }
+    LaunchedEffect(data) { data.start() }
+    // 播放全部的等待过程不占页面布局；失败只做浮层提示，标签页和列表不会被顶动。
+    LaunchedEffect(data.playAllError) {
+        val message = data.playAllError ?: return@LaunchedEffect
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        data.consumePlayAllError()
+    }
+    val search = rememberPlaylistSearchState("artist:${singer.id}")
+    val frame = LocalEntityFrame.current
+    val pager = rememberPagerState { 2 }
+    val songsScroll = rememberLazyListState()
+    val albumsScroll = rememberLazyListState()
+    val favorites = LocalMusicFavorites.current
+    val motion = LocalPlaylistMotion.current
+    val activation = motion?.let { rememberPlaylistContentActivation(singer.id, it) }
+    val songsEntrance = rememberEntityDataEntrance(data.songs.isNotEmpty())
+    val tracks = remember(data.songs, data.searchSongs, data.searchResultsQuery, search.query) {
+        artistSearchTracks(data.songs, data.searchSongs, data.searchResultsQuery, search.query)
+    }
+    LaunchedEffect(search.query, data.songSort, data.supportsSearch) {
+        data.updateSearch(search.query)
+    }
+    val playlist = MusicPlaylist("${singer.source.name.lowercase()}-artist-${singer.id}", singer.source, data.profile.name, "", "",
+        data.songTotal, 0xFFCEDCD7, 0xFF779187, singer.name.take(1), tracks, data.profile.artwork)
+    val backdrop = rememberGraphicsLayer()
+    val coverPager = rememberPagerState { data.profile.backgrounds.size.coerceAtLeast(1) }
+    val appearance = rememberArtistAppearance(data.profile.backgrounds, coverPager)
+    LaunchedEffect(frame, appearance) {
+        snapshotFlow { appearance.value.background }.collect { frame?.statusBarColor = it }
+    }
+    var bounds by remember { mutableStateOf(Rect.Zero) }
+    MaterialTheme(colorScheme = ArtistListColors) {
+    CompositionLocalProvider(LocalContentColor provides ArtistListColors.onSurface,
+        LocalPlaylistContentEntrance provides { activation?.entrance?.value ?: 1f }) {
+    MainSourcePlaylistSongMenuHost(playlist, created, bottomInset, {}, onChanged, favorites.toggle,
+        menuColorScheme = remember(appearance) { { appearance.value.colors } }) {
+      CompositionLocalProvider(LocalOfflineTrackBadgeAccent provides remember(appearance) { { appearance.value.accent } }) {
+      MaterialTheme(colorScheme = ArtistListColors) {
+        val menu = LocalMainSourcePlaylistSongMenu.current
+        BoxWithConstraints(Modifier.fillMaxSize().drawBehind { drawRect(appearance.value.background) }.onGloballyPositioned { bounds = it.boundsInRoot() }) {
+            val wide = usesTabletLandscape(maxWidth, maxHeight)
+            val density = LocalDensity.current
+            val heroHeight = (maxHeight * .68f).coerceIn(360.dp, 640.dp)
+            val heroPx = with(density) { heroHeight.toPx() }
+            val collapseLimit = heroPx - with(density) { 64.dp.toPx() }
+            var collapsed by rememberSaveable(singer.id) { mutableFloatStateOf(0f) }
+            val searchMotionActive = rememberPlaylistSearchMotionActive(search.expanded)
+            val searchResults = rememberPlaylistSearchResults(tracks, searchMotionActive)
+            val imeBottomInset = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+            val contentBottomPadding = animateDpAsState(
+                playlistSearchResultsBottomPadding(bottomInset, imeBottomInset, search.expanded),
+                musicMotion(240),
+                label = "歌手歌曲搜索安全区",
+            ).value
+            val hasSearchQuery = playlistSearchHasQuery(search.query)
+            var searchReturnCollapsed by remember(singer.id) { mutableStateOf<Float?>(null) }
+            var searchReturnPosition by remember(singer.id) { mutableStateOf<Pair<Int, Int>?>(null) }
+            LaunchedEffect(hasSearchQuery, search.expanded, wide, collapseLimit) {
+                if (wide) return@LaunchedEffect
+                if (hasSearchQuery) {
+                    if (searchReturnCollapsed == null) searchReturnCollapsed = collapsed
+                    if (searchReturnPosition == null) {
+                        searchReturnPosition = songsScroll.firstVisibleItemIndex to songsScroll.firstVisibleItemScrollOffset
+                    }
+                    coroutineScope {
+                        launch { animate(collapsed, collapseLimit, animationSpec = musicMotion(300)) { value, _ -> collapsed = value } }
+                        launch { songsScroll.animateScrollToItem(0) }
+                    }
+                } else {
+                    val returnCollapsed = searchReturnCollapsed
+                    val returnPosition = searchReturnPosition
+                    coroutineScope {
+                        if (returnCollapsed != null) launch {
+                            animate(collapsed, returnCollapsed, animationSpec = musicMotion(260)) { value, _ -> collapsed = value }
+                        }
+                        if (returnPosition != null) launch {
+                            val lastIndex = songsScroll.layoutInfo.totalItemsCount - 1
+                            if (lastIndex >= 0) songsScroll.animateScrollToItem(
+                                returnPosition.first.coerceAtMost(lastIndex),
+                                returnPosition.second,
+                            )
+                        }
+                    }
+                    searchReturnCollapsed = null
+                    searchReturnPosition = null
+                }
+            }
+            val returnAction = rememberArtistReturnAction(menu, search, motion, wide, { collapsed }, { collapsed = it }, onBack)
+            SideEffect {
+                frame?.backAction = returnAction
+                frame?.floatingTools?.apply {
+                    visible = pager.targetPage == 0
+                    update("artist:${singer.id}", search,
+                        data.songs.any { it.id == player.currentTrack?.id }) {
+                        val index = data.songs.indexOfFirst { it.id == player.currentTrack?.id }
+                        if (index >= 0) {
+                            search.close(); collapsed = collapseLimit
+                            scope.launch { withFrameNanos { }; songsScroll.animateScrollToItem(index + 2) }
+                        }
+                    }
+                }
+            }
+            LaunchedEffect(pager.targetPage) { if (pager.targetPage != 0) search.close() }
+            ArtistPagination(data, songsScroll, albumsScroll, pager.currentPage,
+                LocalEntityActive.current && activation?.mounted != false, hasSearchQuery)
+            val gesture = Modifier.playlistPullGesture(
+                if (pager.currentPage == 0) songsScroll else albumsScroll,
+                motion.takeIf { LocalEntityActive.current && menu?.expanded != true && !search.expanded },
+                LocalPlaylistPull.current,
+                onBack,
+                canStart = { wide || collapsed <= 0f },
+                requireScrollAtTop = !wide,
+                canStartAt = { position, size -> artistPullRegionAllowed(wide, position.x, size.width) },
+            )
+            val contentMounted = activation?.mounted != false
+            val body: @Composable () -> Unit = {
+                Column(Modifier.fillMaxSize()) {
+                    ArtistLiveTheme(appearance) {
+                        TabRow(pager.currentPage, containerColor = appearance.value.background) {
+                            listOf("歌曲 ${data.songTotal}", "专辑 ${data.albumTotal}").forEachIndexed { index, title ->
+                                Tab(pager.currentPage == index, onClick = { scope.launch {
+                                    pager.animateScrollToPage(index, animationSpec = musicMotion(280))
+                                } }, text = { Text(title) })
+                            }
+                        }
+                    }
+                    HorizontalPager(pager, Modifier.weight(1f), beyondViewportPageCount = 1) { tab ->
+                        if (tab == 0) LazyColumn(state = songsScroll, modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = contentBottomPadding)) {
+                            if (contentMounted) item("song-sort") {
+                                ArtistLiveTheme(appearance) {
+                                    ArtistSongSortButton(data.songSort) {
+                                        data.toggleSongSort()
+                                        scope.launch { songsScroll.scrollToItem(0) }
+                                    }
+                                }
+                            }
+                            if (contentMounted) playlistTrackItems(playlist, player, favorites.state.ids,
+                                { onPlay(tracks, it) }, favorites.toggle,
+                                loading = if (hasSearchQuery) data.searchLoading && tracks.isEmpty()
+                                    else data.songLoading && data.songs.isEmpty(),
+                                loadMessage = if (hasSearchQuery) {
+                                    data.searchError?.takeIf { tracks.isEmpty() }
+                                        ?: if (!data.searchLoading && tracks.isEmpty()) "没有找到相关歌曲" else null
+                                } else data.songError ?: "暂无歌曲",
+                                dataEntrance = { songsEntrance.value }, searchResults = searchResults)
+                            if (contentMounted) item {
+                                ArtistLiveTheme(appearance) {
+                                    if (hasSearchQuery) ArtistLoadMore(data.searchLoading, data.searchError,
+                                        data.searchNext != null, data::loadSearchSongs)
+                                    else ArtistLoadMore(data.songLoading, data.songError, data.songNext != null, data::loadSongs)
+                                }
+                            }
+                        } else ArtistAlbumList(data, albumsScroll, bottomInset, appearance, contentMounted)
+                    }
+                }
+            }
+            Box(Modifier.fillMaxSize().then(gesture).playerQualityBackdropSnapshot(backdrop, menu?.expanded == true)) {
+                if (wide) Row(Modifier.fillMaxSize()) {
+                    ArtistIntroduction(data.profile, Modifier.weight(.43f).fillMaxHeight().padding(bottom = bottomInset),
+                        !data.playAllLoading, { data.playAll(onPlay) }, coverPager, appearance) { ArtistFollowButton(singer) }
+                    Box(Modifier.weight(.57f).padding(top = 72.dp)) { body() }
+                } else ArtistCollapsingLayout(
+                    heroHeight = heroHeight,
+                    collapseLimit = collapseLimit,
+                    collapsed = { collapsed },
+                    onCollapsed = { collapsed = it },
+                    list = if (pager.currentPage == 0) songsScroll else albumsScroll,
+                    header = {
+                        ArtistIntroduction(
+                            data.profile,
+                            Modifier.fillMaxSize(),
+                            !data.playAllLoading,
+                            { data.playAll(onPlay) },
+                            coverPager,
+                            appearance,
+                            following = { ArtistFollowButton(singer) },
+                        )
+                    },
+                    content = body,
+                )
+            }
+            if (LocalUnifiedBack.current) PlaylistToolbar(backdrop, bounds, returnAction)
+            else ArtistLiveTheme(appearance) { PlaylistToolbar(backdrop, bounds, returnAction) }
+            if (!wide) {
+                val toolbarFadeDistance = with(density) { 64.dp.toPx() }
+                Box(Modifier.fillMaxWidth().height(64.dp).drawBehind {
+                    val alpha = ((collapsed - collapseLimit + toolbarFadeDistance) / toolbarFadeDistance).coerceIn(0f, 1f)
+                    drawRect(appearance.value.background.copy(alpha = alpha))
+                })
+                Text(
+                    data.profile.name,
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 24.dp)
+                        .graphicsLayer { alpha = if (collapsed >= collapseLimit - 1f) 1f else 0f }
+                        .clearAndSetSemantics { },
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+            if (LocalEntityActive.current && LocalPlayerMotion.current?.mounted != true) BackHandler { returnAction() }
+        }
+      }
+      }
+    }
+    }
+    }
+}

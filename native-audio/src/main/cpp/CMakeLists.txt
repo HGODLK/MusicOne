@@ -31,6 +31,7 @@ add_library(native-audio SHARED
     native_audio_probe.cpp
     native_audio_session.cpp
     native_pcm_resampler.cpp
+    lg_pcm_output.cpp
 )
 
 target_link_options(native-audio PRIVATE "-Wl,-z,max-page-size=16384")
@@ -41,6 +42,7 @@ target_link_libraries(native-audio
     swresample
     avutil
     log
+    OpenSLES
     z
     m
 )

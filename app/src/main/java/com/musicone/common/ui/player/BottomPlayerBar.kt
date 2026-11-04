@@ -1,0 +1,136 @@
+package com.musicone
+
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
+
+internal class BottomBarMeasurements {
+    var miniHeight by mutableStateOf(78.dp)
+    var navigationHeight by mutableStateOf(70.dp)
+    var systemHeight by mutableStateOf(0.dp)
+    val homeInset get() = miniHeight + navigationHeight + systemHeight
+    val detailInset get() = miniHeight + systemHeight
+}
+
+@Composable
+internal fun BottomPlayerBar(
+    viewModel: MusicPlaybackRuntime,
+    playlistMotion: PageMotion,
+    playerMotion: PageMotion,
+    measurements: BottomBarMeasurements,
+    backdropLayer: GraphicsLayer,
+    backdropBounds: Rect,
+    controlHandoff: PlayerControlHandoff,
+    rootNavigation: RootPageNavigation,
+    entities: EntityNavigation,
+    entitySceneLayer: GraphicsLayer,
+    entitySceneBounds: Rect,
+    navigationVisible: Boolean,
+    animatePlayerTransitions: Boolean,
+    publicPageMounted: Boolean = false,
+    immersiveVisual: SourceBackdropVisual? = null,
+    sourcePlayerOpening: com.musicone.source.sdk.SourcePlayerOpening? = null,
+    modifier: Modifier = Modifier,
+    searchProgress: () -> Float = { 0f },
+) {
+    val state by rememberBottomPlayerPresentation(viewModel.state, viewModel.rapidTrackSwitch.presentation)
+    val favorites = LocalMusicFavorites.current
+    val toggleFavorite: (MusicTrack) -> Unit = { displayed ->
+        val latest = viewModel.state.value.currentTrack
+        favorites.toggle(latest?.let { playerVisualActionTrack(it, displayed) } ?: displayed)
+    }
+    val density = LocalDensity.current
+    val miniBackdrop = playerTransitionBackdrop(entities.pages.isNotEmpty() || publicPageMounted, backdropLayer, backdropBounds,
+        entitySceneLayer, entitySceneBounds)
+    val miniBackdropLayer = miniBackdrop.layer
+    val miniBackdropBounds = miniBackdrop.bounds
+    val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val phonePresentation = LocalPhonePlayerPresentation.current
+    SideEffect { measurements.systemHeight = systemBottom }
+    val openPlayer = {
+        // 先进入准备阶段再切换页面状态，避免展开页抢先显示一帧封面。
+        phonePresentation?.prepareOpen()
+        controlHandoff.begin(state.isPlaying)
+        playerMotion.request(true)
+        viewModel.setPlayerExpanded(true)
+    }
+    val openGesture = Modifier.miniPlayerOpenGesture(playerMotion,
+        onStart = {
+            phonePresentation?.prepareOpen()
+            controlHandoff.begin(state.isPlaying)
+            viewModel.setPlayerExpanded(true)
+        },
+        onExpandedChange = viewModel::setPlayerExpanded,
+    )
+    CompositionLocalProvider(LocalSourcePlayerBarMotionEnabled provides (sourcePlayerOpening == null)) {
+    Column(modifier.navigationBarsPadding()) {
+        Box(Modifier.onSizeChanged { measurements.miniHeight = with(density) { it.height.toDp() } }
+            .graphicsLayer { alpha = if (sourcePlayerOpening?.barParticipates == true) 1f - playerMotion.value else 1f }) {
+            val track = state.currentTrack
+            if (animatePlayerTransitions) {
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = state.currentTrack != null && state.hasQueue,
+                    enter = slideInVertically(animationSpec = musicMotion(360), initialOffsetY = { it }),
+                    exit = slideOutVertically(animationSpec = musicMotion(320), targetOffsetY = { it }),
+                ) {
+                    track?.let {
+                        MiniPlayer(it, controlHandoff.displayedPlaying(state.isPlaying), it.id in favorites.state.ids,
+                            miniBackdropLayer, miniBackdropBounds,
+                            immersiveVisual,
+                            onOpen = openPlayer, onToggle = viewModel::togglePlay,
+                            onNext = viewModel::requestNext, onFavorite = { toggleFavorite(it) },
+                            previewSwipe = viewModel::previewMiniSwipe, commitSwipe = viewModel::commitMiniSwipe,
+                            openGesture = openGesture)
+                    }
+                }
+            } else {
+                track?.let {
+                    MiniPlayer(it, controlHandoff.displayedPlaying(state.isPlaying), it.id in favorites.state.ids,
+                        miniBackdropLayer, miniBackdropBounds,
+                        immersiveVisual,
+                        onOpen = openPlayer, onToggle = viewModel::togglePlay,
+                        onNext = viewModel::requestNext, onFavorite = { toggleFavorite(it) },
+                        previewSwipe = viewModel::previewMiniSwipe, commitSwipe = viewModel::commitMiniSwipe,
+                        openGesture = openGesture)
+                }
+            }
+        }
+        Box(Modifier.clipToBounds().layout { measurable, constraints ->
+            val child = measurable.measure(constraints.copy(minHeight = 0))
+            val visibility = if (navigationVisible) 1f - maxOf(playlistMotion.value, searchProgress()) else 0f
+            val height = (child.height * visibility).roundToInt().coerceAtLeast(0)
+            layout(child.width, height) { child.placeRelative(0, (child.height * (1f - visibility)).roundToInt()) }
+        }.graphicsLayer { alpha = if (navigationVisible) 1f - maxOf(playlistMotion.value, searchProgress()) else 0f }) {
+            Box(Modifier.onSizeChanged { measurements.navigationHeight = with(density) { it.height.toDp() } }) {
+                val queueState = LocalPlayerQueueState.current
+                BottomCapsule(
+                    page = state.page,
+                    backdropLayer = backdropLayer,
+                    backdropBounds = backdropBounds,
+                    selectionPosition = { rootNavigation.position },
+                    onSelectionDrag = rootNavigation::dragTo,
+                    onPageChange = rootNavigation::animateTo,
+                    onNavigationContact = rootNavigation::beginNavigationInteraction,
+                    navigationDragBlocked = rootNavigation::isNavigationDragBlocked,
+                    queueState = queueState,
+                    immersiveVisual = immersiveVisual,
+                )
+            }
+        }
+    }
+    }
+}
+
+/** 自建页的底栏统一显隐，内部控件不再单独执行原生共享动画。 */
+internal val LocalSourcePlayerBarMotionEnabled = staticCompositionLocalOf { true }

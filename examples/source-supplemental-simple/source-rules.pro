@@ -1,0 +1,4 @@
+-keep class org.example.simple.SimpleExampleSource { *; }
+-repackageclasses org.example.supplemental.simple.internal
+-dontwarn androidx.**
+-dontwarn kotlin.**

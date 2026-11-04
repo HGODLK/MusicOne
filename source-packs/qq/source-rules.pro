@@ -1,0 +1,5 @@
+-keep class com.musicone.source.qq.QqSourceEntry { *; }
+-repackageclasses com.musicone.source.qq.privateimpl
+-keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }
+-dontwarn androidx.**
+-dontwarn kotlinx.coroutines.**

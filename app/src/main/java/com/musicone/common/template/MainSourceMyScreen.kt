@@ -1,0 +1,225 @@
+package com.musicone
+
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.*
+import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.*
+
+@Composable
+internal fun MainSourceMyScreen(
+    account: MusicAccount?, library: MainSourceLibraryUiState, bottomInset: Dp,
+    onOpenSettings: () -> Unit, onOpenPlaylist: (MusicPlaylist) -> Unit, onRefresh: () -> Unit,
+    onPlayPlaylist: (MusicPlaylist) -> Unit,
+    requestedSource: MusicSource? = null,
+) {
+    val recentPlayViewModel: MainSourceRecentPlayViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val recentPlay by recentPlayViewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val offline by remember(context) { OfflinePlaybackAvailability.get(context) }.state.collectAsStateWithLifecycle()
+    val source = requestedSource ?: account?.source ?: PlatformPreferences(context).selectedSource()
+    val sourceEntry = com.musicone.sourceintegration.SourcePackageController.get(context).running(source.id)?.entry
+    val showRecentPlay = (sourceEntry?.discovery as? com.musicone.source.sdk.SourceMySectionPresentation)
+        ?.showRecentInMy != false
+    val favoriteAccess = mainSourceFavoriteAccess(library.signedIn, source.requiresAccount,
+        sourceEntry?.authentication != null,
+        com.musicone.source.sdk.SourceLibrarySection.FAVORITE_TRACKS in sourceEntry?.collections?.librarySections.orEmpty())
+    LaunchedEffect(source.id) { recentPlayViewModel.configure(source) }
+    val scope = rememberCoroutineScope()
+    val musicLibraryUi = LocalMusicLibraryUi.current
+    val editor = remember(source) { MainSourcePlaylistEditorState(PlatformPreferences(context), scope, musicLibraryUi.store,
+        context.applicationContext, requestedSource = source) }
+    var host by remember { mutableStateOf(Rect.Zero) }
+    var hiddenId by remember { mutableStateOf<String?>(null) }
+    val removals = remember(account?.userId) { PlaylistCardRemovalState() }
+    val editorBackdrop = rememberGraphicsLayer()
+    var section by rememberSaveable { mutableIntStateOf(0) }
+    val created = section == 0
+    val localSection = section == 2
+    val scroll = rememberLazyGridState()
+    val gridTopPadding = 88.dp
+    val headerInset = with(LocalDensity.current) { gridTopPadding.toPx() }
+    val (segmentMotion, switchSegment) = rememberLibrarySegmentSwitch(
+        section, scroll, headerInset,
+    ) { section = it }
+    val playlists = if (localSection) musicLibraryUi.snapshot.localPlaylists else if (created) library.createdPlaylists
+        else rememberPlaylistReturnCards(library.collectedPlaylists, "${source.id}:${account?.userId.orEmpty()}",
+            "${source.id}:my-library:false:")
+    val loading = if (created) library.loadingCreated else library.loadingCollected
+    val message = if (created) library.createdMessage else library.collectedMessage
+    val entry = LocalAccountEntry.current ?: onOpenSettings
+    val favorite = library.favoritePlaylist ?: MusicPlaylist("${source.id}:favorites", source,
+        "我喜欢", "", "", 0, 0xFFE6B8C8, 0xFF98677D, "喜", emptyList())
+    val availablePlaylists = removals.present(playlists.filterNot { it.id == favorite.id })
+    val reorder = rememberPlaylistCardReorder(scroll, availablePlaylists,
+        if (localSection) "local" else "${source.name.lowercase()}:${account?.userId.orEmpty()}:$section", localSection)
+    val displayedPlaylists = reorder.arrange(availablePlaylists)
+    val myVisible = LocalMyPageVisible.current
+    ObserveMainSourceMyLibraryRefresh(source.id to account?.userId,
+        library.signedIn || favoriteAccess == MainSourceFavoriteAccess.AVAILABLE,
+        myVisible && LocalRecommendationVisible.current, onRefresh)
+    ObserveMainSourceRecentPlayVisibility(recentPlayViewModel, myVisible && LocalRecommendationVisible.current)
+    LaunchedEffect(library.signedIn, myVisible) {
+        if (library.signedIn && myVisible) recentPlayViewModel.ensureLoaded(force = true)
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { recentPlayViewModel.ensureLoaded(force = true) }
+    ReportPrimaryHeaderScroll(MusicOnePage.MY, scroll)
+    BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { host = it.boundsInRoot() }, contentAlignment = Alignment.TopCenter) {
+        val columns = mainSourceLibraryColumns(maxWidth)
+        val gutter = maxOf(if (maxWidth >= 600.dp) 32.dp else 20.dp, (maxWidth - 1120.dp) / 2)
+        val favoriteWidth = if (maxWidth >= 600.dp)
+            (maxWidth - gutter * 2 - 16.dp * (columns - 1)) / columns else maxWidth - gutter * 2
+        val pairedWidth = if (maxWidth >= 600.dp) favoriteWidth * 1.08f else null
+        val cardSide = (maxWidth - gutter * 2 - 16.dp * (columns - 1)) / columns
+        val trailingSpace = key(section) { playlistGridTrailingSpace(displayedPlaylists.size, columns, cardSide) }
+        LazyVerticalGrid(GridCells.Fixed(columns), state = scroll, modifier = Modifier.fillMaxSize()
+            .onGloballyPositioned { segmentMotion.viewportTop = it.positionInRoot().y }
+            .librarySegmentMotion(segmentMotion, section)
+            .playerQualityBackdropSnapshot(editorBackdrop, editor.open),
+            userScrollEnabled = !segmentMotion.moving && !reorder.dragging && !editor.open,
+            contentPadding = PaddingValues(start = gutter, end = gutter, top = gridTopPadding, bottom = bottomInset + 28.dp + trailingSpace),
+            horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            item("profile", span = { GridItemSpan(maxLineSpan) }) {
+                Box(Modifier.animateContentSize(musicSpring()).padding(bottom = 12.dp)) { MainSourceProfileHeader(account, onOpenSettings) }
+            }
+            item("favorites", span = { GridItemSpan(maxLineSpan) }) {
+                val open = {
+                    when (favoriteAccess) {
+                        MainSourceFavoriteAccess.UNSUPPORTED -> android.widget.Toast.makeText(context,
+                            "当前音源不支持我喜欢", android.widget.Toast.LENGTH_SHORT).show()
+                        MainSourceFavoriteAccess.LOGIN_REQUIRED -> entry()
+                        MainSourceFavoriteAccess.AVAILABLE -> {
+                            if (!offline.online) onOpenPlaylist(mainSourceOfflineFavorites(favorite))
+                            else library.favoritePlaylist?.let(onOpenPlaylist) ?: onRefresh()
+                        }
+                    }
+                }
+                val favoriteReady = favoriteAccess == MainSourceFavoriteAccess.AVAILABLE && library.favoritePlaylist != null
+                val presented = favorite.copy(title = "我喜欢",
+                    subtitle = when (favoriteAccess) {
+                        MainSourceFavoriteAccess.UNSUPPORTED -> "当前音源不支持"
+                        MainSourceFavoriteAccess.LOGIN_REQUIRED -> "登录后同步"
+                        MainSourceFavoriteAccess.AVAILABLE -> when {
+                            favoriteReady -> "${favorite.count} 首歌曲"
+                            !offline.online -> "离线，点击查看已保存的收藏"
+                            library.loadingFavorites -> ""
+                            else -> library.favoritesMessage ?: ""
+                        }
+                    })
+                // 两张卡片占用固定槽位，横滑溢出由整页视口裁剪，不能在网格留白处提前截断。
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopStart) {
+                    PairedLibraryCards(presented, musicLibraryUi.snapshot.unified,
+                        onOpen = { if (it.id == favorite.id) open() else onOpenPlaylist(it) },
+                        onPlay = { if (it.id == favorite.id) {
+                            if (favoriteReady) onPlayPlaylist(if (offline.online) favorite else mainSourceOfflineFavorites(favorite)) else open()
+                        } else onPlayPlaylist(it) },
+                        tabletCardWidth = pairedWidth, firstSharedTransition = favoriteReady)
+                }
+            }
+            if (supportsArtistFollowing(context, source)) item("followed-artists", span = { GridItemSpan(maxLineSpan) }) {
+                ArtistFollowingDirectory(source, account?.userId)
+            }
+            item("library-heading", span = { GridItemSpan(maxLineSpan) }) {
+                Column(Modifier.padding(top = 12.dp).onGloballyPositioned {
+                    // 保留屏幕外的真实位置，不能把父级裁剪后的可见边界用于滚动补位。
+                    val top = it.positionInRoot().y
+                    segmentMotion.headerTop = top
+                    segmentMotion.contentTop = top + it.size.height
+                }, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("我的歌单", fontSize = 23.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { if (localSection) editor.show(null, Rect.Zero, local = true) else if (library.signedIn) editor.show(null, Rect.Zero) else entry() }) {
+                            Icon(Icons.Rounded.Add, "新建歌单")
+                        }
+                    }
+                    LibrarySectionTabs(section, listOf("创建 ${library.createdPlaylists.size}", "收藏 ${library.collectedPlaylists.size}", "本地 ${musicLibraryUi.snapshot.localPlaylists.size}"), switchSegment)
+                }
+            }
+            items(displayedPlaylists, key = { it.id }) { playlist ->
+                val presented = playlist.withMainSourceLibrarySongCountSubtitle()
+                val artworkVersion = library.artworkVersions[playlist.id] ?: 0L
+                MainSourcePlaylistCard(
+                    playlist = presented,
+                    onClick = { onOpenPlaylist(presented) },
+                    onPlay = { onPlayPlaylist(presented) },
+                    modifier = Modifier.fillMaxWidth().playlistCardLift(reorder, playlist.id).graphicsLayer {
+                        alpha = if (hiddenId == playlist.id || removals.hidden(playlist.id)) 0f else 1f
+                    }.animateItem(
+                        fadeInSpec = if (segmentMotion.moving) null else musicMotion(320),
+                        fadeOutSpec = if (segmentMotion.moving || removals.hidden(playlist.id)) null else musicMotion(220),
+                        placementSpec = if (segmentMotion.moving || reorder.activeId == playlist.id) null else musicSpring(),
+                    ),
+                    width = 1280.dp,
+                    artworkVersion = artworkVersion,
+                    sourceKey = if (localSection) "library-user:${playlist.id}" else "${source.id}:my-library:$created:${playlist.id}",
+                    freezeArtwork = hiddenId == playlist.id,
+                    reorderState = reorder,
+                    onLongClick = if (created || localSection) { origin ->
+                        removals.hold(playlist, displayedPlaylists.indexOfFirst { it.id == playlist.id })
+                        hiddenId = playlist.id
+                        editor.show(presented, origin.bounds, artworkVersion, origin.artwork, local = localSection,
+                            currentBounds = origin.currentBounds)
+                    } else null,
+                )
+            }
+            if (displayedPlaylists.isEmpty() && (localSection || !library.signedIn || !loading)) item("status", span = { GridItemSpan(maxLineSpan) }) {
+                MainSourceInlineMessage(when {
+                    localSection -> "还没有本地歌单，点击右上角创建"
+                    !library.signedIn -> "登录后，你的音乐收藏会出现在这里"
+
+                    else -> message ?: if (created) "还没有创建的歌单" else "还没有收藏的歌单"
+                })
+            }
+            if (showRecentPlay) item("recent-play", span = { GridItemSpan(maxLineSpan) }) {
+                Box(Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = musicSpring())
+                    .animateContentSize(musicSpring())) {
+                    MainSourceRecentPlaySection(recentPlay, library.signedIn, onOpenPlaylist)
+                }
+            }
+        }
+        if (segmentMotion.moving) Box(Modifier.matchParentSize().clickable(
+            interactionSource = remember { MutableInteractionSource() }, indication = null,
+        ) {})
+        MainSourcePlaylistEditorOverlay(
+            editor = editor,
+            host = host,
+            backdrop = editorBackdrop,
+            bottomInset = bottomInset,
+            onChanged = { action, target ->
+                if (action == PlaylistEditMode.Delete && target != null) removals.confirmDelete(target.id)
+                else if (!editor.local) onRefresh()
+            },
+            onRestored = { hiddenId = null },
+            onClosed = {
+                if (removals.finish() != null && !editor.local) onRefresh()
+            },
+        )
+    }
+}
+
+internal fun mainSourceLibraryColumns(width: Dp): Int = when { width >= 1000.dp -> 4; width >= 600.dp -> 3; else -> 2 }
+
+internal fun MusicPlaylist.withMainSourceLibrarySongCountSubtitle(): MusicPlaylist =
+    copy(subtitle = "$count 首歌曲")

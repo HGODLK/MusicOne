@@ -1,0 +1,456 @@
+package com.musicone
+
+import android.content.Context
+import androidx.media3.database.StandaloneDatabaseProvider
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.cache.*
+import java.io.File
+import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONObject
+
+internal data class CacheUsage(val ordinary: Long = 0, val protected: Long = 0, val primary: Long = 0) {
+    val total get() = ordinary + protected
+}
+
+/** 一套音频文件共用容量与歌单引用；所有写入入口在落盘前执行同一份准入策略。 */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+internal class MusicDiskCache private constructor(private val context: Context) {
+    private val preferences = context.getSharedPreferences("music_cache", Context.MODE_PRIVATE)
+    private val index = MusicCacheIndex(context.getSharedPreferences("music_cache_resources", Context.MODE_PRIVATE))
+    private val root = File(context.filesDir, "managed_cache").apply { mkdirs() }
+    private val auxiliary = File(root, "images_and_feed").apply { mkdirs() }
+    private val worker = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val refreshNotifications = CacheRefreshNotifications()
+    // 原通道仍供缓存管理和容量显示使用，避免图片写入后管理页不刷新。
+    val audioRevision = refreshNotifications.cacheRevision
+    val availabilityRevision = refreshNotifications.audioAvailabilityRevision
+    private val mutableLimits = MutableStateFlow(CacheLimits(
+        runCatching { CacheCapacity.valueOf(preferences.getString("total_capacity", "").orEmpty()) }
+            .getOrElse { CacheCapacity.fromLegacy(preferences.getInt("limit_gb", 5)) },
+        runCatching { CacheCapacity.valueOf(preferences.getString("independent_capacity", "OFF").orEmpty()) }.getOrDefault(CacheCapacity.OFF)))
+    val limits = mutableLimits.asStateFlow()
+    private val pendingClear = preferences.getStringSet("pending_clear", emptySet()).orEmpty().toMutableSet()
+    private val readers = mutableMapOf<String, Int>()
+    private val writers = mutableMapOf<String, Int>()
+    private val reserved = ConcurrentHashMap<String, AtomicLong>()
+    private val audioBytes = ConcurrentHashMap<String, AtomicLong>()
+    private var primaryAudioKeys = emptySet<String>()
+    private var auxiliaryBytes = files().sumOf { it.length() }
+    private var shrinkRequested = false
+    private val cleanupMutex = Mutex()
+    private val releaseSignals = Channel<Unit>(Channel.CONFLATED)
+    @Volatile var activeKey: String? = null
+        set(value) { field = value; clearReleasedAudio() }
+    private val evictor = object : CacheEvictor {
+        override fun requiresCacheSpanTouches() = false
+        override fun onCacheInitialized() = Unit
+        override fun onStartFile(cache: Cache, key: String, position: Long, length: Long) = Unit
+        override fun onSpanAdded(cache: Cache, span: CacheSpan) {
+            // 回调持有 Media3 的锁，不能反向获取本类锁；已提交字节从预留量转入真实占用。
+            audioBytes.getOrPut(span.key) { AtomicLong() }.addAndGet(span.length)
+            reserved[span.key]?.let { atomic ->
+                while (true) {
+                    val current = atomic.get()
+                    val next = (current - span.length).coerceAtLeast(0)
+                    if (atomic.compareAndSet(current, next)) break
+                }
+            }
+            audioChanged()
+        }
+        override fun onSpanRemoved(cache: Cache, span: CacheSpan) {
+            audioBytes[span.key]?.addAndGet(-span.length)
+            refreshNotifications.audioRemoved()
+        }
+        override fun onSpanTouched(cache: Cache, oldSpan: CacheSpan, newSpan: CacheSpan) = Unit
+    }
+    val audio = SimpleCache(File(root, "audio"), evictor, StandaloneDatabaseProvider(context))
+
+    init {
+        importLegacyIndex()
+        refreshPrimaryAudioKeys()
+        worker.launch {
+            for (signal in releaseSignals) {
+                try {
+                    val released = synchronized(this@MusicDiskCache) { pendingClear.toList() }
+                    if (released.isNotEmpty()) clearResources(released, deferActive = true)
+                    shrinkAfterRelease()
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { /* 保留待清理键，后续释放时重试。 */ }
+            }
+        }
+        worker.launch {
+            setLibraryPrimary(MusicLibraryStore.get(context).primaryCacheMembers())
+            clearReleasedAudio()
+            removeDuplicateResources()
+        }
+    }
+
+    fun audioChanged() { refreshNotifications.audioChanged() }
+    private fun cacheChanged() { refreshNotifications.cacheChanged() }
+
+    fun factory(upstream: DataSource.Factory): DataSource.Factory {
+        val cached = CacheDataSource.Factory().setCache(audio)
+        return DataSource.Factory { CachedPlaybackDataSource(cached, streamingFactory(upstream), ::audioChanged,
+            direct = upstream, onOpenKey = ::retainReader, onCloseKey = ::releaseReader) }
+    }
+
+    fun streamingFactory(upstream: DataSource.Factory, strict: Boolean = false): CacheDataSource.Factory =
+        CacheDataSource.Factory().setCache(audio).setUpstreamDataSourceFactory(upstream)
+            .setCacheWriteDataSinkFactory { QuotaCacheDataSink(this, strict) }
+            .setFlags(if (strict) CacheDataSource.FLAG_BLOCK_ON_CACHE else CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
+    @Synchronized fun register(key: String, track: MusicTrack): String {
+        val physical = index.register(key, track) { audio.getCachedSpans(it).isNotEmpty() || (writers[it] ?: 0) > 0 }
+        if (index.isPrimary(track.cacheIdentity())) primaryAudioKeys = primaryAudioKeys + physical
+        return physical
+    }
+
+    @Synchronized fun trust(key: String, full: Boolean) { index.trust(key, full) }
+
+    @Synchronized fun applyLimits(next: CacheLimits): Job {
+        val old = mutableLimits.value
+        if (old == next) return worker.launch { }
+        shrinkRequested = shouldShrinkCache(old, next)
+        mutableLimits.value = next
+        preferences.edit().putString("total_capacity", next.total.name).putString("independent_capacity", next.independent.name).apply()
+        cacheChanged()
+        return worker.launch { shrinkAfterRelease() }
+    }
+
+    @Synchronized fun setFavorites(namespace: String, ids: Set<String>) {
+        val source = MusicSource.valueOf(namespace.substringBefore(':'))
+        val changed = index.replacePrimary(namespace, ids.map { cacheTrackIdentity(source, it) }, ordered = false)
+        refreshPrimaryAudioKeys()
+        if (changed) cacheChanged()
+    }
+
+    @Synchronized fun setOrderedFavorites(namespace: String, tracks: List<MusicTrack>) {
+        val changed = index.replacePrimary(namespace, tracks.map { it.cacheIdentity() }, ordered = true)
+        refreshPrimaryAudioKeys()
+        if (changed) cacheChanged()
+    }
+
+    @Synchronized fun changeFavorites(namespace: String, ids: List<String>, liked: Boolean) {
+        val source = MusicSource.valueOf(namespace.substringBefore(':'))
+        val changed = index.changePrimary(namespace, ids.map { cacheTrackIdentity(source, it) }, liked)
+        refreshPrimaryAudioKeys()
+        if (changed) cacheChanged()
+    }
+
+    @Synchronized fun setLibraryPrimary(members: List<Pair<String, Long>>) {
+        val changed = index.replaceLibraryPrimary(members)
+        refreshPrimaryAudioKeys()
+        if (changed) cacheChanged()
+    }
+
+    @Synchronized fun isPrimary(track: MusicTrack) = index.isPrimary(track.cacheIdentity())
+    @Synchronized fun protectedIdentities(): Set<String> {
+        val entries = resources()
+        return protectedCacheKeys(entries, limits.value).mapNotNullTo(hashSetOf()) { index.resource(it)?.identity }
+    }
+
+    @Synchronized fun blockReason(track: MusicTrack): String? {
+        if (track.source == MusicSource.LOCAL) return "本地音乐直接使用原文件，无需缓存"
+        val entries = resources()
+        val existing = entries.firstOrNull { index.resource(it.key)?.identity == track.cacheIdentity() }
+        val request = CacheResource(existing?.key ?: "request:${track.cacheIdentity()}", (existing?.bytes ?: 0) + 1,
+            existing?.entered ?: Long.MAX_VALUE, index.primaryOrder(track.cacheIdentity()), active = true)
+        return cacheWritePlan(entries, request, limits.value).reason
+    }
+
+    @Synchronized fun blockReasons(tracks: List<MusicTrack>, usage: CacheUsage): Map<String, String> = tracks.mapNotNull { track ->
+        val primary = index.isPrimary(track.cacheIdentity())
+        val reason = when {
+            track.source == MusicSource.LOCAL -> "本地音乐直接使用原文件，无需缓存"
+            primary && limits.value.maximum == 0L -> "新增缓存已关闭"
+            !primary && limits.value.total == CacheCapacity.OFF -> "总缓存已关闭"
+            !primary && usage.primary >= limits.value.total.bytes -> "一级歌曲已占满总缓存额度"
+            else -> null
+        }
+        reason?.let { track.cacheIdentity() to it }
+    }.toMap()
+
+    @Synchronized fun beginWrite(key: String, length: Long): String? {
+        if (key.startsWith("uncached-trial:")) return "试听音源不写入持久缓存"
+        val resource = index.resource(key) ?: return "未登记的音频不写入持久缓存"
+        if (key in pendingClear) return "缓存正在等待删除"
+        val primary = index.primaryOrder(resource.identity)
+        val ceiling = if (primary != null) limits.value.maximum else limits.value.total.bytes
+        if (ceiling == 0L) return if (primary != null) "新增缓存已关闭" else "总缓存已关闭"
+        if (length > ceiling) return "单首歌曲超过缓存容量上限"
+        val others = index.resources(resource.identity).filter { it.key != key &&
+            (audio.getCachedSpans(it.key).isNotEmpty() || (writers[it.key] ?: 0) > 0) }
+        if (others.any { inUse(it.key) }) return "同曲缓存正在使用，释放后可替换音质"
+        val othersKeys = others.mapTo(hashSetOf()) { it.key }
+        val entries = resources().filterNot { it.key in othersKeys }
+        val existing = entries.firstOrNull { it.key == key }
+        val plan = cacheWritePlan(entries, CacheResource(key, maxOf(existing?.bytes ?: 0, length.coerceAtLeast(1)),
+            existing?.entered ?: Long.MAX_VALUE, primary, active = true), limits.value)
+        if (!plan.allowed) return plan.reason
+        // 同曲替换不保留两份持久音频；权限与音质取源已由正常解析流程核验。
+        others.forEach { deleteResource(it.key) }
+        if (audio.getCachedSpans(key).isEmpty() && (writers[key] ?: 0) == 0) index.forget(key)
+        if (primary != null) primaryAudioKeys = primaryAudioKeys + key
+        writers[key] = (writers[key] ?: 0) + 1
+        reserved.getOrPut(key) { AtomicLong() }
+        return null
+    }
+
+    @Synchronized fun reserve(key: String, bytes: Long): String? {
+        if (key in pendingClear) return "缓存已安排删除"
+        val resource = index.resource(key) ?: return "缓存写入已取消"
+        val primary = index.primaryOrder(resource.identity) != null
+        val ceiling = if (primary) limits.value.maximum else limits.value.total.bytes
+        if (ceiling == 0L) return if (primary) "新增缓存已关闭" else "总缓存已关闭"
+        // Media3 提交回调与快照使用同一把缓存锁，预留转落盘时不能短暂少计字节。
+        val fits = synchronized(audio) {
+            val used = audio.cacheSpace + reserved.values.sumOf { it.get() } + auxiliaryBytes
+            val primaryBytes = primaryAudioKeys.sumOf { (audioBytes[it]?.get() ?: 0) + (reserved[it]?.get() ?: 0) }
+            (primary || primaryBytes < ceiling) && used <= ceiling - bytes
+        }
+        if (fits) {
+            index.markWritten(key)
+            reserved.getValue(key).addAndGet(bytes)
+            return null
+        }
+        val entries = resources()
+        val current = entries.firstOrNull { it.key == key } ?: return "缓存写入已取消"
+        val plan = cacheWritePlan(entries, current.copy(bytes = current.bytes + bytes, active = true), limits.value)
+        if (!plan.allowed) return plan.reason
+        plan.remove.forEach { deleteResource(it) }
+        index.markWritten(key)
+        reserved.getValue(key).addAndGet(bytes)
+        return null
+    }
+
+    @Synchronized fun finishWrite(key: String) {
+        val count = (writers[key] ?: 1) - 1
+        if (count <= 0) { writers.remove(key); reserved.remove(key) } else writers[key] = count
+        clearReleasedAudio()
+        audioChanged()
+    }
+
+
+    @Synchronized private fun retainReader(key: String) { readers[key] = (readers[key] ?: 0) + 1 }
+    @Synchronized private fun releaseReader(key: String) {
+        val count = (readers[key] ?: 1) - 1
+        if (count <= 0) readers.remove(key) else readers[key] = count
+        clearReleasedAudio()
+    }
+    private fun inUse(key: String) = key == activeKey || (readers[key] ?: 0) > 0 || (writers[key] ?: 0) > 0
+
+    @Synchronized fun removeAudio(key: String) {
+        if (inUse(key)) pendingClear += key else deleteResource(key)
+        savePendingClear()
+        audioChanged()
+    }
+
+    @Synchronized fun usage(): CacheUsage {
+        val entries = resources()
+        val protected = protectedCacheKeys(entries, limits.value)
+        return CacheUsage(entries.filterNot { it.key in protected }.sumOf { it.bytes },
+            entries.filter { it.key in protected }.sumOf { it.bytes }, entries.filter { it.primaryOrder != null }.sumOf { it.bytes })
+    }
+
+    suspend fun clearOrdinary() {
+        val keys = synchronized(this) {
+            val entries = resources()
+            val protected = protectedCacheKeys(entries, limits.value)
+            entries.filter { it.key !in protected && !it.active }.map { it.key }
+        }
+        clearResources(keys, deferActive = false, keepProtected = true)
+        ArtworkRepository.clearMemory()
+    }
+
+    suspend fun clearAll() {
+        clearResources(synchronized(this) { resources().map { it.key } }, deferActive = true)
+        ArtworkRepository.clearMemory()
+    }
+
+    suspend fun removeTracks(tracks: List<MusicTrack>) {
+        val identities = tracks.filter { it.source != MusicSource.LOCAL }.mapTo(hashSetOf()) { it.cacheIdentity() }
+        val keys = synchronized(this) { (audio.keys + writers.keys).filter { index.resource(it)?.identity in identities } }
+        clearResources(keys, deferActive = true)
+    }
+
+    suspend fun clearOutsidePlaylists(identities: Set<String>, valid: () -> Boolean) {
+        val keys = synchronized(this) {
+            outsidePlaylistCacheKeys((audio.keys + writers.keys).associateWith { index.resource(it)?.identity }, identities)
+        }
+        clearResources(keys, deferActive = true, valid = valid)
+    }
+
+    private fun clearReleasedAudio() { releaseSignals.trySend(Unit) }
+
+    // 文件删除逐项释放锁；整批结束才落盘索引，不在读写释放回调中遍历缓存。
+    private suspend fun clearResources(keys: List<String>, deferActive: Boolean,
+        keepProtected: Boolean = false, valid: () -> Boolean = { true }) = cleanupMutex.withLock {
+        var failed = false
+        var protectionRevision: Long? = null
+        var protected = emptySet<String>()
+        refreshNotifications.beginAudioRemovalBatch()
+        try {
+            for (chunk in keys.distinct().chunked(32)) {
+                currentCoroutineContext().ensureActive()
+                check(valid()) { "歌单或账号已变化，请重新清理" }
+                if (keepProtected) synchronized(this) {
+                    if (protectionRevision != audioRevision.value) {
+                        protectionRevision = audioRevision.value
+                        protected = protectedCacheKeys(resources(), limits.value)
+                    }
+                }
+                chunk.forEach { key ->
+                    synchronized(this) {
+                        if (key in protected) return@synchronized
+                        if (inUse(key)) {
+                            if (deferActive) pendingClear += key
+                        } else {
+                            runCatching { deleteResource(key, persist = false); pendingClear.remove(key) }
+                                .onFailure { failed = true }
+                        }
+                    }
+                }
+                yield()
+            }
+        } finally {
+            try { synchronized(this) { index.flush(); savePendingClear() } }
+            finally { refreshNotifications.finishAudioRemovalBatch() }
+        }
+        check(!failed) { "部分缓存暂时无法清理，请稍后重试" }
+    }
+
+    private suspend fun shrinkAfterRelease() {
+        val plan = synchronized(this) {
+            if (!shrinkRequested) return
+            cacheShrinkPlan(resources(), limits.value)
+        }
+        clearResources(plan, deferActive = false)
+        synchronized(this) {
+            val remaining = resources()
+            val primaryBytes = remaining.filter { it.primaryOrder != null }.sumOf { it.bytes }
+            val bytes = remaining.sumOf { it.bytes }
+            shrinkRequested = bytes > limits.value.maximum || bytes > maxOf(limits.value.total.bytes, primaryBytes)
+        }
+    }
+    private fun savePendingClear() { preferences.edit().putStringSet("pending_clear", pendingClear.toSet()).apply() }
+
+    private fun resources(): List<CacheResource> {
+        val audioEntries = synchronized(audio) {
+            (audio.keys + writers.keys).map { key ->
+                val entry = index.resource(key)
+                CacheResource(key, (audioBytes[key]?.get() ?: 0) + (reserved[key]?.get() ?: 0),
+                    entry?.entered ?: 0, entry?.identity?.let(index::primaryOrder), inUse(key))
+            }.filter { it.bytes > 0 || it.key in writers }
+        }
+        val files = files().map { file -> CacheResource("file:${file.name}", file.length(),
+            index.auxiliaryOrder("file:${file.name}", file.lastModified() * 1_000)) }
+        index.flush()
+        return audioEntries + files
+    }
+
+    private fun deleteResource(key: String, persist: Boolean = true) {
+        if (key.startsWith("file:")) {
+            val file = File(auxiliary, key.removePrefix("file:"))
+            val size = file.length()
+            check(file.delete() || !file.exists()) { "缓存文件暂时无法删除" }
+            auxiliaryBytes = (auxiliaryBytes - size).coerceAtLeast(0)
+        } else audio.removeResource(key)
+        index.forget(key, persist)
+    }
+
+    private fun refreshPrimaryAudioKeys() {
+        primaryAudioKeys = (audio.keys + writers.keys).filterTo(hashSetOf()) { key -> index.resource(key)?.identity?.let(index::isPrimary) == true }
+    }
+
+    private fun files() = auxiliary.listFiles()?.filter { it.isFile && !it.name.endsWith(".tmp") }.orEmpty()
+    private fun file(key: String): File {
+        val name = MessageDigest.getInstance("SHA-256").digest(key.toByteArray()).joinToString("") { "%02x".format(it) }
+        return File(auxiliary, name)
+    }
+    @Synchronized fun read(key: String): ByteArray? = runCatching { file(key).takeIf { it.isFile }?.readBytes() }.getOrNull()
+
+    @Synchronized fun write(key: String, bytes: ByteArray) {
+        val target = file(key)
+        val resource = "file:${target.name}"
+        val entries = resources()
+        val plan = cacheWritePlan(entries, CacheResource(resource, bytes.size.toLong(),
+            entries.firstOrNull { it.key == resource }?.entered ?: Long.MAX_VALUE, active = true), limits.value)
+        if (!plan.allowed) return
+        plan.remove.forEach { deleteResource(it) }
+        runCatching {
+            val oldSize = target.length()
+            val temporary = File(auxiliary, target.name + ".tmp")
+            temporary.writeBytes(bytes)
+            if (temporary.renameTo(target)) auxiliaryBytes += bytes.size - oldSize else temporary.delete()
+            index.auxiliaryOrder(resource)
+            index.flush()
+        }
+        cacheChanged()
+    }
+    @Synchronized fun delete(key: String) { deleteResource("file:${file(key).name}"); cacheChanged() }
+
+    @Synchronized private fun importLegacyIndex() {
+        listOf("offline_music_index", "supplemental_audio_index").forEach { name ->
+            context.getSharedPreferences(name, Context.MODE_PRIVATE).all.forEach { (key, raw) ->
+                runCatching { JSONObject(raw as String) }.getOrNull()?.let { row ->
+                    row.toStoredTrack()?.let { track ->
+                        val physical = row.optString("cacheKey", key)
+                        index.importResource(physical, track, audio.getCachedSpans(physical).minOfOrNull { it.lastTouchTimestamp * 1_000 } ?: 0)
+                        index.trust(physical, !row.optBoolean("pending") && !row.optBoolean("trial"))
+                    }
+                }
+            }
+        }
+        audio.keys.filter { index.resource(it) == null && '|' in it }.forEach { key ->
+            val source = MusicSource.entries.firstOrNull { it.name == key.substringBefore(':') } ?: return@forEach
+            index.importIdentity(key, cacheTrackIdentity(source, key.substringAfter('|').substringBefore('|')),
+                audio.getCachedSpans(key).minOfOrNull { it.lastTouchTimestamp * 1_000 } ?: 0)
+        }
+        if (!preferences.getBoolean("primary_migrated", false)) {
+            preferences.getStringSet("protected", emptySet()).orEmpty().groupBy { it.substringBefore('|') }.forEach { (namespace, ids) ->
+                setFavorites(namespace, ids.mapTo(linkedSetOf()) { it.substringAfter('|') })
+            }
+            preferences.edit().putBoolean("primary_migrated", true).remove("pinned_audio").remove("protected").apply()
+        }
+    }
+
+    @Synchronized private fun removeDuplicateResources() {
+        audio.keys.groupBy { index.resource(it)?.identity ?: it }.values.filter { it.size > 1 }.forEach { keys ->
+            val keep = keys.filter(::inUse).firstOrNull() ?: keys.maxByOrNull { key ->
+                val length = ContentMetadata.getContentLength(audio.getContentMetadata(key))
+                if (length > 0 && audio.isCached(key, 0, length)) Long.MAX_VALUE else audio.getCachedSpans(key).sumOf { it.length }
+            }
+            keys.filter { it != keep && !inUse(it) }.forEach { deleteResource(it) }
+        }
+    }
+
+    companion object {
+        @Volatile private var instance: MusicDiskCache? = null
+        fun get(context: Context): MusicDiskCache = instance ?: synchronized(this) {
+            instance ?: MusicDiskCache(context.applicationContext).also { instance = it }
+        }
+        fun available(): MusicDiskCache? = instance
+    }
+}
+
+internal fun PlatformSession.cacheNamespace(): String = "${source.name}:${account?.userId ?: "guest"}"
+
+internal fun playbackCacheKey(context: Context, track: MusicTrack): String {
+    offlinePlaybackKey(track.previewUrl)?.let { return it }
+    val raw = SupplementalPlaybackRequests.cacheKey(track.previewUrl) ?: networkPlaybackCacheKey(context, track)
+    if (raw.startsWith("uncached-trial:")) return raw
+    return MusicDiskCache.get(context).register(raw, track)
+}
+
+internal fun networkPlaybackCacheKey(context: Context, track: MusicTrack): String {
+    val namespace = com.musicone.sourceintegration.sourceCacheNamespace(context, track.source)
+    return "$namespace|${track.id}|${android.net.Uri.parse(track.previewUrl).path.orEmpty()}"
+}

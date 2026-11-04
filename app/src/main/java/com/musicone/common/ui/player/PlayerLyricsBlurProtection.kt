@@ -1,0 +1,35 @@
+package com.musicone
+
+import androidx.compose.foundation.lazy.LazyListLayoutInfo
+import androidx.compose.foundation.lazy.LazyListItemInfo
+
+internal data class LyricBlurProtection(val focusBottom: Float?, val allowWidening: Boolean) {
+    companion object {
+        // 交接中两层各自移动，沿用原过渡带，避免新增模糊影响来源或目标焦点。
+        val HANDOFF = LyricBlurProtection(null, false)
+    }
+}
+internal fun lyricBlurProtection(layout: LazyListLayoutInfo, focus: Int, offset: Float,
+    stable: Boolean): LyricBlurProtection {
+    if (!stable) return LyricBlurProtection.HANDOFF
+    return lyricBlurProtection(layout.viewportStartOffset,
+        layout.visibleItemsInfo.firstOrNull { it.index == focus }, offset, stable)
+}
+
+/** 绘制回调已查到焦点行时直接复用；位移补偿仍使用本帧数值。 */
+internal fun lyricBlurProtection(viewportStart: Int, item: LazyListItemInfo?, offset: Float,
+    stable: Boolean): LyricBlurProtection {
+    if (!stable) return LyricBlurProtection.HANDOFF
+    return LyricBlurProtection(item?.let {
+        (it.offset - viewportStart + it.size).toFloat() + offset
+    }, true)
+}
+
+/** 下沿保持原位；新增的上扩范围只使用焦点段落之外的空间。 */
+internal fun playerControlsBlurStart(boundary: Float, originalHeight: Float, widenedHeight: Float,
+    protection: LyricBlurProtection?, focusGap: Float): Float {
+    val original = boundary - originalHeight
+    if (protection?.allowWidening != true) return original
+    val widened = boundary - widenedHeight
+    return protection.focusBottom?.let { minOf(original, maxOf(widened, it + focusGap)) } ?: widened
+}

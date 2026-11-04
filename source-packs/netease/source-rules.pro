@@ -1,0 +1,6 @@
+-keep class com.musicone.source.netease.NeteaseSourceEntry { *; }
+-keep class com.musicone.source.netease.R$* { *; }
+-repackageclasses com.musicone.source.netease.internal
+-dontwarn androidx.**
+-dontwarn kotlin.**
+-dontwarn kotlinx.coroutines.**

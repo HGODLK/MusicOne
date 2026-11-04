@@ -1,0 +1,246 @@
+package com.musicone
+
+import android.os.SystemClock
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.verticalDrag
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+@Stable
+internal class PlayerControlsVisibilityState(
+    private val scope: CoroutineScope,
+    initiallyHidden: Boolean = false,
+) {
+    var progress by mutableFloatStateOf(if (initiallyHidden) 1f else 0f)
+        private set
+    var hidden by mutableStateOf(initiallyHidden)
+        private set
+    var hintRevision by mutableIntStateOf(0)
+        private set
+    private var animationJob: Job? = null
+    private var animationVelocity = 0f
+    val velocity get() = animationVelocity
+    var travelPx by mutableFloatStateOf(0f)
+        private set
+    private var dragTravelPx = 1f
+    private var dragStartedHidden = false
+
+    fun updateTravel(height: Float) { travelPx = height.coerceAtLeast(0f) }
+
+    fun beginDrag() {
+        dragStartedHidden = hidden || progress >= .82f
+        animationJob?.cancel()
+        animationVelocity = 0f
+    }
+
+    fun dragBy(distancePx: Float, travelPx: Float) {
+        if (travelPx <= 0f) return
+        dragTravelPx = travelPx
+        progress = (progress + distancePx / travelPx).coerceIn(0f, 1f)
+        hidden = false
+    }
+
+    fun settle(velocityY: Float = 0f, density: Float = 1f, distanceDp: Float = 24f, releasedNormally: Boolean = true) {
+        animationVelocity = (velocityY / dragTravelPx).coerceIn(-3f, 3f)
+        val fromHidden = dragStartedHidden
+        dragStartedHidden = false
+        val hide = if (releasedNormally) playerControlsShouldHide(progress, velocityY / density, fromHidden, distanceDp) else fromHidden
+        animateTo(if (hide) 1f else 0f)
+    }
+
+    fun show() = animateTo(0f)
+
+    /** 旧画面及屏外姿态已经捕获，准备期只交付可见目标，入场交给原转向弹簧。 */
+    fun prepareRotation() {
+        animationJob?.cancel()
+        animationJob = null
+        animationVelocity = 0f
+        progress = 0f
+        hidden = false
+        dragStartedHidden = false
+    }
+
+    fun revealHint() {
+        if (hidden) hintRevision++
+    }
+
+    private fun animateTo(target: Float) {
+        animationJob?.cancel()
+        animationJob = scope.launch {
+            val delta = target - progress
+            // 初速度方向与目标相反时消除逆向冲量，避免固定时长曲线起步停顿。
+            val clampedVelocity = if (delta > 0f) animationVelocity.coerceAtLeast(0f)
+                else if (delta < 0f) animationVelocity.coerceAtMost(0f) else 0f
+            animate(
+                initialValue = progress,
+                targetValue = target,
+                initialVelocity = clampedVelocity,
+                animationSpec = musicMotion(240),
+            ) { value, velocity ->
+                progress = value.coerceIn(0f, 1f)
+                animationVelocity = velocity
+            }
+            animationVelocity = 0f
+            hidden = target == 1f
+        }
+    }
+}
+
+@Composable
+internal fun rememberPlayerControlsVisibilityState(): PlayerControlsVisibilityState {
+    val scope = rememberCoroutineScope()
+    val saver = remember(scope) {
+        Saver<PlayerControlsVisibilityState, Boolean>(
+            save = { it.progress >= .5f },
+            restore = { PlayerControlsVisibilityState(scope, it) },
+        )
+    }
+    return rememberSaveable(saver = saver) { PlayerControlsVisibilityState(scope) }
+}
+
+internal fun Modifier.playerControlsDrag(
+    state: PlayerControlsVisibilityState,
+    enabled: Boolean = true,
+    reserveBottomButtons: Boolean = false,
+): Modifier = if (!enabled) this else pointerInput(state, reserveBottomButtons) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        // 底部歌词和队列按钮留给点击处理，轻微手抖不能触发整组控件下滑。
+        if (reserveBottomButtons && down.position.y >= size.height - 58.dp.toPx()) return@awaitEachGesture
+        val tracker = VelocityTracker().apply { addPosition(down.uptimeMillis, down.position) }
+        val release = GestureReleaseVelocity(down.uptimeMillis, density)
+        var dragging = false
+        try {
+            val start = awaitTrackedVerticalSlop(down, tracker, release) { change, over ->
+                state.beginDrag()
+                dragging = true
+                state.dragBy(over, size.height.toFloat())
+                change.consume()
+            }
+            if (start != null && dragging) {
+                val completed = verticalDrag(start.id) { change ->
+                    tracker.addPosition(change.uptimeMillis, change.position)
+                    val deltaY = change.position.y - change.previousPosition.y
+                    release.moved(change.uptimeMillis, deltaY)
+                    state.dragBy(deltaY, size.height.toFloat())
+                    change.consume()
+                }
+                val rawVelocityY = tracker.calculateVelocity().y
+                val now = currentEvent.changes.firstOrNull { it.id == start.id }?.uptimeMillis ?: start.uptimeMillis
+                val velocityY = release.released(now, rawVelocityY, completed)
+                state.settle(velocityY, density, release.effectiveDistancePx / density, completed)
+                dragging = false
+            }
+        } finally {
+            if (dragging) state.settle(releasedNormally = false)
+        }
+    }
+}
+
+/** 只观察点击，不消费事件；控件已收起时任意触摸都重启箭头提示。 */
+internal fun Modifier.playerControlsHintTouches(state: PlayerControlsVisibilityState): Modifier =
+    pointerInput(state) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false)
+            state.revealHint()
+        }
+    }
+
+@Composable
+internal fun PlayerControlsRestoreHandle(
+    state: PlayerControlsVisibilityState,
+    modifier: Modifier = Modifier,
+) {
+    if (state.progress < .82f) return
+    var hintVisible by remember(state) { mutableStateOf(false) }
+    LaunchedEffect(state.hidden, state.hintRevision) {
+        hintVisible = state.hidden
+        if (state.hidden) {
+            delay(3_000)
+            hintVisible = false
+        }
+    }
+    val visible = state.hidden && hintVisible
+    val opacity by animateFloatAsState(if (visible) 1f else 0f, animationSpec = tween(200), label = "上箭头显隐")
+    val breath = if (visible && !ExperiencePreferences.options.reduceMotion) {
+        val transition = rememberInfiniteTransition(label = "上箭头呼吸")
+        val scale by transition.animateFloat(
+            initialValue = .94f,
+            targetValue = 1.08f,
+            animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+            label = "上箭头缩放",
+        )
+        val travelPx = with(LocalDensity.current) { 2.dp.toPx() }
+        val offsetY by transition.animateFloat(
+            initialValue = -travelPx,
+            targetValue = travelPx,
+            animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+            label = "上箭头上下浮动",
+        )
+        scale to offsetY
+    } else 1f to 0f
+    IconButton(
+        onClick = state::show,
+        enabled = visible,
+        modifier = modifier
+            .size(width = 64.dp, height = 48.dp)
+            .graphicsLayer { alpha = ((state.progress - .82f) / .18f).coerceIn(0f, 1f) * opacity },
+    ) {
+        Icon(
+            Icons.Rounded.KeyboardArrowUp,
+            contentDescription = "显示播放控件",
+            modifier = Modifier.size(30.dp).graphicsLayer {
+                scaleX = breath.first
+                scaleY = breath.first
+                translationY = breath.second
+            },
+            tint = LocalContentColor.current,
+        )
+    }
+}
+
+internal fun playerControlsShouldHide(progress: Float, velocityY: Float, fromHidden: Boolean = false,
+                                     distanceDp: Float = 16f): Boolean =
+    if (kotlin.math.abs(distanceDp) < 12f) fromHidden else
+        gestureTarget(progress, velocityY, distanceDp, fromHidden,
+            threshold = if (fromHidden) .82f else .36f,
+            dragDistanceDp = 24f, flingVelocityDp = 240f)
+
+internal fun playerControlsTranslation(progress: Float, heightPx: Float): Float =
+    progress.coerceIn(0f, 1f) * heightPx.coerceAtLeast(0f)

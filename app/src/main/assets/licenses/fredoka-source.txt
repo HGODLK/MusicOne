@@ -1,0 +1,5 @@
+Fredoka Medium 500
+来源：https://raw.githubusercontent.com/ducafecat/flutter_tiqlo_clock/0c01fbd76ade77f4efd55baa10cfa55fc5efd9a8/assets/fonts/bubble/Fredoka-Medium.ttf
+上游版本：0c01fbd76ade77f4efd55baa10cfa55fc5efd9a8
+许可：SIL Open Font License 1.1，见 fredoka-ofl.txt。
+仅导入字体与许可，不引入 Tiqlo 应用代码。

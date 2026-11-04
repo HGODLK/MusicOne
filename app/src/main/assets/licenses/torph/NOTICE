@@ -1,0 +1,51 @@
+Torph for Jetpack Compose
+Copyright (c) 2026 Chris Sinco
+
+This is a personal project. It is not a Google product, and it is not
+affiliated with, endorsed by, or supported by Google or the Jetpack Compose
+team. "Android" and "Jetpack Compose" are trademarks of Google LLC, used here
+only to describe what this library targets.
+
+This project is an independent, unofficial port of torph
+(https://github.com/lochie/torph) to Jetpack Compose. It is not affiliated
+with or endorsed by the torph project or its author.
+
+The Kotlin source in this repository was written from scratch. It deliberately
+reproduces torph's public API surface, option names, algorithms, and default
+values so that torph configurations carry over directly.
+
+torph is used under the MIT License:
+
+---
+
+MIT License
+
+Copyright (c) 2025 Lochie Axon
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+The :demo app bundles the following fonts, each licensed under the SIL Open
+Font License, Version 1.1. Their license texts are in demo/licenses/.
+
+- Geist and Geist Mono, Copyright 2024 The Geist Project Authors
+  (https://github.com/vercel/geist-font)
+- Bitcount Single, Copyright The Bitcount Project Authors
+  (https://github.com/petrvanblokland/TYPETR-Bitcount)

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name="com.musicone.validation.LyricDisplayValidationActivity"
+            android:exported="false" />
+        <activity
+            android:name="com.musicone.validation.SourcePackValidationActivity"
+            android:exported="true"
+            android:label="音源外部加载验证" />
+    </application>
+</manifest>
