@@ -7,7 +7,7 @@ import androidx.compose.ui.Modifier
 interface SourceContentUi {
     /** 完整公共页面；默认页面选择不限制包主动打开或嵌入公共页面。 */
     val pages: SourcePageUi? get() = null
-    /** 可组合公共组件；包含此接口的宿主可以返回空表示未实现，历史宿主不保证存在新增符号。 */
+    /** 可组合公共组件；宿主未提供此能力时返回空，调用方应提供兼容页面或标明所需宿主版本。 */
     val components: SourceComponentUi? get() = null
 
     /** 使用公共歌单完整体验，关闭后回到调用包的原页面。 */

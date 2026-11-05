@@ -16,6 +16,10 @@ internal class NeteaseSourceServices(private val state: () -> NeteasePackageStat
     SourceCollections, SourceFavorites, SourceCollectionEditing, SourceMediaPlayback, SourceLyricProvider, SourceTrackTheme, SourcePlaybackBehavior, SourceLyricBehavior, SourceCollectionReturnBehavior {
     override val refreshLibraryAfterAnyReturn = true
     override val preserveVerbatimFallback = true
+    override fun sortOptions(collection: SourceCollection) = state().collectionSort.options(collection, state().account?.userId)
+    override fun selectedSort(collection: SourceCollection) = state().collectionSort.selected(collection, state().account?.userId)
+    override fun selectSort(collection: SourceCollection, optionId: String) =
+        state().collectionSort.select(collection, state().account?.userId, optionId)
 
     override val parserVersion = CURRENT_NETEASE_LYRIC_PARSER_VERSION
     override val defaultQualityId = "LOSSLESS"

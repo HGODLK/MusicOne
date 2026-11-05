@@ -5,8 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withContext
 
 internal sealed interface PlaybackTrackEvent {
     val key: PlaybackRequestKey
@@ -15,8 +14,7 @@ internal sealed interface PlaybackTrackEvent {
         val playWhenReady: Boolean) : PlaybackTrackEvent
     data class Metadata(override val key: PlaybackRequestKey, val original: MusicTrack,
         val enriched: MusicTrack) : PlaybackTrackEvent
-    data class Failed(override val key: PlaybackRequestKey, val message: String,
-        val maySkip: Boolean = true) : PlaybackTrackEvent
+    data class Failed(override val key: PlaybackRequestKey, val message: String) : PlaybackTrackEvent
 }
 
 /** 音源和后补元数据共用请求身份，切歌后旧任务不能继续起播或覆盖详情。 */
@@ -36,6 +34,7 @@ internal class PlaybackTrackLoader(
         Unit
     },
     private val selectQuality: ((MusicTrack) -> Pair<AudioQuality, AudioQuality>)? = null,
+    private val retryPolicy: PlaybackRetryPolicy = PlaybackRetryPolicy(),
 ) {
     private var resolution: Job? = null
     private var metadata: Job? = null
@@ -62,15 +61,25 @@ internal class PlaybackTrackLoader(
                 if (!current()) return@launch
                 // 包激活后才能应用跟随主音源等音质规则，不能沿用等待前的能力快照。
                 val (requestedPreferred, requestedEffective) = selectQuality?.invoke(track) ?: (preferred to effective)
-                val playback = withTimeout(30_000L) {
-                    resolveQueuePlayback(track, sourceStatus(track),
-                        cached = { if (previousSource == null) takePreloaded(track, requestedEffective) else null },
+                val status = sourceStatus(track)
+                val settleDelay = if (track.source.lyricBehavior?.waitForSingleSwitchSettlement == true && !lyricsHandedOff)
+                    ONLINE_PLAYBACK_SETTLE_DELAY_MS else 0L
+                // 取源错误按策略重试；音源未启用或音源明确答复没有地址时不再重试，直接交给跳过逻辑。
+                val session = PlaybackResolveSession(retryPolicy.tierTimeoutMs)
+                val playback = withContext(session) { retryPlaybackResolve(retryPolicy,
+                    extraTimeoutMs = { attempt -> if (attempt == 0) settleDelay else 0L },
+                    retryable = { status == QueueSourceStatus.AVAILABLE && !session.definitive },
+                    shouldContinue = ::current,
+                    beforeAttempt = session::beginAttempt,
+                ) { attempt ->
+                    resolveQueuePlayback(track, status,
+                        cached = { if (attempt == 0 && previousSource == null) takePreloaded(track, requestedEffective) else null },
                         resolve = {
-                            if (previousSource != null && recover != null) recover.invoke(track, requestedEffective, previousSource)
-                            else resolve(track, requestedEffective,
-                                if (track.source.lyricBehavior?.waitForSingleSwitchSettlement == true && !lyricsHandedOff) ONLINE_PLAYBACK_SETTLE_DELAY_MS else 0L)
+                            // 首轮优先用原资源换票；失败后的重试改走完整解析，不再依赖可能已失效的旧资源。
+                            if (attempt == 0 && previousSource != null && recover != null) recover.invoke(track, requestedEffective, previousSource)
+                            else resolve(track, requestedEffective, if (attempt == 0) settleDelay else 0L)
                         })
-                }
+                } }
                 if (!current()) return@launch
                 PlaybackPipelineDiagnostics.stage("解析完成", key.generation, (System.nanoTime() - started) / 1_000_000)
                 publish(PlaybackTrackEvent.Ready(key, playback, requestedPreferred, requestedEffective, positionMs, playWhenReady))
@@ -83,17 +92,15 @@ internal class PlaybackTrackLoader(
                     catch (_: Exception) { return@launch }
                     if (current()) publish(PlaybackTrackEvent.Metadata(key, playback.track, enriched))
                 }
-            } catch (timeout: TimeoutCancellationException) {
-                if (current()) {
-                    PlaybackPipelineDiagnostics.stage("解析超时", key.generation)
-                    publish(PlaybackTrackEvent.Failed(key, "音源加载超时，请重试", false))
-                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                PlaybackPipelineDiagnostics.stage("解析失败", key.generation, (System.nanoTime() - started) / 1_000_000)
+                val timeout = error is PlaybackResolveTimeoutException
+                PlaybackPipelineDiagnostics.stage(if (timeout) "解析超时" else "解析失败", key.generation,
+                    (System.nanoTime() - started) / 1_000_000)
+                // 重试用尽后一律允许跳过，是否真正跳过由运行时按播放意图和连续失败数决定。
                 if (current()) publish(PlaybackTrackEvent.Failed(key,
-                    error.asUserMessage(), maySkipSourceFailure(error)))
+                    if (timeout) "音源加载超时" else error.asUserMessage()))
             } finally { releaseWake?.invoke() }
         }
     }

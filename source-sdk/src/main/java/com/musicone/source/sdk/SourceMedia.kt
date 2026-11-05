@@ -10,7 +10,7 @@ class TrackAccessInfo(
     var displayBadge: SourceTrackBadge? = null
         private set
 
-    // 保留 SDK 1 四参数构造及默认参数入口，旧包无需重新编译即可继续加载。
+    // 保留 API 1 四参数构造及默认参数入口，新增展示声明不改变原调用签名。
     constructor(badge: TrackAccessBadge? = null, trialAvailable: Boolean = false,
         playable: Boolean = true, reason: String? = null, displayBadge: SourceTrackBadge?) :
         this(badge, trialAvailable, playable, reason) {

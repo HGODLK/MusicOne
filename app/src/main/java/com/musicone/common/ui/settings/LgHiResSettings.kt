@@ -23,7 +23,7 @@ internal fun LgHiResSettings() {
     val system by PlaybackOutputStatus.system.collectAsState()
     val usb by UsbAudioOutputStatus.current.collectAsState()
     val description = when {
-        !enabled -> "适配原厂 G7／G8 的 3.5mm 耳机口，需开启系统 Hi-Fi Quad DAC"
+        !enabled -> lgHiResIdleDescription(Build.MODEL)
         lg != null -> playbackOutputDescription(null, lg, UsbAudioOutputSnapshot())
         usb.route == UsbAudioOutputRoute.DIRECT_UAC2 || usb.route == UsbAudioOutputRoute.SYSTEM_BIT_PERFECT -> "USB 输出"
         system != null -> playbackOutputDescription(system, null, UsbAudioOutputSnapshot())

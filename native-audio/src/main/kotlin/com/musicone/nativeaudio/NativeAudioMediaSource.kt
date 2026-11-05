@@ -20,16 +20,28 @@ import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 
 @OptIn(UnstableApi::class)
 class NativeAudioMediaSource internal constructor(
-    private val mediaItem: MediaItem,
+    initialMediaItem: MediaItem,
     private val dataSourceFactory: DataSource.Factory,
     private val targetDsdSampleRate: Int = NativeAudioOutputPolicy.DEFAULT_DSD_PCM_SAMPLE_RATE,
     private val context: Context? = null,
 ) : BaseMediaSource() {
 
+    @Volatile private var mediaItem: MediaItem = initialMediaItem
     private var durationUs: Long = C.TIME_UNSET
     private var timelineIsPlaceholder = true
 
     override fun getMediaItem(): MediaItem = mediaItem
+
+    /**
+     * 只换歌曲信息（系统媒体信息刷新）时原地更新；否则 Media3 会重建播放源，从头重播。
+     * 地址、格式提示或缓存键变化才视为另一份媒体。
+     */
+    override fun canUpdateMediaItem(mediaItem: MediaItem): Boolean =
+        sameMedia(this.mediaItem, mediaItem)
+
+    override fun updateMediaItem(mediaItem: MediaItem) {
+        this.mediaItem = mediaItem
+    }
 
     override fun prepareSourceInternal(mediaTransferListener: TransferListener?) {
         // 先发布一个准备态 Timeline
@@ -79,6 +91,14 @@ class NativeAudioMediaSource internal constructor(
         refreshSourceInfo(timeline)
     }
 
+    internal companion object {
+        fun sameMedia(current: MediaItem, next: MediaItem): Boolean {
+            val before = current.localConfiguration ?: return false
+            val after = next.localConfiguration ?: return false
+            return before.uri == after.uri && before.mimeType == after.mimeType && before.customCacheKey == after.customCacheKey
+        }
+    }
+
     class Factory(
         private val dataSourceFactory: DataSource.Factory,
         private val targetDsdSampleRate: Int = NativeAudioOutputPolicy.DEFAULT_DSD_PCM_SAMPLE_RATE,
@@ -93,7 +113,7 @@ class NativeAudioMediaSource internal constructor(
 
         override fun createMediaSource(mediaItem: MediaItem): MediaSource {
             return NativeAudioMediaSource(
-                mediaItem = mediaItem,
+                initialMediaItem = mediaItem,
                 dataSourceFactory = dataSourceFactory,
                 targetDsdSampleRate = targetDsdSampleRate,
                 context = context,

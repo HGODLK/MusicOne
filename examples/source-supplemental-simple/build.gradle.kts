@@ -32,7 +32,7 @@ abstract class GenerateSourceManifest : DefaultTask() {
 }
 val generateSourceManifest = tasks.register<GenerateSourceManifest>("generateSourceManifest") {
     manifestJson.set("""
-        {"id":${quoted(sourceId)},"name":${quoted(sourceName)},"kind":"SUPPLEMENTAL","versionCode":$packageVersion,"versionName":${quoted(packageVersionName)},"entryClass":"org.example.simple.SimpleExampleSource","apiVersion":1,"minHostVersionCode":4,"minHostVersionName":"0.3.0-麦辣鸡腿堡","minAndroid":23,"kotlinVersion":"2.3.21","composeVersion":"1.11.4","capabilities":["HOME","CONTENT","CHILD_ITEMS","IMPORT","PLAYBACK"],"useCustomPages":false}
+        {"id":${quoted(sourceId)},"name":${quoted(sourceName)},"kind":"SUPPLEMENTAL","versionCode":$packageVersion,"versionName":${quoted(packageVersionName)},"entryClass":"org.example.simple.SimpleExampleSource","apiVersion":1,"minHostVersionCode":5,"minHostVersionName":"0.3.1-过桥米线","minAndroid":23,"kotlinVersion":"2.3.21","composeVersion":"1.11.4","capabilities":["HOME","CONTENT","CHILD_ITEMS","IMPORT","PLAYBACK"],"useCustomPages":false}
     """.trimIndent())
     outputDirectory.set(layout.buildDirectory.dir("generated/source-manifest/assets"))
 }

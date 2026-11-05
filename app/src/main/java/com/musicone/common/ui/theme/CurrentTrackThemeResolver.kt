@@ -4,7 +4,11 @@ import kotlinx.coroutines.CancellationException
 
 internal const val LOCAL_TRACK_COLOR_ARGB = 0xFF9B8AC4L
 
-/** 曲目色不借用页面色；透明色与超出 ARGB 范围的值视为未声明。 */
+/** 未提供曲目主题服务的音源，以声明的页面色作为全部曲目的主题色；提供了服务则完全由服务决定（返回 null 即不要颜色）。 */
+internal fun pageColorTrackThemeArgb(hasTrackTheme: Boolean, pageColorArgb: Long?): Long? =
+    if (hasTrackTheme) null else validTrackThemeArgb(pageColorArgb)
+
+/** 透明色与超出 ARGB 范围的值视为未声明。 */
 internal fun validTrackThemeArgb(value: Long?): Long? = value?.takeIf {
     it in 0..0xFFFFFFFFL && (it ushr 24) != 0L
 }

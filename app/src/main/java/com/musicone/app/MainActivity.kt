@@ -19,6 +19,7 @@ import androidx.lifecycle.ViewModelProvider
 class MainActivity : ComponentActivity() {
     private val updates by lazy { ViewModelProvider(this)[AppUpdateViewModel::class.java] }
     private val phoneOrientation by lazy { PhoneActivityOrientationPolicy(this) }
+    private val launchWindow by lazy { HomeLaunchWindow(this) }
 
     override fun onUserInteraction() {
         super.onUserInteraction()
@@ -31,6 +32,8 @@ class MainActivity : ComponentActivity() {
         UsbExclusiveVolumeKeys.dispatch(event) || super.dispatchKeyEvent(event)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 清单里的 Launch 主题只用于系统启动窗口，Activity 自身仍用原主题。
+        setTheme(R.style.Theme_MusicOne)
         super.onCreate(savedInstanceState)
         phoneOrientation.apply(resources.configuration)
         lifecycle.addObserver(AppUpdateLifecycle(updates))
@@ -44,6 +47,7 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightNavigationBars = true
         }
         ExperiencePreferences.initialize(this)
+        launchWindow.prepare()
         PhonePlayerPreferences.initialize(this)
         val playerFrameRate = PlayerFrameRatePolicy()
         val lyricFrames = LyricFrameDriver()
@@ -70,6 +74,11 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         // USB 独占绕过系统混音后，仍让实体音量键明确调整软件增益读取的媒体流。
         setVolumeControlStream(AudioManager.STREAM_MUSIC)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        launchWindow.syncTheme()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {

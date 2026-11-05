@@ -1,6 +1,6 @@
 # Agent 音源接入完整规范
 
-本文面向实现或维护 MusicOne 0.3.0 音源包的 AI Agent 和开发者，说明当前接口、流程、默认值、限制和示例。快速接入见 [README](README.md)，可自定义范围见 [可自定义功能](可自定义功能.md)。
+本文面向实现或维护 MusicOne 音源包的 AI Agent 和开发者，说明当前接口、流程、默认值、限制和示例。快速接入见 [README](README.md)，可自定义范围见 [可自定义功能](可自定义功能.md)。
 
 第 17 章集中收录 SDK 完整声明与默认实现；前文说明宿主实际使用的字段与能力。不能仅凭模型中存在某个字段推断功能已接通。
 
@@ -55,7 +55,7 @@
 
 ## 1. 边界、工具链与兼容
 
-本文描述 MusicOne 0.3.0、公开 `com.musicone.source.sdk` API 1 的当前实现契约。接口存在、编译、优化构建、真实账号与双设备验收是不同证据，交付时分别记录。
+本文描述公开 `com.musicone.source.sdk` API 1 及同一提交宿主的实现契约。接口存在、编译、优化构建、真实账号与双设备验收是不同证据，交付时分别记录。
 
 包与宿主同进程运行，宿主通过 DexClassLoader 外载 APK 中的 DEX，并提供 Android／Kotlin／Compose 共享 ABI。包只依赖公开 SDK 和明确由宿主提供的共享库，不引用宿主 `com.musicone` 业务类，不读取宿主私有数据库。代码包不是 Android 应用安装流程，也不是安全沙箱。
 
@@ -66,9 +66,22 @@
 | Android | compileSdk/targetSdk 37；minSdk 至少23；Java字节码17，使用兼容JDK |
 | 共享核心 | Kotlin stdlib 2.3.21；Compose Runtime/UI/Foundation/Animation 1.11.4；Material3 1.4.0 |
 | 按实际需要声明 | Activity Compose 1.13.0；Lifecycle Runtime Compose 2.11.0；协程 Android 1.11.0；Material Icons 1.7.8 |
-| 当前兼容判断 | apiVersion=1；minHostVersionCode 按宿主实际 versionCode 比较；Kotlin／Compose 编译版本须在宿主兼容名单中；minAndroid在23与设备API之间 |
+| 当前兼容判断 | apiVersion=1；minHostVersionCode 按宿主实际 versionCode 比较，门槛见[宿主接口门槛](#host-thresholds)；Kotlin／Compose 编译版本须在宿主兼容名单中；minAndroid在23与设备API之间 |
 
-清单以 `minHostVersionCode` 声明最低宿主编号，`minHostVersionName` 可选提供展示名称，只有编号参与比较。本轮宿主为 `0.3.0-麦辣鸡腿堡`／code 5；酷狗参考包因调用 `SourceHost.playRecommendation` 最低为 code 5，其余参考包和示例最低为 code 4。旧包可省略最低宿主字段，继续通过 API、Android 和共享运行时校验；新发布包应声明真实最低需求。同一展示版本新增 SDK 符号或行为时也必须递增宿主 code。`apiVersion=1` 代表接口大版本，不能单独确定可选符号与行为；二进制不兼容改动须提升 API 大版本。Kotlin／Compose 字段记录实际编译版本，不能改清单绕过检查；宿主在 `SourceHostCompatibility` 中维护经验证的兼容名单，当前为 Kotlin 2.3.21、Compose 1.11.4，不按主次版本无条件放行其他补丁。升级共享依赖时须验证旧编译产物后保留相应名单，不能将包使用新符号的情况当作双向兼容。分发说明仍须列出实际验证组合并提供匹配 SDK AAR。SDK 使用 `jvmDefault=DISABLE`；宿主、参考包和独立示例须使用配套 SDK，编译配置见第 4 章。
+清单以 `minHostVersionCode` 声明最低宿主编号，填写实际开发、验证所用宿主的 versionCode；`minHostVersionName` 可选提供展示名称，只有编号参与比较。宿主 versionCode 可用 `adb shell dumpsys package io.github.shuyunr.musicone` 查看，声明过高时导入提示也会显示当前宿主编号。旧包可省略最低宿主字段，继续通过 API、Android 和共享运行时校验；新发布包应声明真实最低需求。同一展示版本新增 SDK 符号或行为时也必须递增宿主 code。`apiVersion=1` 代表接口大版本，不能单独确定可选符号与行为；二进制不兼容改动须提升 API 大版本。Kotlin／Compose 字段记录实际编译版本，不能改清单绕过检查；宿主在 `SourceHostCompatibility` 中维护经验证的兼容名单，当前为 Kotlin 2.3.21、Compose 1.11.4，不按主次版本无条件放行其他补丁。升级共享依赖时须验证旧编译产物后保留相应名单，不能将包使用新符号的情况当作双向兼容。分发说明仍须列出实际验证组合并提供匹配 SDK AAR。SDK 使用 `jvmDefault=DISABLE`；宿主、参考包和独立示例须使用配套 SDK，编译配置见第 4 章。
+
+<a id="host-thresholds"></a>
+
+#### 宿主接口门槛
+
+包调用宿主提供的方法时，宿主必须已实现该方法：SDK 使用 `jvmDefault=DISABLE`，旧宿主缺少的方法在调用时抛 `AbstractMethodError`，这是 `Error`，普通 `catch (Exception)` 接不住。包自己实现的可选接口（如 `SourceQualityCatalog`、`SourcePlaybackSessionProvider`、`SourceMembershipProvider`、`SourcePlayerUiProvider`）在不认识它们的宿主上只是不生效。最低宿主编号检查从 code 4 起生效，更早的宿主忽略该字段。
+
+| 宿主接口 | `minHostVersionCode` 至少 |
+| --- | --- |
+| `SourceHost.playRecommendation` | 5 |
+| 本文其余宿主接口 | 4 |
+
+宿主新增包可调用的方法时须递增 versionCode 并在此表登记。
 
 <a id="main-source"></a>
 
@@ -107,7 +120,7 @@ gradle -p source-packs/kugou -PsourceSdk=C:/sdk/source-sdk-release.aar -PsourceS
   "id":"org.example.main", "name":"外部音源示例 main",
   "kind":"MAIN", "versionCode":2, "versionName":"1.0.2",
   "entryClass":"org.example.source.ExampleSource",
-  "apiVersion":1, "minHostVersionCode":4, "minHostVersionName":"0.3.0-麦辣鸡腿堡", "minAndroid":23,
+  "apiVersion":1, "minHostVersionCode":5, "minHostVersionName":"0.3.1-过桥米线", "minAndroid":23,
   "kotlinVersion":"2.3.21", "composeVersion":"1.11.4",
   "capabilities":["HOME","SEARCH","PLAYLIST","ARTIST","ALBUM"], "useCustomPages":true,
   "presentation":{"pageColorArgb":4281559415}
@@ -123,7 +136,7 @@ gradle -p source-packs/kugou -PsourceSdk=C:/sdk/source-sdk-release.aar -PsourceS
 | 真实收听会话 | `mediaPlayback` 可选实现 `SourcePlaybackSessionProvider`，显式提供观察者后接收真实播放事件和累计收听时长；默认关闭，详见 [可选播放会话](#playback-session) |
 | 搜索 | search.kinds、search(query,kind,request)→SourceSearchResult；公共模板仅消费TRACK/COLLECTION/ARTIST/ALBUM，suggestions仅supportsSuggestions=true时调用 |
 | 歌手/专辑 | entities.kinds含artist/album；entity、tracks、collections；歌手内搜索由supportsTrackSearch声明；提供非空trackSortOptions时也须实现空查询的searchTracks，详见第7章 |
-| 我的/歌单 | collections.librarySections列出FAVORITE_TRACKS/CREATED_COLLECTIONS/SAVED_COLLECTIONS；library/detail/tracks；sortOptions/selectedSort/selectSort只在真实支持时声明 |
+| 我的/歌单 | collections.librarySections列出FAVORITE_TRACKS/CREATED_COLLECTIONS/SAVED_COLLECTIONS；library/detail/tracks；sortOptions/selectedSort/selectSort只在真实支持时声明；不声明时宿主负责保存排序，页面仍可排序 |
 | 远端收藏 | favoriteTrackIds返回包内stableId全量集合；SDK允许null，公共刷新此时保留已有索引，不调用isTrackFavorite逐曲补查；公共远端读写需要当前账号，详见第7章；editTrackMetadata对应的本地收藏分支见第11章；批量setTracksFavorite应override保留节流；收藏歌单须supportsCollections=true |
 | 编辑 | collectionEditing.supportedOperations为CREATE/EDIT/DELETE/CHANGE_TRACKS/REORDER的真实子集；writableCollections与create/edit/delete/changeTracks/reorder；未接入 SourceCollectionRemoteOrder 扩展时没有公共远端改序入口；页面排序与远端改序的区别见能力章节 |
 | 电台 | radio.next(previousPayload)→SourceRadioBatch(tracks,continuation)；续页参数由包解释且只在同一会话、同一音源内传递，队列执行归宿主；feedback(track,action)是SDK必需方法，但当前宿主没有调用 |
@@ -350,6 +363,8 @@ B站没有在线歌词服务时不声明LYRICS；仍可独立允许手动歌词�
 # 优化对应接口：source-sdk/build/outputs/aar/source-sdk-release.aar
 ```
 
+本目录附带的 `source-sdk.aar` 就是上面的 release 产物。修改 `source-sdk` 后须重新构建并替换它，否则独立开发者拿到的接口会落后于宿主。
+
 独立工程保留 `settings.gradle.kts`、`build.gradle.kts`、`gradle.properties`、`src/main/AndroidManifest.xml`、入口 Kotlin 和签名清单。直接复制对应 `examples/source-*` 或 `source-packs/*` 的独立构建配置，然后替换自己的稳定 namespace、入口和业务。独立 Gradle 可使用已安装 Gradle 9.6.1，或以原工程 wrapper 绝对路径配合 `-p` 启动；不要假定独立目录已附有 wrapper。
 
 最小 examples/source-main 与 examples/source-supplemental 可分别复制为独立目录。真实参考包的独立构建指不依赖宿主业务源码，并非每个包目录都完全自包含：酷狗和B站通过 sourceSets 引入相邻 ../login-ui/src/main/java；复制这两个业务工程时须一并保留 source-packs/login-ui 与相对目录，或替换其登录展示实现及构建路径。不要把 login-ui 当作宿主共享 ABI 或 SDK AAR 的组成部分。
@@ -398,7 +413,7 @@ release 开启 R8，保留入口无参构造及公开实现：`-keep class 自�
 
 稳定身份由 `id + 签名证书SHA-256` 约束，ID 使用小写字母开头的3至128字符 `[a-z][a-z0-9_.-]{2,127}`。同 ID 换证书会拒绝，即使已删除后重导入也如此。显示名称可改，ID、账号标识和旧曲目 stableId 不应随改名、版本或安装位置变化。
 
-`versionCode` 是大于0的 Long，按数值比较；`versionName` 是非空展示文字。音源管理页只显示 `versionName`，不显示 `versionCode`；同版本不同内容的覆盖在页面上版本号相同，靠“重启应用后生效”提示区分。业务包当前静态 Gradle/JSON/descriptor 需要同步维护；只有 examples 已用生成资产与 BuildConfig 支持 `-PsourceVersion=N`。不要误以为四包也自动识别该参数。生产工程建议从一个版本源生成三处声明。
+`versionCode` 是大于0的 Long，按数值比较；`versionName` 是非空展示文字。音源管理页只显示 `versionName`，不显示 `versionCode`；同版本不同内容的覆盖在页面上版本号相同，靠“重启应用后生效”提示区分。业务包当前静态 Gradle/JSON/descriptor 需要同步维护；只有 examples 已用生成资产与 BuildConfig 支持 `-PsourceVersion=N`。不要误以为业务参考包也自动识别该参数。生产工程建议从一个版本源生成三处声明。
 
 重复导入先完成验签、宿主兼容及签名身份检查，再与当前选定安装比较（有 pending 时优先 pending，否则 active）。只有版本和完整包文件内容相同才返回 ALREADY_INSTALLED；此分支不重新加载入口或初始化。同版本不同内容允许覆盖安装，继续执行 descriptor、能力和隔离初始化校验。
 
@@ -406,7 +421,7 @@ release 开启 R8，保留入口无参构造及公开实现：`-keep class 自�
 
 APK 必须启用 v1/JAR 签名；可同时使用 v2。仅 v2 的 APK 当前不满足验证器。
 
-四个业务参考包的 release 必须使用固定签名身份；Gradle 从 `-PsourceSigningProperties=<私有 properties 文件>` 读取，未传时使用当前根工程的 `keystore/source-signing.properties`。配置项为 `storeFile`、`storePassword`、`keyAlias`、`keyPassword`，其中 storeFile 相对此 properties 文件的目录解析。迁移到其他机器时安全保留并复用同一 keystore 和别名；缺少配置时 release 构建失败，不能自动改用新生成的 debug key。debug 仍使用机器自己的调试密钥，不能承诺不同机器的 debug 包互相覆盖，也不能承诺 debug 与固定签名 release 相互更新。examples 的 release 仍是调试签名的验证样例，正式第三方分发必须自行改为固定私钥。私钥、密码、Cookie、Token及响应正文不得进入仓库或日志。
+业务参考包（QQ、酷狗、网易云、B站、Subsonic）的 release 必须使用固定签名身份；Gradle 从 `-PsourceSigningProperties=<私有 properties 文件>` 读取，未传时使用当前根工程的 `keystore/source-signing.properties`。配置项为 `storeFile`、`storePassword`、`keyAlias`、`keyPassword`，其中 storeFile 相对此 properties 文件的目录解析。迁移到其他机器时安全保留并复用同一 keystore 和别名；缺少配置时 release 构建失败，不能自动改用新生成的 debug key。debug 仍使用机器自己的调试密钥，不能承诺不同机器的 debug 包互相覆盖，也不能承诺 debug 与固定签名 release 相互更新。examples 的 release 仍是调试签名的验证样例，正式第三方分发必须自行改为固定私钥。私钥、密码、Cookie、Token及响应正文不得进入仓库或日志。
 
 ```properties
 # 私有配置示意；使用实际路径与密码，不把配置和 keystore 提交 Git。
@@ -420,18 +435,19 @@ keyPassword=<本机私有值>
 gradle -p source-packs/kugou -PsourceSdk=C:/sdk/source-sdk-release.aar -PsourceSigningProperties=C:/private/musicone/source-signing.properties packageReleaseSource
 ```
 
-当前参考工程的清单版本如下（宿主应用 0.3.0 与音源包版本分别维护；更新参考包时以其清单为准）：
+当前参考工程的清单版本如下（宿主与音源包版本分别维护；更新参考包时以其清单为准）：
 
-| 包 | 展示版本 | versionCode | apiVersion | 类型及后缀 | requiresLogin |
-| --- | --- | ---: | ---: | --- | --- |
-| QQ音乐 | 1.0 | 1 | 1 | MAIN / .mscm | true |
-| 酷狗音乐 | 1.0 | 1 | 1 | MAIN / .mscm | true |
-| 网易云音乐 | 0.1 | 1 | 1 | MAIN / .mscm | true |
-| 哔哩哔哩 | 1.0 | 1 | 1 | SUPPLEMENTAL / .mscp | false |
+| 包 | 展示版本 | versionCode | apiVersion | 最低宿主 code | 类型及后缀 | requiresLogin |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| QQ音乐 | 1.2 | 3 | 1 | 4 | MAIN / .mscm | true |
+| 酷狗音乐 | 1.1 | 2 | 1 | 5 | MAIN / .mscm | true |
+| 网易云音乐 | 0.1 | 1 | 1 | 4 | MAIN / .mscm | true |
+| Subsonic | 0.1 | 1 | 1 | 5 | MAIN / .mscm | true |
+| 哔哩哔哩 | 1.0 | 1 | 1 | 4 | SUPPLEMENTAL / .mscp | false |
 
 `requiresLogin` 的清单缺省值仍为 false，不等于所有参考包都允许访客使用。当前酷狗自定义根页在未认证、会话过期或缺少账号时展示原认证页，非活动预组合根页不启动第二份认证任务；媒体请求还核对真实账号及凭据，不能只改清单绕过包内登录要求。
 
-当前 QQ／酷狗的 debug 和 release 分发任务分别输出 `qq-1.0.mscm`、`kugou-1.0.mscm`，位于各工程 `build/outputs/source-packs/debug` 或 `release`。这些是当前源码配置，不是自动递增规则；正式发布更新仍须遵守前述版本身份规则。
+当前各业务包的 debug 和 release 分发任务输出 `qq-1.2.mscm`、`kugou-1.1.mscm`、`netease-0.1.mscm`、`subsonic-0.1.mscm`、`bilibili-1.1.mscp`，位于各工程 `build/outputs/source-packs/debug` 或 `release`。这些是当前源码配置，不是自动递增规则；正式发布更新仍须遵守前述版本身份规则。
 
 ```powershell
 # 使用自己的Android Build Tools实际路径；不要把真实密码写进命令历史。
@@ -473,7 +489,7 @@ apksigner verify --verbose --print-certs package.apk
 
 宿主通过 `SourceInstance.Content`、AuthenticationContent、SettingsContent 或 `SourceSupplementalPageProvider` 的 SupplementalPage 进入页面资源作用域。作用域提供独立 LocalContext、LocalResources，以及按包隔离的 ResourceIdCache/ImageVectorCache。每个包的Resources同时包含宿主base APK、原有splits与该包私有APK，以保留共享AndroidX的宿主资源引用；不会把所有音源挂到宿主全局Resources。当前缓存适配使用Compose内部ABI，并锁定1.11.4；升级宿主Compose前必须重新验证。
 
-宿主保留资源包 ID `0x7f`；运行时接受 `0x02..0x7e` 且不得与宿主及其 split 的资源包 ID 冲突，示例采用 reserved 范围 `0x70..0x7e`。当前 QQ/酷狗/网易云/B站分别为 0x70/0x71/0x72/0x73，旧主／补充示例分别为 0x74/0x75，最小补充示例为 0x76。单个资源作用域只挂一个外部包，独立第三方可复用示例资源 ID；没有私有 Android 资源时允许没有 `resources.arsc`。采用示例 reserved ID 时 Gradle 配置如下，不可省略 allow-reserved 参数：
+宿主保留资源包 ID `0x7f`；运行时接受 `0x02..0x7e` 且不得与宿主及其 split 的资源包 ID 冲突，示例采用 reserved 范围 `0x70..0x7e`。当前 QQ/酷狗/网易云/B站分别为 0x70/0x71/0x72/0x73，旧主／补充示例分别为 0x74/0x75，最小补充示例为 0x76，Subsonic 为 0x77。单个资源作用域只挂一个外部包，独立第三方可复用示例资源 ID；没有私有 Android 资源时允许没有 `resources.arsc`。采用示例 reserved ID 时 Gradle 配置如下，不可省略 allow-reserved 参数：
 
 ```kotlin
 android {
@@ -521,10 +537,11 @@ favorites、collectionEditing、trackTheme、visuals和pageState没有额外能�
 | 入口 | 当前宿主实际行为 |
 | --- | --- |
 | 主音源搜索 | 仅创建 TRACK／COLLECTION／ARTIST／ALBUM 分类及其“全部”聚合；不创建 CONTENT 分类，也不展示 SourceSearchResult.contents。只声明 CONTENT 可以通过 SEARCH 校验，但公共搜索没有可用分类；需要内容搜索时由包的自定义页面处理 |
-| 公共“我的→我喜欢的音乐” | 先检查 collections.librarySections 是否声明 FAVORITE_TRACKS；未声明时显示不支持提示，不要求登录、不读取该目录。声明后，有认证服务或 requiresLogin=true 的音源仍要求已登录；requiresLogin=false 且无认证服务时可读取真实游客收藏目录，游客缓存与账号缓存隔离，不伪造已登录状态，也不放宽远端收藏写入的账号要求。只取该目录首个返回页的首项集合，再调用 detail 和首批 tracks 取得预览，忽略目录后续集合及 nextCursor，不聚合多个收藏歌曲集合；收藏歌曲集合须在首屏首项，空首屏按读取失败处理并保留已有预览，完整歌曲仍经集合详情分页读取。登录、同步和不支持提示不启动卡片进入转场，未实际打开歌单时恢复卡片交互 |
+| 公共“我的→我喜欢的音乐” | 先检查 collections.librarySections 是否声明 FAVORITE_TRACKS；未声明时不显示“我喜欢”卡片、不要求登录、不读取该目录，顶部改为只显示综合歌单（用户的“隐藏综合歌单”设置对该音源不生效）。声明后，有认证服务或 requiresLogin=true 的音源仍要求已登录；requiresLogin=false 且无认证服务时可读取真实游客收藏目录，游客缓存与账号缓存隔离，不伪造已登录状态，也不放宽远端收藏写入的账号要求。只取该目录首个返回页的首项集合，再调用 detail 和首批 tracks 取得预览，忽略目录后续集合及 nextCursor，不聚合多个收藏歌曲集合；收藏歌曲集合须在首屏首项，空首屏按读取失败处理并保留已有预览，完整歌曲仍经集合详情分页读取。登录、同步和不支持提示不启动卡片进入转场，未实际打开歌单时恢复卡片交互 |
+| 公共“我的→创建／收藏歌单” | 按 collections.librarySections 是否声明 CREATED_COLLECTIONS／SAVED_COLLECTIONS 显示对应分区，未声明的分区不显示；只剩宿主本地分区时连分段按钮一起隐藏。无认证服务且 requiresLogin=false 的音源不显示登录提示，页头显示音源名与“无需登录” |
 | 公共歌手页排序 | trackSortOptions 非空时默认选中首项；普通歌曲列表改走 searchTracks(reference,"",sortId,request)，不受 supportsTrackSearch 限制。supportsTrackSearch 只控制歌手内搜索入口；提供排序选项时必须同时实现空查询的 searchTracks，不能只实现 tracks |
 | 公共歌曲收藏 | 远端收藏链路按歌曲真实来源和当前账号读取 favoriteTrackIds 全量包内stableId，并转换为宿主ID；没有当前账号时该源返回空集合，返回null或读取失败时刷新保留已有索引，不逐曲补齐全量快照。远端单曲切换按当前本地收藏 ID 索引取反，先更新界面，再调用 setTracksFavorite；索引中没有该曲时按未收藏处理，不会先调用 isTrackFavorite 确认。远端写入要求当前账号，不因 requiresLogin=false 放宽身份要求。另有本地分支：来源开启 editTrackMetadata 时，宿主内置收藏动作改为增删本地综合歌单，不走上述远端切换，见第11章 |
-| 公共歌单排序 | 排序选项走 collections.sortOptions／selectedSort／selectSort；未接入 SourceCollectionRemoteOrder 扩展时没有公共远端改序入口；接入后由 supportsRemoteOrder 按具体歌单提供独立对话框，完整读取 orderedTracks 并通过 collectionEditing.reorder 保存。只声明 REORDER 不自动增加入口；选排序条件或宿主本地排序不等于提交远端成员顺序 |
+| 公共歌单排序 | 排序选项走 collections.sortOptions／selectedSort／selectSort；未完整提供 ADDED_DESC／ADDED_ASC／NAME 时由宿主按歌单保存这三种排序，包不用实现；未接入 SourceCollectionRemoteOrder 扩展时没有公共远端改序入口；接入后由 supportsRemoteOrder 按具体歌单提供独立对话框，完整读取 orderedTracks 并通过 collectionEditing.reorder 保存。只声明 REORDER 不自动增加入口；选排序条件或宿主本地排序不等于提交远端成员顺序 |
 | 主音源电台 | 队列通过 radio.next 拉取；SDK 要求实现 feedback(track,action)，但当前宿主电台链路没有调用它，也没有约定宿主发送的 action 值，不能依赖播放、跳曲或收藏自动触发反馈 |
 | 未实现逐页接口的补充内容详情 | 详情显示导入目标、“加入歌单”和“播放所选”；操作不按 IMPORT／PLAYBACK 自动隐藏。两个操作先调用 importing.tracks，缺少 importing 时报告“此音源未提供导入”；即使内容有 playableTrack，也不走列表播放捷径 |
 | 未实现逐页接口的补充远端集合 | “播放全部”不按 PLAYBACK 隐藏；只收集各内容的非空 playableTrack，不自动选择子条目。内容列表的单项播放优先使用 playableTrack，为 null 时进入详情 |
@@ -555,7 +572,7 @@ favorites、collectionEditing、trackTheme、visuals和pageState没有额外能�
 
 #### “我的”最近播放分区
 
-`discovery` 可额外实现 `SourceMySectionPresentation`，通过 `showRecentInMy` 控制公共“我的”页最近播放卡片。未实现时默认显示，仅显式 false 隐藏；不影响首页最近播放，也不保证停止最近记录读取。当前公共最近播放读取直接调用 `recentSnapshot()`，没有以 `supportsRecent` 作为调用门槛，因此不能仅声明 false 就依赖宿主不调用该方法。
+`discovery` 可额外实现 `SourceMySectionPresentation`，通过 `showRecentInMy` 控制公共“我的”页最近播放卡片。未实现时默认显示，仅显式 false 隐藏；不影响首页最近播放，也不保证停止最近记录读取。公共“我的”页以 `supportsRecent` 为门槛：未声明 true（含 discovery 为 null）时不显示最近播放、也不调用 `recentSnapshot()`；声明 true 后才读取，`showRecentInMy=false` 仍可单独隐藏。
 
 #### 公共主模板的首页布局载荷
 
@@ -651,7 +668,7 @@ SourceHomeSection(
 | 模型 | 必须保留的资料 |
 | --- | --- |
 | SourceTrack / SourceTrackDetails | identity、stableId、标题、artists/实体引用和artistsText、album/albumRef、durationMs、artwork、access、qualities、lyrics、localUri、payload、previewUrl、identityAliases |
-| SourceArtwork | url、startArgb/endArgb、mark；没有图不伪造平台占位成真实封面 |
+| SourceArtwork | url、startArgb/endArgb、mark；没有图不伪造平台占位成真实封面。占位渐变默认 0 即透明，需要可见占位时填写颜色。http 地址：公网升级为 https，失败退回 http；局域网、本机和带端口的地址保持 http |
 | TrackAccessInfo | badge(MEMBERSHIP/PURCHASE)、trialAvailable、playable、reason、可选displayBadge（自定义文字及亮暗文字/背景色）；不能删访问事实 |
 | SourceAudioQuality | id、label、mimeType、available、reason、payload；协议私有hash不充当跨来源公共字段 |
 | SourceCollection | identity、stableId、title/subtitle/description/count/artwork、owned、accountFavorites、payload |
@@ -689,7 +706,7 @@ SDK 允许 `SourceCollection.count=null` 表示未知；转换为当前宿主歌
 
 列表首屏、刷新、下一页各自保留请求代次；新查询/换号/退出页面取消旧任务。刷新失败保留旧内容、选择、排序和用户编辑，下一页失败保留已加载页并提供重试，只有成功结果可更新游标。收齐所有页才提交全量替换；不能用一个失败页清空整个歌单。
 
-跨ClassLoader业务失败优先抛公开 `SourceOperationException(code,message,retryable=false)`，code采用协作约定，不是SDK枚举。当前宿主失败策略不读取 retryable，设置 true 不会自动启用重试或改变跳曲行为。AUTH_REQUIRED、AUTH_EXPIRED、SECURITY_VERIFICATION_REQUIRED、REQUEST_REJECTED、RATE_LIMITED、PLAYBACK_RETRY_REQUIRED 会阻止继续尝试其他音质；SourceOperationException 中只有 TRACK_UNAVAILABLE 被标记为可跳过，最终是否跳曲仍受播放场景和音源行为策略控制。SOURCE_REQUEST_FAILED 没有这些专门分支。宿主不能用is包私有异常判断权限。message可供用户显示，不含凭据、签名URL或响应正文；网络故障不要冒充永久无版权或 TRACK_UNAVAILABLE。
+跨ClassLoader业务失败优先抛公开 `SourceOperationException(code,message,retryable=false)`，code采用协作约定，不是SDK枚举。当前宿主失败策略不读取 retryable，设置 true 不会自动启用重试或改变跳曲行为。AUTH_REQUIRED、AUTH_EXPIRED、SECURITY_VERIFICATION_REQUIRED、REQUEST_REJECTED、RATE_LIMITED、PLAYBACK_RETRY_REQUIRED 会阻止继续尝试其他音质；取源最终失败时宿主一律按下方统一失败策略重试或跳曲。TRACK_UNAVAILABLE、SOURCE_REQUEST_FAILED（非网络 IO 引起）视为该音质明确无地址。宿主不能用is包私有异常判断权限。message可供用户显示，不含凭据、签名URL或响应正文；网络故障不要冒充永久无版权或 TRACK_UNAVAILABLE。
 
 <a id="authentication"></a>
 
@@ -721,7 +738,7 @@ SDK 允许 `SourceCollection.count=null` 表示未知；转换为当前宿主歌
 
 主音源、补充内容及补充歌单使用同一规则。`playableTrack`、导入和订阅转成 `SourceTrackDetails` 后，仍按每首曲目的原始 `sourceId` 查询当前音源；本地旧曲目也在访问刷新时重新核验。无需向 `SourceRemoteCollection` 增加整单会员开关，不能用一个源的会员结果替代混合歌单中其他源的结果。
 
-会员结果不替代 `TrackAccessInfo` 的单曲会员／购买／试听／可播事实，也不改变播放取址和音质权限。B站不声明检测，宿主返回 false；按真实返回音轨列出音质，失效内容沿用原可用性判断。QQ、酷狗、网易云主动声明；缺字段或无法确认当前音乐权益时均保持 unknown。
+会员结果不替代 `TrackAccessInfo` 的单曲会员／购买／试听／可播事实，也不改变播放取址和音质权限。B站不声明检测，宿主返回 false；按真实返回音轨列出音质，失效内容沿用原可用性判断。QQ、酷狗、网易云主动声明，Subsonic 不声明；缺字段或无法确认当前音乐权益时均保持 unknown。
 
 `SourceSessionSnapshot(format,version,fields)` 导出完整会话；摘要不是凭据备份。应保留全部Cookie、Token、设备身份、刷新信息和平台需要的其他字段。SourceLegacySession含migrationId/sourceId、preferenceNamespaces和privateFiles；字段字符串格式由迁移双方约定，不把原布尔/整数盲目当字符串写回原偏好。
 
@@ -768,7 +785,7 @@ class MyPlayback : SourceMediaPlayback, SourcePlaybackSessionProvider {
 
 包按 `sessionId` 和 `sequence` 去重，并以 `playedMs` 相对已处理累计值的差额结算，不能将每次累计值全部再次上报。平台要求的歌曲 ID、设备身份、鉴权、签名、开始／结束报文、上报频率及成功读回均由音源包处理；公共层不理解平台协议，也不根据平台名分支。收到暂停、结束或累计值不代表平台已接受请求；网络响应不明时不能自动重发同一新增时长而冒重复入账风险。
 
-当前 QQ 与酷狗参考包均已显式提供观察者，网易云与 B站未接入；这不改变可选接口默认关闭的规则。QQ 在 `PAUSE/END` 按累计差额结算，向下取整到完整秒，毫秒尾数留在同一会话；使用真实歌曲数字 ID、播放票据及统计设备会话生成请求。酷狗同样在 `PAUSE/END` 结算完整秒，每次先读取服务端真实累计基线，再提交本会话新增秒数；另在开始及结束时发送包内播放事件，仅在开始已确认且歌曲身份完整时发送对应结束事件。两包都在发出时长写请求前消费本段差额，响应不明时不重复提交该段；失败不打断播放，也不保证平台已入账。账号或凭据版本变化后丢弃旧会话结果，原最近播放仍独立通过 `discovery.reportPlayed` 处理。
+当前 QQ、酷狗与 Subsonic 参考包已显式提供观察者，网易云与 B站未接入；Subsonic 在累计收听达到歌曲时长一半（最多 4 分钟）或自然播完时向服务器提交一次 scrobble；这不改变可选接口默认关闭的规则。QQ 在 `PAUSE/END` 按累计差额结算，向下取整到完整秒，毫秒尾数留在同一会话；使用真实歌曲数字 ID、播放票据及统计设备会话生成请求。酷狗同样在 `PAUSE/END` 结算完整秒，每次先读取服务端真实累计基线，再提交本会话新增秒数；另在开始及结束时发送包内播放事件，仅在开始已确认且歌曲身份完整时发送对应结束事件。两包都在发出时长写请求前消费本段差额，响应不明时不重复提交该段；失败不打断播放，也不保证平台已入账。账号或凭据版本变化后丢弃旧会话结果，原最近播放仍独立通过 `discovery.reportPlayed` 处理。
 
 该能力与公共／自建播放器 UI 无关，手机横竖屏和平板使用同一播放会话，不随界面转向或开关播放器页重建。缓存播放也以实际播放状态计时，平台是否接受该曲目和凭据由包判断。使用该接口的包须配套包含它的 SDK AAR 与宿主版本；发布说明应列出已验证的宿主构建标识。
 
@@ -783,7 +800,7 @@ SDK 默认 fallbackQualityIds 只在 `STANDARD／EXHIGH／LOSSLESS／HI_RES／DO
 
 #### 音质目录、身份、标准映射与名称
 
-`mediaPlayback` 可同时实现独立可选 `SourceQualityCatalog`；未实现时使用默认音质策略。`qualityCatalog` 列出 `SourceQualityDefinition(id,label="",compactLabel=label,description="",standardQualityId=null)`；`defaultCatalogQualityId` 指向目录中的默认 ID，`catalogFallbackQualityIds(preferredId)` 给出明确回退顺序。目录必须非空，ID 非空且不重复，默认值必须存在，标准映射必须是下表已知标准 ID；无效声明报错，不静默缩成标准音质。名称可以省略：有标准映射时使用标准通用长／短名称，无映射的单档显示“默认音质”，多档显示“音质 1／音质 2…”；短名省略时继承对应通用短名或完整名称。目录顺序用于展示优先顺序，不代替显式回退链。
+`mediaPlayback` 可同时实现独立可选 `SourceQualityCatalog`；未实现时使用默认音质策略。`qualityCatalog` 列出 `SourceQualityDefinition(id,label="",compactLabel=label,description="",standardQualityId=null)`；`defaultCatalogQualityId` 指向目录中的默认 ID，`catalogFallbackQualityIds(preferredId)` 给出明确回退顺序。目录必须非空，ID 非空且不重复，默认值必须存在，标准映射必须是下表已知标准 ID；无效声明报错，不静默缩成标准音质。名称可以省略：有标准映射时使用标准通用长／短名称，无映射的单档显示“默认音质”，多档显示“音质 1／音质 2…”；短名省略时继承对应通用短名或完整名称。目录顺序用于展示优先顺序，不代替显式回退链。Subsonic 参考包实现了该接口：原始音质（无标准映射，默认档）、MP3 320k（映射 EXHIGH）、MP3 128k（映射 STANDARD）。
 
 自定义 ID 以原始字符串区分身份，和 `sourceId` 共同组成独立音质身份。同源的 `flac-normal` 与 `flac-master` 即使都映射 `LOSSLESS`，仍是两个可独立选择、保存偏好和缓存的档位；其他源复用同名 ID 也不会合并。`standardQualityId` 只说明标准能力，用于迁移旧标准首选、移动网络标准档上限和 Dolby 设备限制，不能拿它替换解析请求、返回资源或缓存的原始 ID。无映射时不会凭名称猜测无损、Hi-Res 或 Dolby；返回资源的实际格式、码率仍须真实。
 
@@ -827,6 +844,8 @@ val detailed = existingDetails.copy(access = access)
 
 `SourcePlaybackResource`含address、qualityId、format、inlineManifest、segments、recovery、accountId、bitRate、actualFormat、trial、verificationPending。PlaybackAddress提供url、headers、alternatives、mimeType、cacheIdentity、expiresAtEpochMs。每段SourceMediaSegment还有headers/byteRange/alternatives。结果须可直接消费，不得用二维码或未验证接口URL冒充媒体。
 
+网络流的 DSD（DSF/DFF）、APE、WavPack、ALAC 由宿主原生解码，Media3 默认链路无法播放。宿主只按 URL 路径后缀（`.dsf`/`.dff`/`.ape`/`.wv`）或 address.mimeType 分流，不额外探测网络流：mimeType 含 `dsf`/`dff`/`dsd`/`ape`/`wavpack` 即走原生；ALAC 与 AAC 同为 MP4 容器，须明确填 `audio/alac`，填 `audio/mp4` 仍走 Media3。原生解码靠重新打开地址实现定位，服务器须支持 HTTP Range。
+
 稳定cacheIdentity包含来源、账号和真实资源身份/规格，不能只用歌曲标题或短期签名URL。请求头和备用地址完整返回。DASH使用data URI/inlineManifest及实际音轨segments，宿主为相关URL绑定相同稳定键与各自headers；不能把裸CDN地址当DASH清单替代。当前适配层不读取 SourceMediaSegment.byteRange，也不据此生成 HTTP Range 请求；DASH 的初始化／索引等范围应由真实清单表达。address.alternatives 与 segment.alternatives 目前只用于登记请求头和稳定缓存键，不会仅因填写这些列表而自动切换备用 URL；地址选择仍取决于实际清单、播放器处理或包重新取址。当前宿主已接的主要执行路径是单音频资源及音频DASH；SDK字段存在不代表任意多文件/自定义分段清单均已完整缓存验收。
 
 `inlineManifest` 当前专用于音频 DASH：非 null 时编码为 `data:application/dash+xml` 并优先于 address.url 使用，不是任意清单格式入口。资源 accountId 不独立覆盖当前适配器的曲目账号或缓存身份；recovery 不由宿主解析，而是随当前进程保存的完整资源在恢复时通过 previous 交回包。
@@ -837,13 +856,15 @@ val detailed = existingDetails.copy(access = access)
 
 recover重新取有效票据并保留稳定身份。当前 SourcePlaybackAdapter.recover 只用 track 和 qualityId 构造请求，supportedMimeTypes／deviceCapabilities 均为空，automatic=false、purpose=PLAYBACK；没有把首次 resolve 的设备能力、自动选质标志和请求用途传回来。previous 是上次实际资源，不包含原始请求。B站参考包的 recover 直接再次 resolve，因此按这些缺省值重新选音轨，可能与首次解析的条件不同；接入者不能假定恢复请求完整继承了首次选质策略。
 
-当前前台起播及播放器错误恢复，在等待音源激活后设置 30 秒的整体解析协程超时；初始化等待不计入，候选音质也不是各有 30 秒。超时显示“音源加载超时，请重试”，本次不自动跳曲。音源挂起操作须响应取消，不能依赖这次调用无限等待人工验证。该限制不代表媒体地址有效期，也不能推广为预取、缓存或全部 Host 操作的统一时限。
+当前前台起播及播放器错误恢复，在等待音源激活后对每个候选音质单独限时 3 秒，超时视为该档结果不确定并降到下一档；整轮另有 30 秒兜底。初始化等待不计入。音源挂起操作须响应取消，不能依赖这次调用无限等待人工验证。该限制不代表媒体地址有效期，也不能推广为预取、缓存或全部 Host 操作的统一时限。
 
-expiresAtEpochMs有实际服务依据才填写，不人为统一成30秒。当前参考包由QQ声明50分钟、B站声明90分钟、酷狗和网易声明18分钟。宿主预取优先使用 PlaybackAddress.expiresAtEpochMs，未声明时采用18分钟默认值；这是宿主的票据复用期限，不代表平台保证该URL在此期间始终有效，也不覆盖包给出的真实到期。trial不能作为完整缓存，verificationPending须由真实媒体时长等补验后再标记完整。播放器/队列/Media3/USB/完整性检查和下载执行归宿主，包负责格式/权限/取址与恢复资料。
+expiresAtEpochMs有实际服务依据才填写，不人为统一成30秒。当前参考包由QQ声明50分钟、B站声明90分钟、酷狗和网易声明18分钟，Subsonic 未声明。宿主预取优先使用 PlaybackAddress.expiresAtEpochMs，未声明时采用18分钟默认值；这是宿主的票据复用期限，不代表平台保证该URL在此期间始终有效，也不覆盖包给出的真实到期。trial不能作为完整缓存，verificationPending须由真实媒体时长等补验后再标记完整。播放器/队列/Media3/USB/完整性检查和下载执行归宿主，包负责格式/权限/取址与恢复资料。
 
 常规 resolve 传入的设备策略事实包括 `dolby-decoder`、`dolby-unlocked`、`usb-exclusive`。设备解码支持、用户显式解锁、USB开关且实际连接是不同事实；按这些参数选择音轨时，解锁不越过USB限制。当前 recover 请求不携带这些参数，不能把常规 resolve 的参数传递范围延伸到恢复路径。包按自己的真实协议选择格式，宿主保留设备输出策略。模拟器播放不证明物理USB或杜比硬件验收。
 
-可选 `SourcePlaybackBehavior` 由mediaPlayback服务额外实现：renewOnPlayerErrorLimit默认0，skipOnPlayerError默认true，pauseOnFailure默认false。B站声明一次播放器错误重取票，酷狗声明不自动跳过并暂停；宿主保留当前进程实际解析资源，恢复时传给已有recover(request,previous)，纯缓存没有原资源时重新解析。不持久化恢复地址或载荷，也不按平台名判定行为。
+可选 `SourcePlaybackBehavior` 由mediaPlayback服务额外实现：renewOnPlayerErrorLimit默认0，宿主取它与2的较大值作为续播重试次数；skipOnPlayerError 已不再生效，失败后一律按下方统一策略跳曲；pauseOnFailure默认false，只在无法跳到下一首时决定是否暂停。宿主保留当前进程实际解析资源，恢复时传给已有recover(request,previous)，纯缓存没有原资源时重新解析。不持久化恢复地址或载荷，也不按平台名判定行为。
+
+宿主统一失败策略（覆盖包声明）：当前歌取源任何错误都重试两次，间隔2秒，每档音质单独3秒超时；同一次播放内已明确无地址的音质重试时直接跳过；所有候选档都明确无地址（无版权等）时不再重试，立即跳曲。网络IO错误、超时、登录/风控类错误不算明确无地址。首轮可走recover，重试改走完整resolve。播放器中途出错至少续播重试两次（取包声明与2的较大值），间隔2秒。仍失败即跳下一首，skipOnPlayerError=false不再阻止跳过；连续3首无法播放后暂停。预加载失败只记录，切到该曲时再按上述流程取源。包无需为“无版权/无地址”专门映射TRACK_UNAVAILABLE才能被跳过。
 
 `lyricProvider` 可实现 `SourceLyricBehavior`：`waitForSingleSwitchSettlement` 默认 false，QQ 声明 true 用于切歌歌词交接；`preserveVerbatimFallback` 默认 false，网易云／酷狗声明 true，保留逐字后备。逐字更新通过 `parserVersion`／`refreshPlainLyricsForVerbatim` 控制；未实现行为接口时使用默认策略。
 
@@ -859,7 +880,9 @@ collections可额外实现 `SourceCollectionCachePolicy.includesInCacheLibrary(c
 
 `SourceLyricProvider.parserVersion`默认0，表示不额外限制歌词缓存版本；声明非0时宿主只复用对应解析器版本，旧缓存仍可作为失败后备。refreshPlainLyricsForVerbatim默认false；QQ设true，在开启逐字效果但缓存只有整行时请求补齐。解析器版本由包声明，宿主不携带平台解析器常量。
 
-`SourceLyricProvider.lyrics(track)` 返回SourceLyrics(lines,plainText)或null。SourceLyricLine为startMs/text/words/translation/transliteration/parserVersion，SourceLyricWord为startMs/durationMs/text。当前宿主转换只读取 lines 中的 startMs、text、words、translation、parserVersion，不读取或往返保留 plainText 和 transliteration；只填 plainText 且 lines 为空时，公共歌词页不会显示这些文本，也不会自动解析它们。需要公共歌词页展示的内容须通过 lines 提供，未提供真实时间的数据不能伪造同步效果。整行和词时间都使用毫秒原始时间线，保留真实逐字数据及解析器版本，不把逐字降成整行后宣称支持逐字。
+`SourceLyricProvider.lyrics(track)` 返回SourceLyrics(lines,plainText)或null。SourceLyricLine为startMs/text/words/translation/transliteration/parserVersion，SourceLyricWord为startMs/durationMs/text。当前宿主转换只读取 lines 中的 startMs、text、words、translation、transliteration、parserVersion，不读取或往返保留 plainText；只填 plainText 且 lines 为空时，公共歌词页不会显示这些文本，也不会自动解析它们。需要公共歌词页展示的内容须通过 lines 提供，未提供真实时间的数据不能伪造同步效果。整行和词时间都使用毫秒原始时间线，保留真实逐字数据及解析器版本，不把逐字降成整行后宣称支持逐字。
+
+`transliteration` 用于歌词正文上方的注音，不是整行音译，支持两种格式：①位置标注，写出整行原文并把需注音的片段写成 `{原文片段|读音}`（如 `{今日|きょう}は{晴|は}れ`），去掉标注后须与 text 逐字一致，不需要逐字数据，旧宿主不显示；②逐词格式：用制表符分隔，段数必须等于 `words` 数量；空段表示该词无注音，`+` 表示与前一词合标，其他段是空格分隔的音，每个音可写成 `音@相对字组首词起点的毫秒偏移+时长`。例如 `ko@0+280 ko@280+200 ro@480+300\tno\t\tkyou\t+`。每组注音是一道光，跟随词的进度从左到右扫过整组，逐音时间不影响点亮。段数不符或格式错误时宿主整句不显示注音，旧宿主会忽略该字段；用户在“歌词显示内容”选择注音后才显示。发布前应校验读音，对不上的句子填 null，不要输出错位注音。
 
 `SourceLyricWord.startMs` 是歌曲时间线上的绝对毫秒，结束时间为 startMs+durationMs，不是相对所属行的偏移。音源交付已排序的行，宿主转换不会自动排序。可复用的歌词缓存要求行时间非负、文本非空白、行时间非降序，词时间非负且结束不早于开始。点击歌词的 350ms 预卷由宿主处理，音源返回原始时间戳，不预减该值。
 
@@ -874,6 +897,7 @@ lineLeadMs与wordLeadMs分别控制整行和逐字时钟，正数表示提前，
 | QQ | 275 / 105ms |
 | 酷狗 | 185 / 115ms |
 | 网易云 | 565 / 0ms；565替代原380，不叠加 |
+| Subsonic | 200 / 0ms |
 | B站及未声明包 | 0 / 0ms |
 
 `SourcePermissions.editTrackMetadata`、replaceManualLyrics、adjustLineOffset分别控制资料编辑、手动歌词替换、用户整行偏移，默认全false；允许偏移不等于允许替换或编辑。宿主在UI和写入接口再次检查权限，不能只隐藏按钮。歌词服务是否在线可用也不能推断这三项权限。
@@ -884,7 +908,7 @@ lineLeadMs与wordLeadMs分别控制整行和逐字时钟，正数表示提前，
 
 `setManualLyrics` 的非 null URI 会立即读取并复制到宿主资料库的独立歌词文件，校验能解析出有效时间轴；失败时清理新副本。支持 LRC、XLRC、SPL，未知扩展按 LRC 处理；之后编辑原文件不会同步改变已导入副本。传 null 只清除人工覆盖，仍可能回退资料库保存的默认歌词，再按实际能力读取在线歌词，不能当作强制“无歌词”。
 
-SourcePresentation.pageColorArgb用于页面来源色；radioColorArgb/radioLabel用于电台入口，radioLabel默认“猜你喜欢”。可选radioPaletteLight/radioPaletteDark是两套ARGB列表，顺序为background/foreground/wave/badge/badgeInk；按完整五色声明，避免把平台调色规则硬编码到公共模板。SourceTrackTheme.colorArgb(track)独立返回当前曲目有效ARGB或null；null由宿主按背景使用黑/白。页面色不自动充当每首曲目主题色，曲目结果须校验当前请求身份防止迟到覆盖。 宿主按音源及运行实例桥接已解析颜色，缓存曲目的旧账号或空账号不影响平台展示色；换曲和切回平台可沿用已解析色，实例替换或停用后失效。首次尚未取得有效曲目色时仍使用黑/白回退，不借用页面色。
+SourcePresentation.pageColorArgb用于页面来源色；radioColorArgb/radioLabel用于电台入口，radioLabel默认“猜你喜欢”。可选radioPaletteLight/radioPaletteDark是两套ARGB列表，顺序为background/foreground/wave/badge/badgeInk；按完整五色声明，避免把平台调色规则硬编码到公共模板。SourceTrackTheme.colorArgb(track)独立返回当前曲目有效ARGB或null；null由宿主按背景使用黑/白。未提供 trackTheme（为 null）的音源，宿主以 pageColorArgb 作为其全部曲目的主题色；提供了 trackTheme 时完全以其结果为准，返回 null 即不要曲目色，宿主不再借用页面色。曲目结果须校验当前请求身份防止迟到覆盖。 宿主按音源及运行实例桥接已解析颜色，缓存曲目的旧账号或空账号不影响平台展示色；换曲和切回平台可沿用已解析色，实例替换或停用后失效。首次尚未取得有效曲目色时，有 trackTheme 的音源使用黑/白回退，没有 trackTheme 的音源直接使用页面色；两者都没有时使用黑/白。
 
 曲目主题色须在 0 至 0xFFFFFFFF 的 ARGB 范围内且 alpha 非零；透明或越界值按未声明处理，使用宿主回退颜色。
 
@@ -1246,10 +1270,17 @@ remove(id)立即关闭实例和任务租约，删除active/pending/rollback代�
 | 同目录SourceQualityCatalog.kt | 自定义音质目录、默认与回退 ID |
 | 同目录SourcePlaybackSession.kt | 默认关闭的会话观察者、实际收听累计值、事件及结束原因 |
 | 同目录SourceLyricsAndPlayback.kt / SourceHostServices.kt / SourceVisuals.kt | 歌词/主题/播放、源背景声明，以及宿主库/缓存/UI能力 |
+| 同目录SourceBehavior.kt / SourcePlayerPresentation.kt / SourceTrackBadge.kt | 播放与歌词行为策略、音质文案与读取提示、歌曲角标 |
+| 同目录SourceMembership.kt | 默认关闭的会员检测 |
+| 同目录SourcePlayerUi.kt | 主音源自建完整播放器 |
+| 同目录SourceRootPageUi.kt / SourceHomeShelfComponents.kt / SourceLoadedHomeComponents.kt / SourceCachedArtworkComponents.kt | 一级根页与滚动上报、带边距货架、带已加载歌曲的首页卡、冷启动封面准备 |
+| 同目录SourceHomeContinuation.kt / SourceMySectionPresentation.kt | 首页暂存续接、“我的”最近播放分区 |
+| 同目录SourceCollectionCachePolicy.kt / SourceCollectionReturnBehavior.kt | 账号缓存目录筛选、集合返回后刷新 |
 | source-runtime/src/main/java/com/musicone/source/runtime/ | ArchiveVerifier/Manifest/Loader/CapabilityValidator/GuardedEntry/Repository/ActivationTransaction/ResourceScope |
 | examples/source-main / examples/source-supplemental | 最小独立编译、资源、存储与故障注入验收工程 |
 | examples/source-supplemental-simple | 最小直链解析／播放工程，单一 source.properties 生成清单与身份常量 |
-| source-packs/qq / kugou / netease / bilibili | 真实业务参考；实现和验收状态分别查对应README与主任务记录 |
+| examples/player-ui | 自建播放器接线片段，不是完整 Gradle 工程 |
+| source-packs/qq / kugou / netease / subsonic / bilibili | 真实业务参考；实现与协议说明见各包 README |
 
 接入资料库扩展时，还须验证等价收藏、只读资格、完整远端顺序、循环游标、重复歌曲、账号切换、未声明扩展时的默认行为、详情空值与清空、变化流失效；网络写入与手机／平板交互分别验收。
 

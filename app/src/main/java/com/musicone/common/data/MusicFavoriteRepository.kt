@@ -2,6 +2,8 @@ package com.musicone
 
 import android.content.Context
 import com.musicone.sourceintegration.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** 云端收藏只由包执行，宿主仍按旧账号命名空间保存离线收藏索引。 */
 internal class MusicFavoriteRepository(context: Context) {
@@ -20,7 +22,8 @@ internal class MusicFavoriteRepository(context: Context) {
         val rawIds = requireNotNull(requireNotNull(service.favorites) { "此音源不支持收藏" }.favoriteTrackIds()) { "此音源不支持读取收藏身份" }
         val ids = rawIds.mapTo(hashSetOf()) { sourceStorageId(source.id, owner, it) }
         check(service.authentication?.currentAccount()?.account?.id == owner) { "账号已变化，请刷新收藏" }
-        MusicDiskCache.get(application).setFavorites("${source.name}:$owner", ids)
+        // 缓存索引持有磁盘缓存锁，不能在主线程等待。
+        withContext(Dispatchers.IO) { MusicDiskCache.get(application).setFavorites("${source.name}:$owner", ids) }
         knownIds[source.id] = ids
         return ids
     }
@@ -33,6 +36,6 @@ internal class MusicFavoriteRepository(context: Context) {
         val owner = service.authentication?.currentAccount()?.account?.id ?: error("请先登录${source.label}")
         requireNotNull(service.favorites) { "此音源不支持收藏" }.setTracksFavorite(tracks.distinctBy(MusicTrack::id).map { it.toSourceTrack(owner) }, liked)
         check(service.authentication?.currentAccount()?.account?.id == owner) { "账号已变化，旧收藏结果已取消" }
-        MusicDiskCache.get(application).changeFavorites("${source.name}:$owner", tracks.map { it.id }, liked)
+        withContext(Dispatchers.IO) { MusicDiskCache.get(application).changeFavorites("${source.name}:$owner", tracks.map { it.id }, liked) }
     }
 }

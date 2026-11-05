@@ -6,6 +6,12 @@ internal val MAIN_MUSIC_SOURCES get() = com.musicone.sourceintegration.SourcePac
 /** 是否提供登录入口与是否强制登录分别判断，允许游客的平台仍可登录。 */
 internal val MusicSource.supportsAuthentication get() = com.musicone.sourceintegration.SourcePackageController.current()?.running(id)?.entry?.authentication != null
 internal val MusicSource.requiresAccount get() = com.musicone.sourceintegration.SourcePackageController.current()?.running(id)?.entry?.descriptor?.requiresLogin == true
+/** 已启用且既不提供登录也不强制登录的音源，界面显示“无需登录”而不是登录提示。 */
+internal val MusicSource.loginFree get() = this != MusicSource.LOCAL &&
+    com.musicone.sourceintegration.SourcePackageController.current()?.running(id) != null && !supportsAuthentication && !requiresAccount
+/** 与能力校验一致，只看包是否真正提供设置页。 */
+internal val MusicSource.supportsSourceSettings get() =
+    com.musicone.sourceintegration.SourcePackageController.current()?.running(id)?.entry?.settings != null
 internal val MusicSource.supportsLibraryEditing get() = this == MusicSource.LOCAL ||
     com.musicone.sourceintegration.SourcePackageController.current()?.running(id)?.entry?.descriptor?.permissions?.editTrackMetadata == true
 internal val MusicSource.supportsManualLyrics get() = this == MusicSource.LOCAL ||

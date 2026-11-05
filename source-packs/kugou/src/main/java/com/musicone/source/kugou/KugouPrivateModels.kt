@@ -33,7 +33,7 @@ internal data class PlaybackSource(val url: String, val requestedQuality: AudioQ
     val cacheKey: String? = null, val mimeType: String? = null)
 internal data class LyricWord(val startMs: Long, val endMs: Long, val text: String)
 internal data class TimedLyric(val timeMs: Long, val text: String, val translation: String? = null,
-    val words: List<LyricWord> = emptyList(), val parserVersion: Int = 0)
+    val words: List<LyricWord> = emptyList(), val parserVersion: Int = 0, val transliteration: String? = null)
 internal fun MusicTrack.remoteId(): String = id.removePrefix("kugou-")
 internal fun MusicPlaylist.remoteId(): String = id.removePrefix("kugou-")
 internal fun MusicPlaylist.isAccountFavorites(): Boolean = isOwned && isPlatformFavorites

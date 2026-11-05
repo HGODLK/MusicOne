@@ -34,7 +34,7 @@ internal class SourceRadioRepository(private val context: Context, private val s
             continuation.write(session, sourceId, page.continuation)
             page.tracks.forEach { item ->
                 val track = item.toMusicTrack()
-                if (track.id !in existingIds) tracks.putIfAbsent(track.id, track)
+                if (track.id !in existingIds) tracks.getOrPut(track.id) { track }
             }
             if (tracks.size >= targetSize) return@coroutineScope tracks.values.take(targetSize)
         }

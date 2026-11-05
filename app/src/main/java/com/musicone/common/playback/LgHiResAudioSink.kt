@@ -14,7 +14,7 @@ import java.nio.ByteBuffer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
 
-/** 只接管原厂 G7／G8 有线耳机的整数 PCM，其他输出继续交给原有 Sink。 */
+/** 只接管带 Quad DAC 的 LG 原厂有线耳机输出的整数 PCM，其他输出继续交给原有 Sink。 */
 @androidx.annotation.OptIn(UnstableApi::class)
 internal class LgHiResAudioSink(context: Context, delegate: AudioSink) : ForwardingAudioSink(delegate) {
     private val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -44,7 +44,9 @@ internal class LgHiResAudioSink(context: Context, delegate: AudioSink) : Forward
     }
 
     private fun targetDevice(): AudioDeviceInfo? {
-        if (!LgHiResPreferences.enabled.value || !isLgG7G8(Build.MODEL)) return null
+        // AudioRouting 自 API 24 起才有；Android 6 的 LG 机型走普通输出。
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return null
+        if (!LgHiResPreferences.enabled.value || !isLgQuadDacModel(Build.MODEL)) return null
         val devices = audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
         if (devices.any(::isUsbAudioOutput)) return null
         return devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES || it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET }
@@ -78,7 +80,7 @@ internal class LgHiResAudioSink(context: Context, delegate: AudioSink) : Forward
         retryAfterFlush = false
         val device = targetDevice()
         val bits = lgPcmOutputDepth(format, sourceDepth)
-        if (device != null && bits != null && !dolby && parameters == PlaybackParameters.DEFAULT && !skipSilence &&
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && device != null && bits != null && !dolby && parameters == PlaybackParameters.DEFAULT && !skipSilence &&
             channels == null && format.encoderDelay == 0 && format.encoderPadding == 0) {
             try {
                 super.reset()
@@ -109,7 +111,7 @@ internal class LgHiResAudioSink(context: Context, delegate: AudioSink) : Forward
         } else {
             PlaybackOutputStatus.lgDetail(when {
                 !LgHiResPreferences.enabled.value -> "已关闭"
-                !isLgG7G8(Build.MODEL) -> "系统输出"
+                !isLgQuadDacModel(Build.MODEL) -> "系统输出"
                 device == null -> "等待 3.5mm 有线耳机"
                 else -> "系统输出"
             })

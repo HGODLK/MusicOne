@@ -11,4 +11,6 @@ data class TimedLyric(
     val parserVersion: Int = 0,
     // 资料库时间线已应用用户整行与逐字偏移，展示层不能再次移动。
     val libraryTimeline: Boolean = false,
+    // 音源包提供的逐词注音，格式见 LyricRuby.kt；时间相对字组起点，不受偏移影响。
+    val transliteration: String? = null,
 )

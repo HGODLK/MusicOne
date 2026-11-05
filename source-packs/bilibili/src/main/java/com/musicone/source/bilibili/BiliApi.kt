@@ -78,6 +78,7 @@ internal class BiliApi(context: Context) {
                         upName = upper?.optString("name", "哔哩哔哩") ?: "哔哩哔哩",
                         durationSec = item.optLong("duration", 0L),
                         isInvalid = isInvalid,
+                        pageCount = item.optInt("page", 0),
                     ))
                 }
             }

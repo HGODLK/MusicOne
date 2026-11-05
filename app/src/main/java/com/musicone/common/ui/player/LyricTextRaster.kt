@@ -26,7 +26,7 @@ private data class LyricTextRasterKey(
     val visibleRanges: List<TextRange>?,
 )
 
-private class LyricTextRasterCache {
+private class LyricTextRasterCache(private val maxRetainedBytes: Long) {
     private val entries = LinkedHashMap<LyricTextRasterKey, ImageBitmap>(8, .75f, true)
     private var retainedBytes = 0L
 
@@ -36,11 +36,11 @@ private class LyricTextRasterCache {
         val bitmap = ImageBitmap(key.bounds.width, key.bounds.height)
         playbackTrace("MusicOne:lyric-raster-miss") { draw(bitmap) }
         val bytes = key.bounds.width.toLong() * key.bounds.height * 4L
-        if (bytes <= MAX_RETAINED_BYTES) {
+        if (bytes <= maxRetainedBytes) {
             entries[key] = bitmap
             retainedBytes += bytes
             val iterator = entries.entries.iterator()
-            while (retainedBytes > MAX_RETAINED_BYTES && iterator.hasNext()) {
+            while (retainedBytes > maxRetainedBytes && iterator.hasNext()) {
                 val eldest = iterator.next()
                 retainedBytes -= eldest.key.bounds.width.toLong() * eldest.key.bounds.height * 4L
                 iterator.remove()
@@ -54,13 +54,12 @@ private class LyricTextRasterCache {
         val recent = entries.values.toList().asReversed()
         return lyricRasterPreparationIndices(recent.map { it.width.toLong() * it.height * 4L }).map(recent::get)
     }
-
-    private companion object {
-        const val MAX_RETAINED_BYTES = 8L * 1024L * 1024L
-    }
 }
 
-private val lyricTextRasterCache = LyricTextRasterCache()
+private val lyricTextRasterCache = LyricTextRasterCache(maxRetainedBytes = 8L * 1024L * 1024L)
+
+// 注音按音节整首歌复用，单独限额，不挤占正文位图。
+private val lyricRubyRasterCache = LyricTextRasterCache(maxRetainedBytes = 4L * 1024L * 1024L)
 
 /** 仅向系统提交现有位图的准备请求，不录制或输出画面，也不宣称 GPU 已完成。 */
 internal suspend fun prepareCachedLyricRasters() {
@@ -93,10 +92,21 @@ internal fun lyricTextRaster(
                 constraints = input.constraints.copy(minWidth = layout.size.width, maxWidth = layout.size.width),
             )
         }
-        CanvasDrawScope().draw(input.density, input.layoutDirection, Canvas(raster),
-            Size(raster.width.toFloat(), raster.height.toFloat())) {
-            translate(-bounds.left.toFloat(), -bounds.top.toFloat()) { drawText(inkLayout, color = color) }
-        }
+        drawLyricInk(raster, inkLayout, bounds, color)
+    }
+}
+
+/** 单个音的位图；bounds 相对排版原点，明暗由绘制时的透明度决定，不进入缓存。 */
+internal fun lyricRubyRaster(layout: TextLayoutResult, bounds: IntRect, color: Color): ImageBitmap =
+    lyricRubyRasterCache.getOrCreate(LyricTextRasterKey(layout.layoutInput, bounds, color, null)) { raster ->
+        drawLyricInk(raster, layout, bounds, color)
+    }
+
+private fun drawLyricInk(raster: ImageBitmap, layout: TextLayoutResult, bounds: IntRect, color: Color) {
+    val input = layout.layoutInput
+    CanvasDrawScope().draw(input.density, input.layoutDirection, Canvas(raster),
+        Size(raster.width.toFloat(), raster.height.toFloat())) {
+        translate(-bounds.left.toFloat(), -bounds.top.toFloat()) { drawText(layout, color = color) }
     }
 }
 

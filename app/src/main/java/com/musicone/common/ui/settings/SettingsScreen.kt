@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,10 +44,12 @@ internal fun SourceSettingsScreen(
     onOpenLogin: () -> Unit,
     onLogout: () -> Unit,
     onOpenManagement: () -> Unit = {},
+    onOpenSourceSettings: (MusicSource) -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val sessions = androidx.compose.runtime.remember(state.sessionRevision) { PlatformPreferences(context).read().sessions }
-    fun label(source: MusicSource): String = if (state.selectedSource == source) selectedSessionLabel(state)
+    fun label(source: MusicSource): String = if (source.loginFree) "无需登录"
+        else if (state.selectedSource == source) selectedSessionLabel(state)
         else sessions[source]?.account?.nickname?.let { "已登录 · $it" } ?: "未登录"
     val accountActions = PlatformAccountActionsUi(state.selectedSource, state.selectedSource.supportsAuthentication,
         state.account != null, state.sourceSelected, state.sessionStatus == SessionStatus.CHECKING)
@@ -69,13 +72,14 @@ internal fun SourceSettingsScreen(
                             true,
                             if (source == MusicSource.LOCAL) "无需账号 · 导入音乐即可使用" else label(source),
                             { onSelectSource(source) },
+                            onOpenSettings = if (source.id in state.settingsSourceIds) { { onOpenSourceSettings(source) } } else null,
                         )
                     }
                     Crossfade(accountActions, animationSpec = musicMotion(220), label = "平台账号操作衔接") { accountState ->
                         if (accountState.selectedSource == MusicSource.LOCAL) {
                             Text("本地音乐无需登录", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         } else if (!accountState.supportsAuthentication) {
-                            Text("当前音源不提供登录", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("当前音源无需登录", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         } else if (accountState.hasAccount) {
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 OutlinedButton(onClick = onOpenLogin) { Text("重新登录") }
@@ -121,6 +125,7 @@ private fun PlatformChoice(
     enabled: Boolean,
     status: String,
     onClick: () -> Unit,
+    onOpenSettings: (() -> Unit)? = null,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick),
@@ -134,6 +139,11 @@ private fun PlatformChoice(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(source.label, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     PlatformAvailabilityBadge(source)
+                    // 齿轮单独接住点击，不触发整行的切换主音源。
+                    if (onOpenSettings != null) IconButton(onClick = onOpenSettings, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.Settings, contentDescription = "${source.label}设置", modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
                 Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
             }

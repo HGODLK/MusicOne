@@ -62,7 +62,8 @@ internal fun ExpandedPlayerContent(state: MusicOneUiState, track: MusicTrack, vi
                 if (phoneRotation != 0) {
                     Box(Modifier.fillMaxSize().padding(phonePlayerLandscapePadding(phoneRotation, balanceHorizontal = true))) {
                         PhoneLandscapePlayer(state, track, visualTrack, motion, viewModel, contentActivated,
-                            showLyrics = landscapeLyrics, lyricsEndInset = phoneLandscapeLyricsEndInset(phoneRotation))
+                            showLyrics = landscapeLyrics, lyricsEndInset = phoneLandscapeLyricsEndInset(phoneRotation),
+                            onCloseLyrics = { landscapeLyrics = false })
                     }
                 } else {
                     BoxWithConstraints(Modifier.fillMaxSize().playerStableStatusBarsPadding().navigationBarsPadding()) {

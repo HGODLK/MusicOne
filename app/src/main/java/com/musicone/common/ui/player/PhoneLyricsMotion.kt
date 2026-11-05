@@ -29,6 +29,7 @@ internal class PhoneLyricsMotion(initiallyVisible: Boolean, private val scope: C
     private val frameDriver: LyricFrameDriver? = null,
     private val onMotionStart: () -> Unit = {}) {
     val spatialTravel = PhoneLyricsSpatialTravel()
+    val listEdge = PhoneLyricsListEdge()
     val lyrics = Animatable(if (initiallyVisible) 1f else 0f, visibilityThreshold = .0005f)
     val header = Animatable(if (initiallyVisible) 1f else 0f, visibilityThreshold = .0005f)
     val entranceAlpha = Animatable(1f)

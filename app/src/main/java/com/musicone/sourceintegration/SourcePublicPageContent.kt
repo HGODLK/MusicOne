@@ -84,6 +84,7 @@ private fun SourcePublicPageScene(request: SourcePageRequest, player: MusicPlayb
     val search: MainSourceSearchViewModel = viewModel()
     val searchState by search.state.collectAsStateWithLifecycle()
     val playback by player.state.collectAsStateWithLifecycle()
+    val playSortedPlaylist = rememberSortedPlaylistPlay(platformState.account?.userId, player::playPlaylist)
     val playlists = rememberRecommendationNavigation()
     val entities = rememberEntityNavigation()
     val settings = chrome.settings
@@ -183,12 +184,12 @@ private fun SourcePublicPageScene(request: SourcePageRequest, player: MusicPlayb
                     is SourcePageRequest.Home -> PlatformHomeScreen(source, playback.copy(page = MusicOnePage.HOME),
                         catalogState, player, platformState.homeSessionRevision, platformState.sessionStatus, inset,
                         { platform.startLogin(source) }, playlists::open, playlists::open,
-                        { catalog.loadPlaylist(it, player::playPlaylist) }, catalog::refreshRecommendations,
+                        { catalog.loadPlaylist(it, playSortedPlaylist) }, catalog::refreshRecommendations,
                         catalog::refreshRecommendedTracks)
                     is SourcePageRequest.My -> SourcePublicMyPageState(source, instance) {
                         PlatformMyScreen(platformState.account, libraryState, inset,
                             openSettings, playlists::open, library::refresh,
-                            { catalog.loadPlaylist(it, player::playPlaylist) }, source)
+                            { catalog.loadPlaylist(it, playSortedPlaylist) }, source)
                     }
                     is SourcePageRequest.Supplemental -> SupplementalSourceScreen(source.id, inset, latestClose,
                         { supplementalBack = it }, initialTarget = request.target)

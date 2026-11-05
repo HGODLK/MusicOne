@@ -87,4 +87,14 @@ class CurrentTrackThemeResolverTest {
         assertEquals(LOCAL_TRACK_COLOR_ARGB, fallbackTrackThemeArgb(true, false))
         assertEquals(LOCAL_TRACK_COLOR_ARGB, fallbackTrackThemeArgb(true, true))
     }
+
+    @Test fun pageColorOnlyBackfillsSourcesWithoutTrackThemeService() {
+        // 没有曲目主题服务：页面色作为全部曲目色。
+        assertEquals(0xFF2E7D6BL, pageColorTrackThemeArgb(false, 0xFF2E7D6BL))
+        // 提供了服务：完全由服务决定，返回 null 即保持黑／白，不借用页面色。
+        assertEquals(null, pageColorTrackThemeArgb(true, 0xFF2E7D6BL))
+        // 未声明或透明的页面色仍按未声明处理。
+        assertEquals(null, pageColorTrackThemeArgb(false, null))
+        assertEquals(null, pageColorTrackThemeArgb(false, 0x002E7D6BL))
+    }
 }

@@ -1,6 +1,5 @@
 package com.musicone
 
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -183,17 +182,21 @@ private fun PlaylistDescriptionContent(description: String, showInDialog: Boolea
     var expanded by rememberSaveable(description) { mutableStateOf(false) }
     var overflows by remember(description) { mutableStateOf(false) }
     val slots = LocalTabletPlaylistTextSlots.current
+    val reveal = rememberPlaylistDescriptionReveal(expanded && !showInDialog, description)
+    // 收起动画期间仍按全文排版，动画结束才切回两行省略。
+    val fullLayout = !showInDialog && (expanded || reveal.opened)
     Column(Modifier.fillMaxWidth().padding(bottom = 20.dp)) {
         // 简介内容变化时直接到位，只有点“更多／收起”才把下面的歌曲平滑挤开。
         key(description) {
             Text(
                 description, fontSize = 15.sp, lineHeight = 23.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = if (showInDialog) Modifier else Modifier.animateContentSize(musicMotion(320)),
-                maxLines = if (expanded && !showInDialog) Int.MAX_VALUE else 2,
+                modifier = if (showInDialog) Modifier else Modifier.playlistDescriptionReveal(reveal, fullLayout),
+                maxLines = if (fullLayout) Int.MAX_VALUE else 2,
                 minLines = if (slots == null) 1 else 2,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = if (centered) TextAlign.Center else TextAlign.Start,
-                onTextLayout = { if (!expanded) overflows = it.hasVisualOverflow },
+                // 只在真正两行排版时判断是否超出，收起途中的全文排版不能把“更多”藏掉。
+                onTextLayout = { if (!expanded && !fullLayout) overflows = it.hasVisualOverflow },
             )
         }
         Box(Modifier.align(Alignment.End).then(if (slots == null) Modifier else Modifier.height(slots.more))) {

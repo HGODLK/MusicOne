@@ -10,6 +10,7 @@ internal enum class QqRequestOrigin(val diagnosticName: String) {
     BATCH_CACHE("批量缓存"),
     PRELOAD("下一首预取"),
     COMPATIBILITY("兼容取票"),
+    FALLBACK_PREFETCH("降档预取"),
     QUALITY_PROBE("音质探测"),
     ACCESS_PROBE("权限探测"),
     VIP_PROBE("会员探测"),

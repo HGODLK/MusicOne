@@ -17,7 +17,7 @@ import java.util.Collections
 /**
  * 格式识别与播放源分流工厂。
  * 针对 APE、ALAC (M4A)、WavPack、DSF、DFF、AIFF 整数 PCM 走 Native 解码 MediaSource；
- * 现有 MP3、AAC、FLAC 等继续走原生 Media3 链路。
+ * 现有 MP3、AAC、FLAC 等继续走原生 Media3 链路。网络流（如自建服务器）按后缀和格式提示分流。
  */
 @OptIn(UnstableApi::class)
 class NativeAudioRoutingMediaSourceFactory(
@@ -69,13 +69,6 @@ class NativeAudioRoutingMediaSourceFactory(
         val uriString = uri.toString()
         routingCache[uriString]?.let { return it }
 
-        val scheme = uri.scheme?.lowercase().orEmpty()
-        // 外部 HTTP/HTTPS 网络流不拦截，保留现有在线音源处理
-        if (scheme == "http" || scheme == "https") {
-            routingCache[uriString] = false
-            return false
-        }
-
         // 1. 尝试从 URI 路径直接解析扩展名
         val path = uri.path?.lowercase().orEmpty()
         val decodedPath = runCatching { Uri.decode(path) }.getOrDefault(path).lowercase()
@@ -91,6 +84,15 @@ class NativeAudioRoutingMediaSourceFactory(
         if (mime.contains("ape") || mime.contains("wavpack") || mime.contains("dsd") || mime.contains("dsf") || mime.contains("dff")) {
             routingCache[uriString] = true
             return true
+        }
+
+        val scheme = uri.scheme?.lowercase().orEmpty()
+        // 网络流只按后缀和音源给出的格式提示分流，不额外探测，避免在线音源多发请求；
+        // ALAC 与 AAC 同为 MP4 容器，须由音源明确标为 audio/alac。
+        if (scheme == "http" || scheme == "https") {
+            val native = mime.contains("alac")
+            routingCache[uriString] = native
+            return native
         }
 
         // 3. 对 M4A/MP4 容器、无后缀、.audio 或 content:// URI：使用原生探针对内容进行权威探测

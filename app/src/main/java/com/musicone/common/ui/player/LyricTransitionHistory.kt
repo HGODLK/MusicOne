@@ -27,15 +27,15 @@ internal class LyricTransitionHistory {
                 PlayerLayoutMode.WIDE_SINGLE else PlayerLayoutMode.COMPACT_SINGLE,
             layout.viewportSize.width / lyricDensity.density,
         )
-        fun shortHeight(translated: Boolean) = with(lyricDensity) {
-            measuredTypography.activeLineSp.sp.toPx() +
-                10.dp.toPx() + if (translated) {
+        fun shortHeight(content: Any?) = with(lyricDensity) {
+            lyricShortRowLineSp(measuredTypography, content).sp.toPx() +
+                10.dp.toPx() + if (lyricRowTranslated(content)) {
                     measuredTypography.translationLineSp.sp.toPx() + 2.dp.toPx()
                 } else 0f
         }
         return lyricTransitionHistoryStart(current, previous?.size?.toFloat(),
-            earlier?.size?.toFloat(), previous?.let { shortHeight(it.contentType == true) },
-            earlier?.let { shortHeight(it.contentType == true) }, lyricDensity.density)
+            earlier?.size?.toFloat(), previous?.let { shortHeight(it.contentType) },
+            earlier?.let { shortHeight(it.contentType) }, lyricDensity.density)
     }
 
     fun prepareOpening(context: LyricOpeningContext) {

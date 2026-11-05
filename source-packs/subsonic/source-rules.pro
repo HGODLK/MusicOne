@@ -1,0 +1,4 @@
+-keep class com.musicone.source.subsonic.SubsonicSourceEntry { *; }
+-repackageclasses com.musicone.source.subsonic.privateimpl
+-dontwarn androidx.**
+-dontwarn kotlinx.coroutines.**

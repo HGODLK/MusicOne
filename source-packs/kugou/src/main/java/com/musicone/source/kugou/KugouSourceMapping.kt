@@ -59,5 +59,5 @@ internal object KugouSourceMapping {
         membership = if (value.hasVipAccess) "member" else null, backgroundUrl = value.backgroundUrl,
         signature = value.signature, follows = value.follows.toLong(), followers = value.followers.toLong())
     fun lyrics(value: List<TimedLyric>) = SourceLyrics(value.map { line -> SourceLyricLine(line.timeMs, line.text,
-        line.words.map { SourceLyricWord(it.startMs, it.endMs - it.startMs, it.text) }, line.translation, parserVersion = line.parserVersion) })
+        line.words.map { SourceLyricWord(it.startMs, it.endMs - it.startMs, it.text) }, line.translation, line.transliteration, line.parserVersion) })
 }

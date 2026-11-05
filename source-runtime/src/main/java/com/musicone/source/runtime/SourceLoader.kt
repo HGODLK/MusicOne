@@ -1,5 +1,6 @@
 package com.musicone.source.runtime
 
+import android.content.ComponentCallbacks
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ApplicationInfo
@@ -98,6 +99,9 @@ class SourceLoader(private val hostContext: Context) {
             override fun getPackageName(): String = applicationInfo.packageName
             override fun getApplicationInfo(): ApplicationInfo = applicationInfo
             override fun getApplicationContext(): Context = this
+            // Android 12L 及以下默认转给 getApplicationContext()，返回自身会无限递归，WebView 挂载时即栈溢出。
+            override fun registerComponentCallbacks(callback: ComponentCallbacks) = hostContext.registerComponentCallbacks(callback)
+            override fun unregisterComponentCallbacks(callback: ComponentCallbacks) = hostContext.unregisterComponentCallbacks(callback)
             override fun getFilesDir(): File = dataDirectory
             override fun getCacheDir(): File = File(dataDirectory.parentFile, "${dataDirectory.name}-cache").apply { mkdirs() }
             override fun getNoBackupFilesDir(): File = File(dataDirectory, "no-backup").apply { mkdirs() }

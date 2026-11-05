@@ -31,23 +31,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-internal fun MainSourceProfileHeader(account: MusicAccount?, onLogin: () -> Unit, expanded: Boolean = false) {
+internal fun MainSourceProfileHeader(account: MusicAccount?, onLogin: () -> Unit, expanded: Boolean = false,
+    loginFreeName: String? = null) {
     val entry = LocalAccountEntry.current ?: onLogin
+    // 无需登录的音源显示音源名称，没有可登录的入口，因此不可点击。
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 82.dp).clickable(enabled = account == null, onClick = entry),
+        Modifier.fillMaxWidth().heightIn(min = 82.dp).clickable(enabled = account == null && loginFreeName == null, onClick = entry),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AccountAvatar(account = account, size = if (expanded) 96.dp else 72.dp)
         Column(Modifier.weight(1f).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(
-                account?.nickname?.ifBlank { "${account.source.label}用户" } ?: "选择音源并登录",
+                account?.nickname?.ifBlank { "${account.source.label}用户" } ?: loginFreeName ?: "选择音源并登录",
                 fontSize = 21.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                if (account == null) "同步我喜欢与歌单" else account.source.label,
+                if (account != null) account.source.label else if (loginFreeName != null) "无需登录" else "同步我喜欢与歌单",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
             )

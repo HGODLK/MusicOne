@@ -40,6 +40,8 @@ internal fun MusicLibraryHost(playback: MusicPlaybackRuntime, content: @Composab
     ObserveLibraryFileAvailability(snapshot, ui.store)
     LaunchedEffect(snapshot.tracks) { playback.refreshLibraryMetadata(snapshot.tracks) }
     LaunchedEffect(snapshot.lyricRevision) { playback.refreshManualLyrics() }
+    val aiLyricRevision by AiLyricLayer.revision.collectAsStateWithLifecycle()
+    LaunchedEffect(aiLyricRevision) { if (aiLyricRevision > 0) playback.refreshLyrics() }
     LaunchedEffect(ui.message) { ui.message?.takeIf(String::isNotBlank)?.let { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show() } }
     val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) ui.work("正在导入文件…") { ui.imported(ui.importer.files(uris, ui.copyFiles) { ui.progress = it }) }
@@ -82,6 +84,7 @@ internal fun MusicLibraryHost(playback: MusicPlaybackRuntime, content: @Composab
         ui.chooseArchive = { archive.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }
         ui.exportArchive = { exportAudio = it; export.launch("MusicOne-${System.currentTimeMillis()}.msco") }
         ui.chooseArchiveDirectory = { archiveDirectory.launch(null) }
+        ui.removeFromQueue = playback::removeTracksFromQueue
     }
     val playbackActions = remember(playback) { LibraryPlaybackActions(playback::playTrack, { playback.playPlaylist(it) }) }
     CompositionLocalProvider(LocalMusicLibraryUi provides ui, LocalLibraryPlaybackActions provides playbackActions) {

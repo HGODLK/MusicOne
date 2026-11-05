@@ -55,6 +55,7 @@ internal fun PrimaryPageHeader(
     onSettingsBounds: (Rect) -> Unit = {},
     contentColor: Color? = null,
     localMode: Boolean = LocalMusicLibraryUi.current.localMode,
+    showAction: Boolean = true,
 ) {
     val headerState = LocalPrimaryPageHeaderState.current
     val resolvedContentColor = contentColor ?: MaterialTheme.colorScheme.onSurface
@@ -105,7 +106,7 @@ internal fun PrimaryPageHeader(
                     )
                 }
             }
-            PrimaryPageActionButton(page, pagerPosition, backdropLayer, backdropBounds, onSearch, onSettings,
+            if (showAction) PrimaryPageActionButton(page, pagerPosition, backdropLayer, backdropBounds, onSearch, onSettings,
                 localMode, searchProgress, settingsProgress, settingsMounted, onSettingsBounds, contentColor)
         }
     }

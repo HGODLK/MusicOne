@@ -59,7 +59,7 @@ internal fun LyricRenderWarmup(presentation: LyricPresentation?, positionMs: Lon
         draws.trySend(step)
     }) {
         lines.forEachIndexed { index, line ->
-            ImmersiveLyricLine(line, index, 0, typography, active = false,
+            ImmersiveLyricLine(line, index, { 0 }, typography, active = false,
                 animateEmphasis = false, settleProgress = { phases[step] },
                 playbackMotion = motion, smoothProgressMs = progress, onClick = {})
         }

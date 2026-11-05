@@ -58,15 +58,19 @@ jobs:
           sdkmanager --list_installed | grep -E \
             'platforms;android-37\.0|build-tools;36\.0\.0|ndk;27\.1\.12297006|cmake;3\.22\.1'
 
+      # CI 没有正式签名与音源签名，只构建调试包；正式包在本机或构建机出。
+      # 仓库默认 2GiB 堆只够本机增量构建，CI 全量构建会 OOM，这里单独调大（runner 为 16GB）。
       - name: 执行质量基线
         run: |
           ./gradlew \
             :app:testDebugUnitTest \
             :app:lintDebug \
-            :app:assembleRelease \
+            :app:assembleDebug \
             --continue \
             --stacktrace \
-            --no-daemon
+            --no-daemon \
+            "-Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" \
+            "-Pkotlin.daemon.jvmargs=-Xmx3g"
 
       - name: 上传测试与 Lint 报告
         if: always()

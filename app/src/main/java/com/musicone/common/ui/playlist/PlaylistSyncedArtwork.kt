@@ -41,7 +41,8 @@ internal fun PlaylistSyncedArtwork(bitmap: Bitmap?, awaitingArtwork: Boolean, st
     var showedPlaceholder by remember { mutableStateOf(false) }
     val motion = LocalPlaylistMotion.current
     SideEffect {
-        if (animateFirstArtwork && cacheReady && firstBitmap == null && motion?.phase == MotionPhase.SHOWN) {
+        // 占位已真实可见后到达的封面统一走混合淡入；详情页头部仍等页面展开完成后才算可见。
+        if (cacheReady && firstBitmap == null && (!animateFirstArtwork || motion?.phase == MotionPhase.SHOWN)) {
             showedPlaceholder = true
         }
     }

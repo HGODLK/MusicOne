@@ -18,8 +18,9 @@ import androidx.compose.ui.unit.sp
 
 /** 设置与编辑复用同一行布局，表单使用基础输入，不引入系统样式弹窗。 */
 @Composable
-internal fun LibraryActionRow(title: String, subtitle: String? = null, enabled: Boolean = true, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(enabled = enabled, onClick = onClick)
+internal fun LibraryActionRow(title: String, subtitle: String? = null, enabled: Boolean = true,
+    modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Column(modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(enabled = enabled, onClick = onClick)
         .padding(horizontal = 12.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else .38f), fontSize = 15.sp)
         subtitle?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else .38f), fontSize = 12.sp) }

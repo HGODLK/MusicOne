@@ -18,13 +18,18 @@ internal data class MainSourceRecentPlayUiState(
     val snapshot: MainSourceRecentSnapshot = MainSourceRecentSnapshot(),
     val loading: Boolean = false,
     val message: String? = null,
+    // 音源没有最近播放服务，“我的”页整块隐藏。
+    val unsupported: Boolean = false,
 )
 
 internal class MainSourceRecentPlayViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = PlatformPreferences(application)
     private var configuredSource = preferences.selectedSource()
-    fun configure(source: MusicSource) { if (configuredSource != source) { configuredSource = source; accountKey = ""; loadJob?.cancel(); refreshGate.invalidate(); _state.value = MainSourceRecentPlayUiState() } }
-    private val _state = MutableStateFlow(MainSourceRecentPlayUiState())
+    fun configure(source: MusicSource) { if (configuredSource != source) { configuredSource = source; accountKey = ""; loadJob?.cancel(); refreshGate.invalidate(); _state.value = MainSourceRecentPlayUiState(unsupported = !recentSupported(source)) } }
+    // 以音源声明的 SourceDiscovery.supportsRecent 为准，未声明就不请求也不显示。
+    private fun recentSupported(source: MusicSource) =
+        SourcePackageController.get(getApplication()).running(source.id)?.entry?.discovery?.supportsRecent == true
+    private val _state = MutableStateFlow(MainSourceRecentPlayUiState(unsupported = !recentSupported(configuredSource)))
     val state: StateFlow<MainSourceRecentPlayUiState> = _state.asStateFlow()
     private var accountKey = ""
     private var loadJob: Job? = null
@@ -51,6 +56,13 @@ internal class MainSourceRecentPlayViewModel(application: Application) : Android
     fun ensureLoaded(force: Boolean = false) {
         if (force) refreshGate.invalidate()
         if (!refreshGate.visible) return
+        if (!recentSupported(configuredSource)) {
+            loadJob?.cancel()
+            _state.value = MainSourceRecentPlayUiState(unsupported = true)
+            return
+        }
+        // 启动期包尚未就绪时可能先判为不支持，就绪后恢复正常读取。
+        if (_state.value.unsupported) _state.value = MainSourceRecentPlayUiState()
         val session = preferences.readSession(configuredSource)
         val key = session.account?.userId ?: if (!configuredSource.requiresAccount) "anonymous:${configuredSource.id}" else ""
         if (key.isBlank()) {

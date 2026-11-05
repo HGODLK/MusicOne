@@ -237,7 +237,8 @@ internal class MusicCacheManager private constructor(private val context: Contex
                             if (!offline.complete(key)) throw PlatformApiException("音频未完整缓存，请重试")
                             disk.audioChanged()
                             setStatus(track, offline.status(track))
-                            try { resolver.lyrics(resolved.track) }
+                            // 预热的是音源歌词缓存，AI 歌词层不参与。
+                            try { resolver.sourceLyrics(resolved.track) }
                             catch (cancelled: CancellationException) { throw cancelled }
                             catch (_: Exception) { /* 歌词失败不影响已完成的音频。 */ }
                         } catch (cancelled: CancellationException) { throw cancelled }

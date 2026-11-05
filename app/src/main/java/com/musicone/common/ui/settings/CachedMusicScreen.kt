@@ -47,10 +47,15 @@ internal fun CachedMusicScreen(source: MusicSource, supplied: List<MusicPlaylist
     val others = remember(playlists, search.query) {
         playlists.filterNot { it.isPrimaryCachePlaylist }.matchingCachePlaylistQuery(search.query)
     }
-    val selectedTracks = remember(selected?.tracks) { selected?.tracks.orEmpty().distinctBy { it.cacheIdentity() } }
-    val cached = remember(state.cachedTracks, sourceFilter) {
-        state.cachedTracks.filter { sourceFilter == null || it.source.name == sourceFilter }
-            .sortedWith(compareBy<MusicTrack> { it.source.ordinal }.thenBy { it.id })
+    // 详情页复用歌单的排序选择；全部缓存歌曲不属于任何歌单，单独保存。
+    val playlistSort = selected?.let { rememberPlaylistSortSelection(it, it.sourceAccountId, emptyList()) }
+    val songSort = rememberHostPlaylistSort("cache:tracks")
+    val selectedTracks = remember(selected?.tracks, playlistSort?.value) {
+        sortedPlaylistTracks(selected?.tracks.orEmpty().distinctBy { it.cacheIdentity() }, playlistSort?.value ?: PlaylistSort.ADDED_DESC)
+    }
+    val cached = remember(state.cachedTracks, sourceFilter, songSort.value) {
+        sortedPlaylistTracks(state.cachedTracks.filter { sourceFilter == null || it.source.name == sourceFilter }
+            .sortedWith(compareBy<MusicTrack> { it.source.ordinal }.thenBy { it.id }), songSort.value)
     }
     val removeSong: (MusicTrack) -> Unit = { track ->
         deleting = MusicPlaylist("cache-track:${track.id}", track.source, track.title, "", "", 1,
@@ -91,9 +96,14 @@ internal fun CachedMusicScreen(source: MusicSource, supplied: List<MusicPlaylist
                                 LibrarySectionTabs(tab, listOf("按歌单", "缓存歌曲")) { tab = it; search.close() }
                             }
                             item("source-filter", span = { GridItemSpan(maxLineSpan) }, contentType = "controls") {
-                                PlaybackSettingsMenuButton(MusicSource.entries.firstOrNull { it.name == sourceFilter }?.label ?: "全部音源", "筛选音源",
-                                    listOf(PlaybackSettingsMenuOption("全部音源", sourceFilter == null) { sourceFilter = null }) +
-                                        MusicSource.entries.map { provider -> PlaybackSettingsMenuOption(provider.label, sourceFilter == provider.name) { sourceFilter = provider.name } })
+                                // 行高固定为按钮高度，切换页签时排序按钮出现不会顶动下方内容。
+                                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    PlaybackSettingsMenuButton(MusicSource.entries.firstOrNull { it.name == sourceFilter }?.label ?: "全部音源", "筛选音源",
+                                        listOf(PlaybackSettingsMenuOption("全部音源", sourceFilter == null) { sourceFilter = null }) +
+                                            MusicSource.entries.map { provider -> PlaybackSettingsMenuOption(provider.label, sourceFilter == provider.name) { sourceFilter = provider.name } })
+                                    if (tab == 1) MainSourcePlaylistSortButton(songSort.value, songSort.select)
+                                }
                             }
                             if (tab == 0) {
                                 if (primary.isNotEmpty()) item("group:primary", span = { GridItemSpan(maxLineSpan) }, contentType = "heading") {
@@ -103,7 +113,7 @@ internal fun CachedMusicScreen(source: MusicSource, supplied: List<MusicPlaylist
                                     LaunchedEffect(cachePlaylistKey(playlist), state.directoryRevision) { manager.preview(playlist) }
                                     Box(cacheContentMotion()) {
                                         CachePlaylistCard(playlist, state, { onOpen(cachePlaylistKey(playlist)) },
-                                            { manager.play(playlist, playback.playlist) })
+                                            { manager.play(playlist) { playback.playlist(it.sortedForPlayback(context, it.sourceAccountId)) } })
                                     }
                                 }
                                 // 标题和同行搜索框跟随页面滚动，不吸顶。
@@ -114,7 +124,7 @@ internal fun CachedMusicScreen(source: MusicSource, supplied: List<MusicPlaylist
                                     LaunchedEffect(cachePlaylistKey(playlist), state.directoryRevision) { manager.preview(playlist) }
                                     Box(cacheContentMotion()) {
                                         CachePlaylistCard(playlist, state, { onOpen(cachePlaylistKey(playlist)) },
-                                            { manager.play(playlist, playback.playlist) })
+                                            { manager.play(playlist) { playback.playlist(it.sortedForPlayback(context, it.sourceAccountId)) } })
                                     }
                                 }
                                 if (others.isEmpty() && search.query.isNotBlank()) item("no-playlist-match", span = { GridItemSpan(maxLineSpan) }) {
@@ -139,7 +149,10 @@ internal fun CachedMusicScreen(source: MusicSource, supplied: List<MusicPlaylist
                                 val complete = selected.tracks.count { state.statuses[it.cacheIdentity()]?.startsWith("已缓存") == true }
                                 val protected = selected.tracks.count { it.cacheIdentity() in state.protected }
                                 LibrarySettingsGroup {
-                                    Text("$complete / ${maxOf(selected.count, selected.tracks.size)} 首已缓存 · $protected 首受保护")
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                        Text("$complete / ${maxOf(selected.count, selected.tracks.size)} 首已缓存 · $protected 首受保护", Modifier.weight(1f))
+                                        playlistSort?.let { MainSourcePlaylistSortButton(it.value, it.select) }
+                                    }
                                     CachePlaylistControls(selected, state, manager) { deleting = it }
                                     CachePlaylistSelectionToolbar(selected, manager, selection)
                                 }

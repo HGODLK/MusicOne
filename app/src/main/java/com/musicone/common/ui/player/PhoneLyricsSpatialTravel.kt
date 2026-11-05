@@ -34,16 +34,16 @@ internal class PhoneLyricsSpatialTravel {
             if (firstRow == null) firstRow = item else { second = item; break }
         }
         val first = firstRow ?: return
-        fun shortHeight(translated: Boolean) = with(lyricDensity) {
-            typography.activeLineSp.sp.toPx() +
-                10.dp.toPx() + if (translated) {
+        fun shortHeight(content: Any?) = with(lyricDensity) {
+            lyricShortRowLineSp(typography, content).sp.toPx() +
+                10.dp.toPx() + if (lyricRowTranslated(content)) {
                     typography.translationLineSp.sp.toPx() + 2.dp.toPx()
                 } else 0f
         }
         recordHeight(
             phoneLyricsCompactHeight(first.size.toFloat(), second?.size?.toFloat(),
-                layout.mainAxisItemSpacing.toFloat(), shortHeight(first.contentType == true),
-                second?.let { shortHeight(it.contentType == true) }, lyricDensity.density),
+                layout.mainAxisItemSpacing.toFloat(), shortHeight(first.contentType),
+                second?.let { shortHeight(it.contentType) }, lyricDensity.density),
             with(lyricDensity) { 6.dp.toPx() },
         )
     }

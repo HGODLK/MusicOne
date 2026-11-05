@@ -82,14 +82,14 @@ internal class MusicLibraryStore private constructor(context: Context) {
         }
     }
 
-    private suspend fun <T> write(onCommitted: () -> Unit = {}, block: (SQLiteDatabase) -> T): T = withContext(Dispatchers.IO) {
+    private suspend fun <T> write(onCommitted: () -> Unit = {}, publishChanges: Boolean = true, block: (SQLiteDatabase) -> T): T = withContext(Dispatchers.IO) {
         mutex.withLock {
             currentCoroutineContext().ensureActive()
             val db = helper.writableDatabase
             val result = db.inSourceTransaction(currentCoroutineContext()) { block(db).also { db.ensurePhoneStoragePlaylist() } }
             // 返回调度器前先移交资产所有权，取消不能删除已提交事务引用的文件。
             onCommitted()
-            publish()
+            if (publishChanges) publish()
             result
         }
     }
@@ -106,7 +106,7 @@ internal class MusicLibraryStore private constructor(context: Context) {
         }
     }
     suspend fun renamePlaylist(id: String, title: String) = write { db ->
-        require(id != UNIFIED_PLAYLIST_ID && title.isNotBlank()) { "综合歌单不能重命名，歌单名称不能为空" }
+        require(id != UNIFIED_PLAYLIST_ID && id != PHONE_STORAGE_PLAYLIST_ID && title.isNotBlank()) { "综合歌单和手机存储不能重命名，歌单名称不能为空" }
         db.update("playlists", ContentValues().apply { put("title", title.trim()) }, "id=?", arrayOf(id))
     }
     suspend fun deletePlaylist(id: String) = write { db ->
@@ -135,7 +135,7 @@ internal class MusicLibraryStore private constructor(context: Context) {
         }
     }
     suspend fun removeTrack(playlistId: String, songId: String) = write { db ->
-        require(playlistId != PHONE_STORAGE_PLAYLIST_ID) { "手机存储自动同步全部本地音乐" }
+        require(playlistId != PHONE_STORAGE_PLAYLIST_ID) { "从手机存储移除即不再跟踪，请使用本地音乐移除" }
         // 保留远端成员的排除记录，下一次订阅刷新不把手动移除的歌曲加回。
         db.execSQL("UPDATE members SET hidden=1 WHERE playlist_id=? AND song_id=? AND remote_member=1", arrayOf(playlistId, songId))
         db.delete("members", "playlist_id=? AND song_id=? AND remote_member=0", arrayOf(playlistId, songId))
@@ -158,13 +158,7 @@ internal class MusicLibraryStore private constructor(context: Context) {
         }, SQLiteDatabase.CONFLICT_REPLACE)
     }
     suspend fun updateOverrides(songId: String, title: String?, artist: String?, artwork: String?, onCommitted: () -> Unit = {}) = write(onCommitted) { db ->
-        val song = db.song(songId) ?: error("歌曲已不存在")
-        require(song.source.supportsLibraryEditing) { "此音源不支持编辑资料" }
-        db.update("songs", ContentValues().apply {
-            if (title == null) putNull("title_override") else put("title_override", title.takeIf(String::isNotBlank))
-            if (artist == null) putNull("artist_override") else put("artist_override", artist.takeIf(String::isNotBlank))
-            if (artwork == null) putNull("artwork_override") else put("artwork_override", artwork.takeIf(String::isNotBlank))
-        }, "id=?", arrayOf(songId))
+        db.updateLibraryOverrides(songId, mapOf("title_override" to title, "artist_override" to artist, "artwork_override" to artwork))
     }
     suspend fun setLyrics(songId: String, path: String?, onCommitted: () -> Unit = {}) = write(onCommitted) { db ->
         val song = db.song(songId) ?: error("歌曲尚未保存，歌词未写入")
@@ -219,13 +213,16 @@ internal class MusicLibraryStore private constructor(context: Context) {
             }, "id=?", arrayOf(id))
         }
     }
-    suspend fun removeFolder(id: String) = write { it.delete("folders", "id=?", arrayOf(id)) }
-    suspend fun removeLocalSong(id: String) = write { db ->
-        require(db.song(id)?.source == MusicSource.LOCAL) { "只能从本地音乐移除本地歌曲" }
-        // 仅移除音乐库引用，原文件和已导入的音频资产都不在这里删除。
-        db.delete("members", "song_id=?", arrayOf(id))
-        db.delete("locations", "song_id=?", arrayOf(id))
-        db.delete("songs", "id=?", arrayOf(id))
+    suspend fun removeFolder(id: String) = write { db ->
+        // 解除目录关联后歌曲改为逐首跟踪，不留下指向已删除目录的引用。
+        db.execSQL("UPDATE locations SET folder_id=NULL WHERE folder_id=?", arrayOf(id))
+        db.delete("folders", "id=?", arrayOf(id))
+    }
+    fun localRemovalPlan(ids: Collection<String>, all: Boolean = false): LocalRemovalPlan =
+        helper.readableDatabase.localRemovalPlan(ids, all, assets)
+    /** 仅供界面确认流程调用；私有文件与授权在返回后由调用方清理。 */
+    suspend fun untrackLocalSongs(ids: Collection<String>, all: Boolean = false): LocalUntrackResult = write { db ->
+        db.untrackLocalSongs(ids, all, assets)
     }
     suspend fun updateLocalAvailability(values: List<LibraryFileAvailability>) = write { db ->
         values.forEach { value ->
@@ -286,6 +283,11 @@ internal class MusicLibraryStore private constructor(context: Context) {
     }
 
     internal fun database() = helper.writableDatabase
+    /** AI 在事务内改了手动歌词关联时调用，随快照发布通知歌词刷新。 */
+    internal fun noteLyricsChanged() { lyricRevision++ }
+    /** AI 计划与实际资料库变更共用串行事务，提交成功后才发布快照。 */
+    internal suspend fun <T> aiTransaction(publishChanges: Boolean = false, block: (SQLiteDatabase) -> T): T =
+        write(publishChanges = publishChanges, block = block)
     internal suspend fun <T> importTransaction(onCommitted: () -> Unit, block: (SQLiteDatabase) -> T): T = write(onCommitted = {
         lyricRevision++
         onCommitted()
@@ -317,4 +319,14 @@ internal fun SQLiteDatabase.nextPosition(id: String): Long = rawQuery("SELECT CO
 internal inline fun <T> SQLiteDatabase.inTransaction(block: (SQLiteDatabase) -> T): T {
     beginTransaction()
     try { return block(this).also { setTransactionSuccessful() } } finally { endTransaction() }
+}
+
+/** 页面和 AI 批量确认共用本地显示资料权限校验及写入路径。 */
+internal fun SQLiteDatabase.updateLibraryOverrides(songId: String, fields: Map<String, String?>) {
+    val song = song(songId) ?: error("歌曲已不存在")
+    require(song.source.supportsLibraryEditing) { "此音源不支持编辑资料" }
+    require(fields.keys.all { it in setOf("title_override", "artist_override", "album_override", "artwork_override") }) { "不支持的资料字段" }
+    update("songs", ContentValues().apply {
+        fields.forEach { (field, value) -> if (value.isNullOrBlank()) putNull(field) else put(field, value) }
+    }, "id=?", arrayOf(songId))
 }

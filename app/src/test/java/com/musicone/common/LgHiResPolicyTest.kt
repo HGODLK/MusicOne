@@ -14,8 +14,22 @@ class LgHiResPolicyTest {
     @Test fun manufacturerVisibilityAndModelEligibilityAreSeparate() {
         listOf("LGE", "LG", " lg electronics ").forEach { assertTrue(isLgAudioDevice(it)) }
         listOf("Samsung", "Google", "LGE-like").forEach { assertFalse(isLgAudioDevice(it)) }
-        listOf("LM-G710N", "LM-G710ULM", "LM-G820UM", "LM-G820N", "LG G8 ThinQ").forEach { assertTrue(isLgG7G8(it)) }
-        listOf("LM-G850", "LM-V500", "Pixel 8", "G7", "LM-G710N fake").forEach { assertFalse(isLgG7G8(it)) }
+        listOf("LM-G710N", "LM-G710ULM", "LM-G820UM", "LM-G820N", "LG G8 ThinQ", "LM-G850EMW", "LM-V500N",
+            "LM-V405UA", "LM-V409N", "LGM-V300K", "LG-H930", "VS996", "LG-H990", "LM-V600TM", "LG V30+").forEach {
+            assertTrue(it, isLgQuadDacModel(it))
+        }
+        // 没有 Quad DAC 的 LG（Velvet、Wing、K/Q 系列）和非 LG 名称不能误判。
+        listOf("LM-G900N", "LM-F100N", "LM-K420", "LM-Q720", "Pixel 8", "G7", "LM-G710N fake").forEach {
+            assertFalse(it, isLgQuadDacModel(it))
+        }
+    }
+
+    @Test fun onlyG7AndG8CountAsVerifiedAndOthersAreLabelledUntested() {
+        assertTrue(isLgVerifiedModel("LM-G710N"))
+        assertTrue(isLgVerifiedModel("LM-G820UM"))
+        assertFalse(isLgVerifiedModel("LM-V500N"))
+        assertTrue(lgHiResIdleDescription("LM-V500N").startsWith("本机型未实测"))
+        assertTrue(lgHiResIdleDescription("LM-G900N").startsWith("本机没有"))
     }
 
     @Test fun sourceSampleRateIsNeverChangedAndFullS32KeepsAllBits() {
@@ -33,7 +47,9 @@ class LgHiResPolicyTest {
         assertEquals("LG G7 ThinQ", lgAudioDeviceName("LM-G710N"))
         assertEquals("LG G8 ThinQ", lgAudioDeviceName("LM-G820UM"))
         assertEquals("LG G8 ThinQ", lgAudioDeviceName("LG G8 ThinQ"))
-        assertEquals("LM-V500", lgAudioDeviceName("LM-V500"))
+        assertEquals("LG V50 ThinQ", lgAudioDeviceName("LM-V500N"))
+        assertEquals("LG V30", lgAudioDeviceName("LGM-V300K"))
+        assertEquals("LM-G900N", lgAudioDeviceName("LM-G900N"))
     }
 
     @Test fun sixteenBitSamplesAreOnlyZeroPaddedIncludingNegativeFullScale() {

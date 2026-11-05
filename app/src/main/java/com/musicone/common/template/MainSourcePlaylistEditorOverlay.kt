@@ -46,6 +46,7 @@ internal fun MainSourcePlaylistEditorOverlay(editor: MainSourcePlaylistEditorSta
     val density = LocalDensity.current
     val backdropBounds = host
     val target = editor.playlist
+    val libraryUi = LocalMusicLibraryUi.current
     BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = progress.value }
             .background(Color.Black.copy(alpha = .12f))
@@ -87,14 +88,18 @@ internal fun MainSourcePlaylistEditorOverlay(editor: MainSourcePlaylistEditorSta
                             translationX = (if (right) -1 else 1) * wingWidth.toPx() * (1f - progress.value)
                             alpha = progress.value
                         }, horizontalAlignment = Alignment.CenterHorizontally) {
-                            if (editor.supports(PlaylistEditMode.Rename)) IconButton(onClick = { editor.mode = PlaylistEditMode.Rename }, Modifier.size(48.dp), enabled = !editor.busy) {
+                            if (editor.supports(PlaylistEditMode.Rename)) IconButton(onClick = { editor.mode = PlaylistEditMode.Rename }, Modifier.size(48.dp),
+                                enabled = !editor.busy && target.id != UNIFIED_PLAYLIST_ID && target.id != PHONE_STORAGE_PLAYLIST_ID) {
                                 Icon(Icons.Rounded.Edit, "编辑歌单")
                             }
                             if (editor.supportsRemoteOrder) IconButton(onClick = { editor.remoteOrderOpen = true }, Modifier.size(48.dp), enabled = !editor.busy) {
                                 Icon(Icons.Rounded.SwapVert, "调整云端歌曲顺序")
                             }
-                            if (editor.supports(PlaylistEditMode.Delete)) IconButton(onClick = { editor.mode = PlaylistEditMode.Delete }, Modifier.size(48.dp),
-                                enabled = !editor.busy && target.id != PHONE_STORAGE_PLAYLIST_ID) {
+                            if (editor.supports(PlaylistEditMode.Delete)) IconButton(onClick = {
+                                // 手机存储即全部本地音乐，删除走音乐库的不再跟踪确认，而不是普通歌单删除。
+                                if (target.id == PHONE_STORAGE_PLAYLIST_ID) { editor.close(); libraryUi.removeLocal(emptyList(), all = true) }
+                                else { editor.mode = PlaylistEditMode.Delete }
+                            }, Modifier.size(48.dp), enabled = !editor.busy && !(target.id == PHONE_STORAGE_PLAYLIST_ID && libraryUi.busy)) {
                                 Icon(Icons.Rounded.DeleteOutline, "删除歌单", tint = MaterialTheme.colorScheme.error)
                             }
                             if (editor.subscribed) {

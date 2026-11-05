@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -18,6 +19,7 @@ import androidx.compose.ui.unit.sp
 @Composable
 internal fun SupplementalLibraryHome(state: SupplementalState, model: SupplementalSourceModel,
     scroll: LazyGridState, bottomInset: Dp, foldersOnly: Boolean = false) {
+    val context = LocalContext.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val columns = mainSourceLibraryColumns(maxWidth)
         val gutter = maxOf(if (maxWidth >= 600.dp) 32.dp else 20.dp, (maxWidth - 1120.dp) / 2)
@@ -58,7 +60,7 @@ internal fun SupplementalLibraryHome(state: SupplementalState, model: Supplement
                     Box(Modifier.animateItem(fadeInSpec = musicMotion(300), placementSpec = null, fadeOutSpec = musicMotion(180))) {
                         SupplementalCollectionCard(folder, state.playingCollection == folder.identity.remoteId,
                             state.artworkVersions[folder.identity], Modifier,
-                            { model.selectCollection(folder) }, { model.playCollection(folder); Unit }, showPlay = model.canPlay,
+                            { model.selectCollection(folder) }, { model.playCollection(folder, storedPlaylistSort(context, folder.asSupplementalPlaylist(), state.account?.id)); Unit }, showPlay = model.canPlay,
                             openEnabled = model.pageAvailable(com.musicone.source.sdk.SourceSupplementalPage.COLLECTION))
                     }
                 }

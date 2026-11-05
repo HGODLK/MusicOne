@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
 /** 只加载可见收藏夹的首屏，完整内容仍由打开、播放和缓存操作获取。 */
@@ -19,7 +20,8 @@ internal class CachePlaylistPreviews(
     private val onChanged: () -> Unit,
 ) {
     private val previewSlots = Semaphore(4)
-    private val previewed = ConcurrentHashMap.newKeySet<String>()
+    // minSdk 23 没有 ConcurrentHashMap.newKeySet（API 24），用等价的并发集合。
+    private val previewed: MutableSet<String> = Collections.newSetFromMap(ConcurrentHashMap())
     fun clear() = previewed.clear()
 
     /** 随可见卡片请求预览；离屏取消等待，不把所有收藏夹排进网络队列。 */

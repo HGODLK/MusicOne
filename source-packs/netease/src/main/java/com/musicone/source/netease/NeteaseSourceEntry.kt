@@ -13,7 +13,7 @@ internal val LocalNeteaseReduceMotion = staticCompositionLocalOf { false }
 class NeteaseSourceEntry : SourceEntry, SourceMembershipProvider {
     override val descriptor = SourceDescriptor(NETEASE_SOURCE_ID, "网易云音乐", SourceKind.MAIN, 1, "0.1",
         setOf(SourceCapability.HOME, SourceCapability.SEARCH, SourceCapability.ACCOUNT, SourceCapability.PLAYLIST,
-            SourceCapability.PLAYBACK, SourceCapability.LYRICS, SourceCapability.SETTINGS),
+            SourceCapability.PLAYBACK, SourceCapability.LYRICS),
         useCustomPages = true, requiresLogin = true,
         permissions = SourcePermissions(adjustLineOffset = true),
         presentation = SourcePresentation(pageColorArgb = NETEASE_PAGE_COLOR, lineLeadMs = 565, wordLeadMs = 0))
@@ -38,9 +38,6 @@ class NeteaseSourceEntry : SourceEntry, SourceMembershipProvider {
     override val mediaPlayback: SourceMediaPlayback = services
     override val lyricProvider: SourceLyricProvider = services
     override val trackTheme: SourceTrackTheme = services
-    override val settings: SourceSettings = object : SourceSettings {
-        @Composable override fun Content() { NeteaseSettingsContent(owner, authenticationService) }
-    }
     override fun initialize(environment: SourceEnvironment) {
         check(!::owner.isInitialized); owner = NeteasePackageState(environment); trackActions = NeteaseTrackActions(owner, services)
     }

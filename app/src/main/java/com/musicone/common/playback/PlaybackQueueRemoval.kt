@@ -52,4 +52,12 @@ internal class PlaybackQueueRemoval(
             else -> { states.value = plan.state; save() }
         }
     }
+
+    /** 批量移除：先移除非当前项，最后处理当前歌曲，避免切到同样要被移除的下一首。 */
+    fun removeAll(tracks: List<MusicTrack>) {
+        val current = states.value.currentTrack
+        val (playing, others) = tracks.partition { current != null && it.source == current.source && it.id == current.id }
+        others.forEach(::remove)
+        playing.firstOrNull()?.let(::remove)
+    }
 }

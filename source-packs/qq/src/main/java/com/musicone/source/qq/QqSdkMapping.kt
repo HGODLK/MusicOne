@@ -39,7 +39,7 @@ internal fun SourceTrackDetails.musicTrack(): MusicTrack {
         artwork.url ?: track.artworkUrl, data["catalogId"].orEmpty(), data["mediaId"].orEmpty(), data["providerType"]?.toIntOrNull() ?: 0,
         ids, when(access.badge) { TrackAccessBadge.MEMBERSHIP -> MusicAccessBadge.VIP; TrackAccessBadge.PURCHASE -> MusicAccessBadge.PAID; null -> null },
         access.trialAvailable, access.playable, access.reason, lyrics?.lines.orEmpty().map { line -> TimedLyric(line.startMs, line.text, line.translation,
-            line.words.map { LyricWord(it.startMs, it.startMs + it.durationMs, it.text) }, line.parserVersion) },
+            line.words.map { LyricWord(it.startMs, it.startMs + it.durationMs, it.text) }, line.parserVersion, line.transliteration) },
         artists.map { MusicArtist(it.id, it.name) }, albumRef?.id.orEmpty(), localUri,
         data - setOf("catalogId", "mediaId", "providerType", "qualityIds"))
 }
@@ -70,7 +70,7 @@ internal fun AudioQuality.sdkQuality() = SourceAudioQuality(name, label, when(th
     else -> "audio/mpeg"
 })
 internal fun List<TimedLyric>.sdkLyrics() = SourceLyrics(map { line -> SourceLyricLine(line.timeMs, line.text,
-    line.words.map { SourceLyricWord(it.startMs, (it.endMs - it.startMs).coerceAtLeast(0), it.text) }, line.translation, parserVersion = line.parserVersion) })
+    line.words.map { SourceLyricWord(it.startMs, (it.endMs - it.startMs).coerceAtLeast(0), it.text) }, line.translation, line.transliteration, line.parserVersion) })
 internal fun jsonStrings(json: JSONObject): Map<String, String> = json.keys().asSequence().associateWith { json.optString(it) }
 internal fun SourceCursorRequest.offset() = cursor?.toIntOrNull() ?: 0
 internal fun SourceEntityRef.singer() = QqSearchSinger(id, name, null,

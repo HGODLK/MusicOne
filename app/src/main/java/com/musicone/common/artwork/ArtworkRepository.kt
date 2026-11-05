@@ -66,7 +66,8 @@ internal object ArtworkRepository {
                     loadLocalFile(source, maxSide)
                 } else {
                     val stored = if (forceRefresh) null else MusicDiskCache.available()?.read("artwork:$source")
-                    stored?.let { decodeArtwork(it, maxSide) } ?: download(source, maxSide)
+                    stored?.let { decodeArtwork(it, maxSide) }
+                        ?: download(source, maxSide, artworkPlainHttpFallback(imageUrl, source))
                 }
             }
             if (bitmap != null) synchronized(cache) { cache.put(key, bitmap) }
@@ -82,10 +83,10 @@ internal object ArtworkRepository {
         Log.w(LOG_TAG, "本地背景加载失败", error)
     }.getOrNull()
 
-    private fun download(imageUrl: String, maxSide: Int): Bitmap? {
+    private fun download(imageUrl: String, maxSide: Int, plainHttpFallback: String? = null): Bitmap? {
         var lastFailure: Throwable? = null
-        artworkDownloadCandidates(imageUrl).forEach { candidate ->
-            val bitmap = runCatchingCancellable { downloadCandidate(candidate, maxSide) }
+        (artworkDownloadCandidates(imageUrl) + listOfNotNull(plainHttpFallback)).distinct().forEach { candidate ->
+            val bitmap = runCatchingCancellable { downloadCandidate(candidate, maxSide, imageUrl) }
                 .onFailure { lastFailure = it }
                 .getOrNull()
             if (bitmap != null) return bitmap
@@ -96,7 +97,8 @@ internal object ArtworkRepository {
         return null
     }
 
-    private fun downloadCandidate(imageUrl: String, maxSide: Int): Bitmap? {
+    /** 备用地址下载的图片也按原始键写入磁盘缓存，下次直接命中。 */
+    private fun downloadCandidate(imageUrl: String, maxSide: Int, cacheUrl: String): Bitmap? {
         val uri = URI.create(imageUrl)
         return uri.toURL().openConnection().apply {
             connectTimeout = 8_000
@@ -111,7 +113,7 @@ internal object ArtworkRepository {
             }
         }.getInputStream().use { input ->
             val bytes = input.readBytes()
-            decodeArtwork(bytes, maxSide)?.also { MusicDiskCache.available()?.write("artwork:$imageUrl", bytes) }
+            decodeArtwork(bytes, maxSide)?.also { MusicDiskCache.available()?.write("artwork:$cacheUrl", bytes) }
         }
     }
 
@@ -170,4 +172,31 @@ internal fun rememberArtworkBitmap(
 private fun String?.normalizedArtworkUrl(): String? = this
     ?.trim()
     ?.takeIf(String::isNotBlank)
-    ?.replaceFirst(Regex("^http://", RegexOption.IGNORE_CASE), "https://")
+    ?.let { url -> if (url.keepsPlainHttp()) url else url.replaceFirst(PLAIN_HTTP, "https://") }
+
+private val PLAIN_HTTP = Regex("^http://", RegexOption.IGNORE_CASE)
+
+/**
+ * 公网图片统一升级为 https；局域网、本机和自带端口的地址（自建服务器常见）通常只有 http，保持原样。
+ */
+internal fun String.keepsPlainHttp(): Boolean {
+    if (!PLAIN_HTTP.containsMatchIn(this)) return false
+    val uri = runCatching { URI.create(this) }.getOrNull() ?: return false
+    if (uri.port != -1) return true
+    val host = uri.host?.trim('[', ']')?.lowercase() ?: return false
+    return host == "localhost" || '.' !in host && ':' !in host ||
+        host.endsWith(".local") || host.endsWith(".lan") || host.endsWith(".home.arpa") || host.isPrivateAddress()
+}
+
+private fun String.isPrivateAddress(): Boolean {
+    if (':' in this) return this == "::1" || startsWith("fc") || startsWith("fd") || startsWith("fe80")
+    val parts = split('.').map { it.toIntOrNull() ?: return false }
+    if (parts.size != 4) return false
+    val (a, b) = parts
+    return a == 10 || a == 127 || a == 192 && b == 168 || a == 172 && b in 16..31 ||
+        a == 169 && b == 254 || a == 100 && b in 64..127
+}
+
+/** 由 http 升级来的公网地址在 https 失败时退回原地址，兼容只开 http 的公网服务器。 */
+internal fun artworkPlainHttpFallback(original: String?, normalized: String): String? =
+    original?.trim()?.takeIf { PLAIN_HTTP.containsMatchIn(it) && it != normalized }

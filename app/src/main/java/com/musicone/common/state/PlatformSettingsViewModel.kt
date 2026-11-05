@@ -45,8 +45,9 @@ internal class PlatformSettingsViewModel @JvmOverloads constructor(application: 
         val installed = source == MusicSource.LOCAL || sources.running(source.id) != null
         val homeRevision = homeSessionRevision.update(session, installed)
         observedAccount = accountFingerprint(source)
+        val settingsSourceIds = MAIN_MUSIC_SOURCES.filter { it.supportsSourceSettings }.mapTo(mutableSetOf()) { it.id }
         mutable.update { it.copy(selectedSource = source, sourceSelected = saved.sourceSelected,
-            loginSource = source, account = account.takeIf { installed },
+            settingsSourceIds = settingsSourceIds, loginSource = source, account = account.takeIf { installed },
             sessionStatus = if (installed && (!source.requiresAccount || account != null)) SessionStatus.CONNECTED else SessionStatus.SIGNED_OUT,
             sessionRevision = it.sessionRevision + 1, homeSessionRevision = homeRevision, working = false) }
     }
@@ -65,6 +66,11 @@ internal class PlatformSettingsViewModel @JvmOverloads constructor(application: 
     fun startLogin(source: MusicSource = state.value.selectedSource) {
         if (sources.running(source.id)?.entry?.authentication == null) return
         host.openDestination("source-authentication", mapOf("sourceId" to source.id))
+    }
+    /** 音源设置复用登录页同一套外部页面层，不切换当前主音源。 */
+    fun openSourceSettings(source: MusicSource) {
+        if (!source.supportsSourceSettings) return
+        host.openDestination("source-settings", mapOf("sourceId" to source.id))
     }
     // 音源可能不主动通知登录成功，统一在登录页关闭时核对公开账号。
     private fun settlePendingLogin() {

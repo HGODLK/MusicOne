@@ -90,10 +90,11 @@ internal fun SourceCollection.toMusicPlaylist(tracks: List<MusicTrack> = emptyLi
 
 internal fun List<TimedLyric>.toSourceLyrics() = SourceLyrics(map { line ->
     SourceLyricLine(line.timeMs, line.text, line.words.map { SourceLyricWord(it.startMs, it.endMs - it.startMs, it.text) },
-        line.translation, parserVersion = line.parserVersion)
+        line.translation, line.transliteration, line.parserVersion)
 })
 
 internal fun SourceLyrics.toTimedLyrics(): List<TimedLyric> = lines.map { line ->
     TimedLyric(line.startMs, line.text, line.translation,
-        line.words.map { LyricWord(it.startMs, it.startMs + it.durationMs, it.text) }, line.parserVersion)
+        line.words.map { LyricWord(it.startMs, it.startMs + it.durationMs, it.text) }, line.parserVersion,
+        transliteration = line.transliteration)
 }

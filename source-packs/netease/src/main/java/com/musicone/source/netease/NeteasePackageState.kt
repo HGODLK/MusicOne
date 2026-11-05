@@ -17,6 +17,7 @@ internal class NeteasePackageState(val environment: SourceEnvironment) : AutoClo
     val scope = CoroutineScope(job + Dispatchers.Main.immediate)
     private val registration = environment.host.registerTask { close() }
     private val preferences = environment.context.getSharedPreferences("platform_settings", Context.MODE_PRIVATE)
+    val collectionSort = NeteaseCollectionSort(environment.context)
     val revision = NeteaseAccountRevision()
     var dataRevision by mutableLongStateOf(0L)
         private set

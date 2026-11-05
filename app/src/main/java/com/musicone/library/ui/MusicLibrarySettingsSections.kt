@@ -66,7 +66,7 @@ private fun LibraryDirectorySettingsRow(ui: MusicLibraryUiController, folder: Li
                 PlaybackSettingsMenuOption("刷新目录", false) { ui.refresh(folder) },
                 PlaybackSettingsMenuOption("重新关联目录", false) { ui.chooseDirectory(folder) },
                 PlaybackSettingsMenuOption("移除目录关联", false) {
-                    ui.form = LibraryEditForm("移除「${folder.title}」的关联？歌曲与原文件会保留。", emptyList(), emptyList()) {
+                    ui.form = LibraryEditForm("移除「${folder.title}」的关联？歌曲与原文件会保留，改为逐首跟踪，不再自动扫描。", emptyList(), emptyList()) {
                         ui.store.removeFolder(folder.id)
                     }
                 },

@@ -31,9 +31,10 @@ internal fun Modifier.lyricWindowFrameDrive(active: Boolean): Modifier {
         if (enabled) driver.register(owner) { time ->
             // 恢复原宿主提交保证；不新增时钟，也不重新组合或录制整页。
             if (BuildConfig.MUSICONE_LYRIC_FRAME_DRIVE) view.invalidate()
-            probe?.onLyricFrame(time)
+            // 探针仅在 API 24+ 创建，此处显式判断供 Lint 识别。
+            if (Build.VERSION.SDK_INT >= 24) probe?.onLyricFrame(time)
         }
-        onDispose { driver.remove(owner); probe?.close() }
+        onDispose { driver.remove(owner); if (Build.VERSION.SDK_INT >= 24) probe?.close() }
     }
     return then(LyricFrameDriveElement(driver, enabled && BuildConfig.MUSICONE_LYRIC_FRAME_DRIVE))
 }

@@ -63,7 +63,7 @@ internal class CachePlaylistDirectory(private val context: Context) {
         val saved = directories.flatMap { (owner, playlists) -> playlists.filter { playlist ->
             activeNamespaces[playlist.source].let { it == null || owner == it }
         } }
-        val savedByKey = buildMap { saved.forEach { playlist -> putIfAbsent(cachePlaylistKey(playlist), playlist) } }
+        val savedByKey = buildMap<String, MusicPlaylist> { saved.forEach { playlist -> getOrPut(cachePlaylistKey(playlist)) { playlist } } }
         return canonicalCachePlaylists(library.state.value.playlists + saved)
             .distinctBy(::cachePlaylistKey).map { playlist ->
                 val stored = savedByKey[cachePlaylistKey(playlist)]

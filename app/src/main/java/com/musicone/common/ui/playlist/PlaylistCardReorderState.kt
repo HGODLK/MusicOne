@@ -10,6 +10,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
+/** 归位进度和缩放都是小量程值，默认 0.01 的结束阈值会让末帧明显跳动。 */
+internal const val PLAYLIST_CARD_MOTION_THRESHOLD = .0005f
+
 /** 拖动位置使用网格视口坐标，重排和自动滚动后仍由同一手指连续接管。 */
 @Stable
 internal class PlaylistCardReorderState(
@@ -128,7 +131,7 @@ internal class PlaylistCardReorderState(
             val persistence = launch { persist(before) }
             withFrameNanos { }
             withFrameNanos { }
-            settle.animateTo(0f, musicSpring())
+            settle.animateTo(0f, musicSpring(visibilityThreshold = PLAYLIST_CARD_MOTION_THRESHOLD))
             activeId = null
             settle.snapTo(1f)
             persistence.join()

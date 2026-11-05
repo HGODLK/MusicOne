@@ -68,7 +68,14 @@ internal fun PlaybackSettings(source: MusicSource) {
             ).padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("播放页播放时屏幕常亮", Modifier.weight(1f))
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text("播放页播放时屏幕常亮")
+                Text(
+                    "OLED 屏幕有烧屏风险",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             MusicOneSettingsSwitch(PlaybackOptions.keepScreenOn)
         }
         Row(

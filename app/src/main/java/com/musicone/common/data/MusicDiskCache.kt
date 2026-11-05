@@ -39,6 +39,8 @@ internal class MusicDiskCache private constructor(private val context: Context) 
     val limits = mutableLimits.asStateFlow()
     private val pendingClear = preferences.getStringSet("pending_clear", emptySet()).orEmpty().toMutableSet()
     private val readers = mutableMapOf<String, Int>()
+    // 正在锁外删除分片的音频键，删除完成前不接受新的写入。
+    private val removing = hashSetOf<String>()
     private val writers = mutableMapOf<String, Int>()
     private val reserved = ConcurrentHashMap<String, AtomicLong>()
     private val audioBytes = ConcurrentHashMap<String, AtomicLong>()
@@ -182,6 +184,7 @@ internal class MusicDiskCache private constructor(private val context: Context) 
         if (key.startsWith("uncached-trial:")) return "试听音源不写入持久缓存"
         val resource = index.resource(key) ?: return "未登记的音频不写入持久缓存"
         if (key in pendingClear) return "缓存正在等待删除"
+        if (key in removing) return "缓存正在删除"
         val primary = index.primaryOrder(resource.identity)
         val ceiling = if (primary != null) limits.value.maximum else limits.value.total.bytes
         if (ceiling == 0L) return if (primary != null) "新增缓存已关闭" else "总缓存已关闭"
@@ -189,6 +192,7 @@ internal class MusicDiskCache private constructor(private val context: Context) 
         val others = index.resources(resource.identity).filter { it.key != key &&
             (audio.getCachedSpans(it.key).isNotEmpty() || (writers[it.key] ?: 0) > 0) }
         if (others.any { inUse(it.key) }) return "同曲缓存正在使用，释放后可替换音质"
+        if (others.any { it.key in removing }) return "同曲缓存正在删除"
         val othersKeys = others.mapTo(hashSetOf()) { it.key }
         val entries = resources().filterNot { it.key in othersKeys }
         val existing = entries.firstOrNull { it.key == key }
@@ -205,7 +209,7 @@ internal class MusicDiskCache private constructor(private val context: Context) 
     }
 
     @Synchronized fun reserve(key: String, bytes: Long): String? {
-        if (key in pendingClear) return "缓存已安排删除"
+        if (key in pendingClear || key in removing) return "缓存已安排删除"
         val resource = index.resource(key) ?: return "缓存写入已取消"
         val primary = index.primaryOrder(resource.identity) != null
         val ceiling = if (primary) limits.value.maximum else limits.value.total.bytes
@@ -290,7 +294,7 @@ internal class MusicDiskCache private constructor(private val context: Context) 
 
     private fun clearReleasedAudio() { releaseSignals.trySend(Unit) }
 
-    // 文件删除逐项释放锁；整批结束才落盘索引，不在读写释放回调中遍历缓存。
+    // 音频分片在锁外删除，图片文件逐项短暂持锁；整批结束才落盘索引，不在读写释放回调中遍历缓存。
     private suspend fun clearResources(keys: List<String>, deferActive: Boolean,
         keepProtected: Boolean = false, valid: () -> Boolean = { true }) = cleanupMutex.withLock {
         var failed = false
@@ -308,13 +312,23 @@ internal class MusicDiskCache private constructor(private val context: Context) 
                     }
                 }
                 chunk.forEach { key ->
-                    synchronized(this) {
-                        if (key in protected) return@synchronized
+                    val audioKey = synchronized(this) {
+                        if (key in protected) return@synchronized false
                         if (inUse(key)) {
                             if (deferActive) pendingClear += key
-                        } else {
+                            false
+                        } else if (key.startsWith("file:")) {
                             runCatching { deleteResource(key, persist = false); pendingClear.remove(key) }
                                 .onFailure { failed = true }
+                            false
+                        } else { removing += key; true }
+                    }
+                    if (audioKey) {
+                        // 一首歌可能有数百个分片，删除期间不持有本类锁，否则主线程写收藏会等到卡死。
+                        val removed = runCatching { audio.removeResource(key) }
+                        synchronized(this) {
+                            removing -= key
+                            removed.onSuccess { index.forget(key, false); pendingClear.remove(key) }.onFailure { failed = true }
                         }
                     }
                 }

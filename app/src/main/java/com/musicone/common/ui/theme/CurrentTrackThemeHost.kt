@@ -64,7 +64,9 @@ internal fun CurrentTrackThemeHost(playback: MusicPlaybackRuntime, content: @Com
                         if (track == null || instance == null) null
                         else withContext(Dispatchers.IO) {
                             instance.withOperation {
-                                instance.entry.trackTheme?.colorArgb(track.toSourceTrack())
+                                val entry = instance.entry
+                                entry.trackTheme?.colorArgb(track.toSourceTrack())
+                                    ?: pageColorTrackThemeArgb(entry.trackTheme != null, entry.descriptor.presentation?.pageColorArgb)
                             }
                         }
                     }, pendingArgb = pendingArgb, publish = {

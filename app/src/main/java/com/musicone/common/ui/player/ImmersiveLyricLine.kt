@@ -22,9 +22,9 @@ import kotlin.math.roundToInt
 
 @Composable
 internal fun ImmersiveLyricLine(
-    line: TimedLyric,
+    sourceLine: TimedLyric,
     index: Int,
-    current: Int,
+    currentLine: () -> Int,
     typography: LyricTypography,
     active: Boolean,
     animateEmphasis: Boolean = true,
@@ -41,6 +41,7 @@ internal fun ImmersiveLyricLine(
     readingAnchor: PhoneLyricsReadingAnchor? = null,
     readingPane: LyricWindowPane? = null,
 ) {
+    val line = remember(sourceLine) { lyricKeepKoreanWords(sourceLine) }
     val ink = LocalContentColor.current
     val systemDensity = LocalDensity.current
     val lyricDensity = remember(systemDensity.density) { lyricDisplayDensity(systemDensity) }
@@ -53,7 +54,10 @@ internal fun ImmersiveLyricLine(
         playbackMotion.retain(index, row)
         onDispose { playbackMotion.release(index, row) }
     }
-    SideEffect { if (!freezeVisual) playbackMotion.emphasize(index, current, animateEmphasis, playbackStepActive) }
+    // 行内只订阅与焦点的相对位置；单步切句时远处行的值不变，不随整片歌词重组。
+    val current by remember(index, currentLine) { derivedStateOf { lyricRowFocusWindow(index, currentLine()) } }
+    // 焦点强调仍登记真实焦点句，新补入的行按它初始化。
+    SideEffect { if (!freezeVisual) playbackMotion.emphasize(index, currentLine(), animateEmphasis, playbackStepActive) }
     val density = lyricDensity
     val blurEffects = remember(density.density) { lyricBlurEffects(density.density) }
 
@@ -70,6 +74,15 @@ internal fun ImmersiveLyricLine(
         else if (!freezeVisual || !row.words.configured) playbackMotion.configureWords(index, highlightRanges, smoothProgressMs,
             canAnimateVerbatim, index == current, animateEmphasis && !ExperiencePreferences.options.reduceMotion,
             allowTail = playbackStepActive && index == current - 1)
+    }
+    val rubyGroups = remember(line.transliteration, highlightRanges) { lyricRubyGroups(line, highlightRanges) }
+    // 样式在重组间复用，焦点附近的行重组时不重建样式对象。
+    val activeStyle = remember(activeSize, activeLineHeight, rubyGroups != null, typography) {
+        MusicOneTextStyles.lyricActive.copy(fontSize = activeSize.sp, lineHeight = activeLineHeight.sp)
+            .let { if (rubyGroups != null) lyricRubyTextStyle(it, typography) else it }
+    }
+    val translationStyle = remember(translationSize, translationLineHeight) {
+        MusicOneTextStyles.lyricTranslation.copy(fontSize = translationSize.sp, lineHeight = translationLineHeight.sp)
     }
     val textLayout = remember(line.text, typography, fontMode) { mutableStateOf<TextLayoutResult?>(null) }
     val translationLayout = remember(line.translation, typography, fontMode) { mutableStateOf<TextLayoutResult?>(null) }
@@ -115,16 +128,14 @@ internal fun ImmersiveLyricLine(
                     Text(
                         baseAnnotated,
                         onTextLayout = updateTextLayout,
-                        style = MusicOneTextStyles.lyricActive.copy(
-                            fontSize = activeSize.sp,
-                            lineHeight = activeLineHeight.sp,
-                        ),
+                        style = activeStyle,
                         color = ink,
                         modifier = Modifier.phoneLyricsReadingRow(readingAnchor, readingPane, index, readTextLayout)
                             .lyricTextBoundary(boundary, readTextLayout, readRowCoordinates,
                                 prepare = layoutProof != null, transform = boundaryTransform,
                                 contentKey = Triple(textLayout.value, highlightRanges, ink))
                             .lyricLayoutProof(layoutProof, index, false, readTextLayout, readTranslationLayout) { paragraphWidth[0] }
+                            .lyricRubyDrawing(rubyGroups, readTextLayout, row.words, ink, typography, fontMode)
                             .lyricWordAlphaDrawing(
                             ranges = highlightRanges,
                             textLayout = readTextLayout,
@@ -141,10 +152,7 @@ internal fun ImmersiveLyricLine(
                         Text(
                             remember(translation, fontMode) { musicOneUiAnnotatedString(translation, mode = fontMode) },
                             onTextLayout = updateTranslationLayout,
-                            style = MusicOneTextStyles.lyricTranslation.copy(
-                                fontSize = translationSize.sp,
-                                lineHeight = translationLineHeight.sp,
-                            ),
+                            style = translationStyle,
                             color = ink.copy(alpha = .72f),
                             modifier = Modifier.padding(top = 2.dp)
                                 .lyricTextBoundary(boundary, readTranslationLayout, readRowCoordinates,

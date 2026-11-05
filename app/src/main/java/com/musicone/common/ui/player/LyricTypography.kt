@@ -14,17 +14,20 @@ internal data class LyricTypography(
     val estimatedRowHeightDp: Float get() = activeLineSp + translationLineSp + 12f
 }
 
-internal fun lyricTypographyForWidth(mode: PlayerLayoutMode, columnWidthDp: Float): LyricTypography {
+internal fun lyricTypographyForWidth(mode: PlayerLayoutMode, columnWidthDp: Float,
+    fontSize: LyricFontSize = ExperiencePreferences.options.lyricFontSize): LyricTypography {
     val large = columnWidthDp >= 400f
     val reference = if (mode == PlayerLayoutMode.COMPACT_SINGLE) 340f else 600f
     val ratio = (columnWidthDp.coerceAtLeast(1f) / reference).pow(.12f).coerceIn(.94f, 1.06f)
     val base = if (mode == PlayerLayoutMode.COMPACT_SINGLE) 32f else 44f
+    val main = ratio * fontSize.scale
+    val secondary = ratio * fontSize.secondaryScale
     return LyricTypography(
-        activeSp = base * ratio,
-        activeLineSp = (if (large) 56f else 42f) * ratio,
-        translationSp = (if (large) 14f else 13f) * ratio,
-        translationLineSp = (if (large) 20f else 19f) * ratio,
-        upcomingSp = (if (large) 40f else 28f) * ratio,
+        activeSp = base * main,
+        activeLineSp = (if (large) 56f else 42f) * main,
+        translationSp = (if (large) 14f else 13f) * secondary,
+        translationLineSp = (if (large) 20f else 19f) * secondary,
+        upcomingSp = (if (large) 40f else 28f) * main,
     )
 }
 

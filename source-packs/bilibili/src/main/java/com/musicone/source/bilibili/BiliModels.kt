@@ -70,6 +70,8 @@ internal data class BiliVideoItem(
     val upName: String,
     val durationSec: Long,
     val isInvalid: Boolean = false,
+    /** 分 P 数量；0 表示未知（旧缓存），按需再查询分 P 列表。 */
+    val pageCount: Int = 0,
 )
 
 /**

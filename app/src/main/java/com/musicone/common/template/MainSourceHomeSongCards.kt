@@ -24,8 +24,8 @@ internal fun MainSourceHomeSongCard(card: MainSourceHomeCard.Song, current: Bool
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = selection))) {
         Column {
             Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
-                ArtworkBitmapOrPlaceholder(artwork, track.artworkStart, track.artworkEnd, track.artworkMark,
-                    Modifier.fillMaxSize(), 48.sp, RectangleShape)
+                CrossfadingArtworkBitmapOrPlaceholder(artwork, artwork == null && !track.artworkUrl.isNullOrBlank(),
+                    track.artworkStart, track.artworkEnd, track.artworkMark, Modifier.fillMaxSize(), 48.sp, RectangleShape)
                 MainSourceFeedPlayingIndicator(current, playing)
             }
             MainSourceHomeArtworkGradient(artwork, track.artworkUrl ?: track.id, Modifier.fillMaxWidth()) {

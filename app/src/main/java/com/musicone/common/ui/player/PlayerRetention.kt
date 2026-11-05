@@ -23,7 +23,8 @@ internal class PlayerRetentionState(allowed: Boolean) {
 
     fun release() { allowed = false; warmed = false }
     fun markWarmed() { if (allowed) warmed = true }
-    fun shouldMount(visible: Boolean): Boolean = foreground && (visible || allowed)
+    // 正在显示的播放页进后台也保留，否则其中打开的歌手／专辑页、队列等会随子树一起丢失；后台只释放隐藏预热页。
+    fun shouldMount(visible: Boolean): Boolean = visible || (foreground && allowed)
     val launchReady: Boolean get() = !allowed || !foreground || warmed
 }
 

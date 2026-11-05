@@ -46,6 +46,8 @@ internal fun MainSourceMyScreen(
     val favoriteAccess = mainSourceFavoriteAccess(library.signedIn, source.requiresAccount,
         sourceEntry?.authentication != null,
         com.musicone.source.sdk.SourceLibrarySection.FAVORITE_TRACKS in sourceEntry?.collections?.librarySections.orEmpty())
+    // 不提供登录的音源没有账号，空状态按真实内容显示，不再提示登录。
+    val loginFree = source.loginFree
     LaunchedEffect(source.id) { recentPlayViewModel.configure(source) }
     val scope = rememberCoroutineScope()
     val musicLibraryUi = LocalMusicLibraryUi.current
@@ -55,15 +57,18 @@ internal fun MainSourceMyScreen(
     var hiddenId by remember { mutableStateOf<String?>(null) }
     val removals = remember(account?.userId) { PlaylistCardRemovalState() }
     val editorBackdrop = rememberGraphicsLayer()
-    var section by rememberSaveable { mutableIntStateOf(0) }
-    val created = section == 0
-    val localSection = section == 2
+    var savedSection by rememberSaveable { mutableIntStateOf(MY_SECTION_CREATED) }
+    // 音源未声明的创建／收藏分区不显示，只剩本地时连分段按钮一起隐藏。
+    val sections = mainSourceLibrarySections(sourceEntry?.collections?.librarySections.orEmpty())
+    val section = sections.resolveSection(savedSection)
+    val created = section == MY_SECTION_CREATED
+    val localSection = section == MY_SECTION_LOCAL
     val scroll = rememberLazyGridState()
     val gridTopPadding = 88.dp
     val headerInset = with(LocalDensity.current) { gridTopPadding.toPx() }
     val (segmentMotion, switchSegment) = rememberLibrarySegmentSwitch(
         section, scroll, headerInset,
-    ) { section = it }
+    ) { savedSection = it }
     val playlists = if (localSection) musicLibraryUi.snapshot.localPlaylists else if (created) library.createdPlaylists
         else rememberPlaylistReturnCards(library.collectedPlaylists, "${source.id}:${account?.userId.orEmpty()}",
             "${source.id}:my-library:false:")
@@ -102,7 +107,7 @@ internal fun MainSourceMyScreen(
             contentPadding = PaddingValues(start = gutter, end = gutter, top = gridTopPadding, bottom = bottomInset + 28.dp + trailingSpace),
             horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             item("profile", span = { GridItemSpan(maxLineSpan) }) {
-                Box(Modifier.animateContentSize(musicSpring()).padding(bottom = 12.dp)) { MainSourceProfileHeader(account, onOpenSettings) }
+                Box(Modifier.animateContentSize(musicSpring()).padding(bottom = 12.dp)) { MainSourceProfileHeader(account, onOpenSettings, loginFreeName = source.label.takeIf { loginFree && account == null }) }
             }
             item("favorites", span = { GridItemSpan(maxLineSpan) }) {
                 val open = {
@@ -129,13 +134,17 @@ internal fun MainSourceMyScreen(
                         }
                     })
                 // 两张卡片占用固定槽位，横滑溢出由整页视口裁剪，不能在网格留白处提前截断。
+                val cardOptions = ExperiencePreferences.options
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopStart) {
-                    PairedLibraryCards(presented, musicLibraryUi.snapshot.unified,
+                    val (firstCard, secondCard) = mainSourceLibraryCards(presented, musicLibraryUi.snapshot.unified,
+                        favoriteAccess, cardOptions.hideUnifiedPlaylist)
+                    PairedLibraryCards(firstCard, secondCard,
                         onOpen = { if (it.id == favorite.id) open() else onOpenPlaylist(it) },
                         onPlay = { if (it.id == favorite.id) {
                             if (favoriteReady) onPlayPlaylist(if (offline.online) favorite else mainSourceOfflineFavorites(favorite)) else open()
                         } else onPlayPlaylist(it) },
-                        tabletCardWidth = pairedWidth, firstSharedTransition = favoriteReady)
+                        tabletCardWidth = pairedWidth, firstSharedTransition = firstCard.id != favorite.id || favoriteReady,
+                        phoneSideBySide = cardOptions.phoneSideBySideLibraryCards)
                 }
             }
             if (supportsArtistFollowing(context, source)) item("followed-artists", span = { GridItemSpan(maxLineSpan) }) {
@@ -150,11 +159,13 @@ internal fun MainSourceMyScreen(
                 }, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("我的歌单", fontSize = 23.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { if (localSection) editor.show(null, Rect.Zero, local = true) else if (library.signedIn) editor.show(null, Rect.Zero) else entry() }) {
+                        // 无需登录的音源没有账号歌单可建，只在本地分区保留新建。
+                        if (localSection || (!loginFree && MY_SECTION_CREATED in sections)) IconButton(onClick = { if (localSection) editor.show(null, Rect.Zero, local = true) else if (library.signedIn) editor.show(null, Rect.Zero) else entry() }) {
                             Icon(Icons.Rounded.Add, "新建歌单")
                         }
                     }
-                    LibrarySectionTabs(section, listOf("创建 ${library.createdPlaylists.size}", "收藏 ${library.collectedPlaylists.size}", "本地 ${musicLibraryUi.snapshot.localPlaylists.size}"), switchSegment)
+                    if (sections.size > 1) LibrarySectionTabs(sections.indexOf(section),
+                        listOf("创建 ${library.createdPlaylists.size}", "收藏 ${library.collectedPlaylists.size}", "本地 ${musicLibraryUi.snapshot.localPlaylists.size}").let { all -> sections.map(all::get) }) { switchSegment(sections[it]) }
                 }
             }
             items(displayedPlaylists, key = { it.id }) { playlist ->
@@ -187,15 +198,15 @@ internal fun MainSourceMyScreen(
             if (displayedPlaylists.isEmpty() && (localSection || !library.signedIn || !loading)) item("status", span = { GridItemSpan(maxLineSpan) }) {
                 MainSourceInlineMessage(when {
                     localSection -> "还没有本地歌单，点击右上角创建"
-                    !library.signedIn -> "登录后，你的音乐收藏会出现在这里"
+                    !library.signedIn && !loginFree -> "登录后，你的音乐收藏会出现在这里"
 
                     else -> message ?: if (created) "还没有创建的歌单" else "还没有收藏的歌单"
                 })
             }
-            if (showRecentPlay) item("recent-play", span = { GridItemSpan(maxLineSpan) }) {
+            if (showRecentPlay && !recentPlay.unsupported) item("recent-play", span = { GridItemSpan(maxLineSpan) }) {
                 Box(Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null, placementSpec = musicSpring())
                     .animateContentSize(musicSpring())) {
-                    MainSourceRecentPlaySection(recentPlay, library.signedIn, onOpenPlaylist)
+                    MainSourceRecentPlaySection(recentPlay, library.signedIn || loginFree, onOpenPlaylist)
                 }
             }
         }

@@ -17,8 +17,7 @@
     "ACCOUNT",
     "PLAYLIST",
     "PLAYBACK",
-    "LYRICS",
-    "SETTINGS"
+    "LYRICS"
   ],
   "useCustomPages": true,
   "requiresLogin": true,

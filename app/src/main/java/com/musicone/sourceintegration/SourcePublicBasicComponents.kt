@@ -83,7 +83,7 @@ internal class SourcePublicBasicComponents(private val access: SourcePublicCompo
         access.Host { LibraryActionButton(title, access.event(onClick), modifier, enabled = enabled, primary = primary) }
     }
     @Composable override fun ActionRow(title: String, subtitle: String?, enabled: Boolean, onClick: () -> Unit) {
-        access.Host { LibraryActionRow(title, subtitle, enabled, access.event(onClick)) }
+        access.Host { LibraryActionRow(title, subtitle, enabled, onClick = access.event(onClick)) }
     }
     @Composable override fun FormField(label: String, value: String, enabled: Boolean, onChange: (String) -> Unit) {
         access.Host { LibraryFormField(label, value, access.valueEvent(onChange), enabled) }

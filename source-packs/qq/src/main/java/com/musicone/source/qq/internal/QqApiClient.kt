@@ -13,6 +13,16 @@ import java.net.URI
 
 internal class QqApiClient {
     private val playbackSources = QqPlaybackSourceCache()
+    private val missingFiles = QqPlaybackMissCache.shared
+    private val fallbackPrefetch = QqPlaybackFallbackPrefetch()
+
+    /** 点播高档位时并行准备下一档；返回的任务在高档位成功后应取消。 */
+    fun prefetchFallback(track: MusicTrack, cookie: String, quality: AudioQuality, guid: String?) =
+        fallbackPrefetch.start(track, cookie, quality) {
+            playbackSource(track, cookie, quality, guid = guid, origin = QqRequestOrigin.FALLBACK_PREFETCH)
+        }
+
+    fun cancelFallback(task: kotlinx.coroutines.Deferred<PlaybackSource>) = fallbackPrefetch.cancel(task)
     fun account(cookie: String): MusicAccount {
         val userId = normalizeUin(cookie)
         val musicKey = qqMusicKey(cookie)
@@ -110,7 +120,10 @@ internal class QqApiClient {
         origin: QqRequestOrigin = QqRequestOrigin.PLAYBACK,
     ): PlaybackSource {
         QqSessionRequestCoordinator.rememberGuid(cookie, guid)
-        return retryQqRequestAfterVerification(cookie, interactive = origin != QqRequestOrigin.PRELOAD) { activeCookie ->
+        // 高档位点播时已并行准备了这一档，直接接上，不再重复换票。
+        if (origin == QqRequestOrigin.PLAYBACK) fallbackPrefetch.take(track, cookie, quality)?.let { return it }
+        val interactive = origin != QqRequestOrigin.PRELOAD && origin != QqRequestOrigin.FALLBACK_PREFETCH
+        return retryQqRequestAfterVerification(cookie, interactive = interactive) { activeCookie ->
             currentCoroutineContext().ensureActive()
             QqSessionRequestCoordinator.beforeTicketRequest(activeCookie)
             playbackSources.get(track, activeCookie, quality)
@@ -131,6 +144,8 @@ internal class QqApiClient {
         origin: QqRequestOrigin,
         spec: QqQualitySpec,
     ): PlaybackSource {
+        // 近期已确认 CDN 上没有这个文件，直接降档，不再换票探测。
+        if (missingFiles.contains(track, quality, spec)) throw QqPlaybackFileMissingException(quality)
         // 短卡和部分详情缺少文件尺寸，实际可用档位以本次签发并校验的音源为准。
         awaitTicketRequest(cookie, origin)
         val primary = try {
@@ -139,7 +154,14 @@ internal class QqApiClient {
         } catch (_: QqPlaybackItemUnavailableException) {
             null
         }
-        val primaryUrl = primary?.let { resolveQqPlaybackUrl(it, quality) }
+        val primaryProbe = primary?.let { resolveQqPlaybackUrl(it, quality) }
+        // 所有地址都明确 404/410 说明文件不存在；兼容票只解决试听重定向，换了也是同一批 404。
+        if (primaryProbe?.missing == true) {
+            missingFiles.remember(track, quality, spec)
+            qqDiagnostic("音质文件不存在：来源=${origin.diagnosticName}，prefix=${spec.prefix}，跳过兼容取票")
+            throw QqPlaybackFileMissingException(quality)
+        }
+        val primaryUrl = primaryProbe?.url
         val primaryFull = primaryUrl != null &&
             (if (quality == AudioQuality.DOLBY) QqAudioValidation.isFullLength(primaryUrl, track)
             else !primaryUrl.isQqTrialUrl() || !inspectMedia || QqAudioValidation.isFullLength(primaryUrl, track))
@@ -149,7 +171,7 @@ internal class QqApiClient {
                 requestCompatibilityPlayback(track, cookie, quality, spec, origin)
                     .optJSONObject("req_1")?.optJSONObject("data")
                     ?.also { it.throwIfQqPlaybackItemsFailed(cookie, origin) }
-                    ?.let { resolveQqPlaybackUrl(it, quality) }
+                    ?.let { resolveQqPlaybackUrl(it, quality).url }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
@@ -245,7 +267,7 @@ internal class QqApiClient {
                     .put("needNew", 1)
                     .put("crypt", 0)
                     .put("qrc", 1)
-                    .put("roma", 0)
+                    .put("roma", 1)
                     .put("trans", 1)))
         runCatchingCancellable {
             postMusicU(body, cookie, origin = origin).optJSONObject("lyric")?.optJSONObject("data")
@@ -260,7 +282,7 @@ internal class QqApiClient {
             val original = parseQqQrc(decodedLyric).ifEmpty { parseLrc(decodedLyric) }.confirmedByCurrentQqParser()
             if (original.isNotEmpty()) {
                 val translated = parseLrc(decodeQqLyric(data.optString("trans")))
-                val lyrics = mergeLyricTranslation(original, translated)
+                val lyrics = mergeLyricTranslation(original, translated).withQqRomaji(decodeQqLyric(data.optString("roma")))
                 lyricDiagnostic(track, if (lyrics.any { it.words.isNotEmpty() }) "QRC解析完成" else "LRC解析完成", lyrics)
                 return lyrics
             }
@@ -575,9 +597,9 @@ private fun JSONObject.qqPlaybackPurls(expectedQuality: AudioQuality? = null): L
 private fun resolveQqPlaybackUrl(
     data: JSONObject,
     expectedQuality: AudioQuality? = null,
-): String? {
+): PlatformHttp.ReadableProbe {
     val candidates = qqPlaybackUrlCandidates(data.qqPlaybackPurls(expectedQuality), data.qqPlaybackSips())
-    return PlatformHttp.firstReadable(candidates)
+    return PlatformHttp.readableProbe(candidates)
 }
 
 private fun JSONObject.qqPlaybackSips(): List<String> = optJSONArray("sip")?.let { values ->

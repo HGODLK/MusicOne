@@ -6,4 +6,15 @@
         <item name="android:navigationBarColor">@android:color/white</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
+
+    <!-- 系统启动窗口的主题：显示灰色 M，由 HomeLaunchAnimation 接着点亮。Activity 创建时切回 Theme.MusicOne。 -->
+    <style name="Theme.MusicOne.LaunchBase">
+        <item name="android:windowBackground">@drawable/launch_window</item>
+        <item name="android:statusBarColor">@color/launch_background</item>
+        <item name="android:navigationBarColor">@color/launch_background</item>
+        <item name="android:windowLightStatusBar">@bool/launch_light_bars</item>
+    </style>
+    <style name="Theme.MusicOne.Launch" parent="Theme.MusicOne.LaunchBase" />
+    <!-- 仅 Android 12 及以上用于“始终使用深色模式”，内容见 values-v31。 -->
+    <style name="Theme.MusicOne.Launch.Dark" />
 </resources>

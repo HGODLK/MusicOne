@@ -12,7 +12,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 
-internal class LibraryEditForm(val title: String, val labels: List<String>, initial: List<String>, val save: suspend (List<String>) -> Unit) {
+internal class LibraryEditForm(val title: String, val labels: List<String>, initial: List<String>, val detail: String? = null,
+    val save: suspend (List<String>) -> Unit) {
     val values = initial.map { mutableStateOf(it) }
 }
 
@@ -40,6 +41,7 @@ internal class MusicLibraryUiController(val context: Context, private val scope:
     var chooseArchive: () -> Unit = {}
     var exportArchive: (Boolean) -> Unit = {}
     var chooseArchiveDirectory: () -> Unit = {}
+    var removeFromQueue: (List<MusicTrack>) -> Unit = {}
 
     fun work(label: String, action: suspend () -> Unit) {
         if (busy) return
@@ -75,6 +77,30 @@ internal class MusicLibraryUiController(val context: Context, private val scope:
     }
     fun deletePlaylist(playlist: MusicPlaylist) {
         form = LibraryEditForm("删除「${playlist.title}」？原音乐文件会保留。", emptyList(), emptyList()) { store.deletePlaylist(playlist.id) }
+    }
+    /** 不再跟踪本地歌曲；涉及复制副本、目录降级或整单删除时先经玻璃确认框确认。 */
+    fun removeLocal(tracks: List<MusicTrack>, all: Boolean = false, onRemoved: () -> Unit = {}) = work("正在检查…") {
+        val ids = tracks.filter { it.source == MusicSource.LOCAL }.map { it.id }
+        val plan = withContext(Dispatchers.IO) { store.localRemovalPlan(ids, all) }
+        if (plan.songIds.isEmpty()) { message = "没有可移除的本地歌曲"; return@work }
+        if (plan.needsConfirmation) {
+            form = LibraryEditForm(plan.confirmTitle(), emptyList(), emptyList(), plan.confirmDetail()) { untrack(plan, onRemoved) }
+        } else {
+            untrack(plan, onRemoved)
+        }
+    }
+    private suspend fun untrack(plan: LocalRemovalPlan, onRemoved: () -> Unit) {
+        val result = store.untrackLocalSongs(plan.songIds, plan.all)
+        // 数据库已提交，再删除应用私有文件并释放不再需要的授权。
+        withContext(Dispatchers.IO) {
+            result.privateFiles.forEach { it.delete() }
+            result.releasedUris.forEach { uri ->
+                runCatching { context.contentResolver.releasePersistableUriPermission(Uri.parse(uri), android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            }
+        }
+        removeFromQueue(result.removed)
+        onRemoved()
+        message = "已移除 ${result.removed.size} 首本地歌曲" + if (plan.copied > 0) "，应用内副本已删除" else "，原文件保留"
     }
     fun addTo(playlistId: String, track: MusicTrack) = work("正在添加…") {
         store.addTracks(playlistId, listOf(track))

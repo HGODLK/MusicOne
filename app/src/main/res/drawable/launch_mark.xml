@@ -1,0 +1,12 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp" android:height="288dp"
+    android:viewportWidth="288" android:viewportHeight="288">
+    <!-- 图标路径放大到 M 宽 120dp，须与 HomeLaunchAnimation 的 M 位置和大小一致。 -->
+    <group android:scaleX="2.16216" android:scaleY="2.16216"
+        android:translateX="27.2432" android:translateY="27.2432">
+        <path android:pathData="M30,66 L37,43 C39,36 45,36 48,43 L54,57 L60,43 C63,36 69,36 71,43 L77,62 C80,73 65,75 62,66"
+            android:fillColor="@android:color/transparent"
+            android:strokeColor="@color/launch_mark" android:strokeWidth="8.5"
+            android:strokeLineCap="round" android:strokeLineJoin="round" />
+    </group>
+</vector>

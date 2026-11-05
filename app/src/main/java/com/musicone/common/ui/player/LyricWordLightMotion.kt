@@ -47,6 +47,8 @@ internal class LyricWordLightMotion {
         // 退场窗口被复用时不能留着旧状态，直接校正到当前进度。
         val released = held
         held = false
+        // 点击跳转时尚未进入逐字范围的行，启用时不能从全亮慢慢压暗。
+        val alignOnEnable = jumpHoldSeconds > 0f
         // 跳转后才成为当前句的行不算旧句，立刻显示正确明暗。
         if (focused && !this.focused && jumpHoldSeconds > 0f) {
             jumpHoldSeconds = 0f
@@ -68,7 +70,8 @@ internal class LyricWordLightMotion {
             samples = ranges.map { LyricWordSample(target(it.word, position)) }
         }
         // 跳转可能让没启用过的行直接成为当前句，要立刻显示正确明暗；自然换句时它已提前启用，走不到这里。
-        if (enabling && focused && progressMs != null) {
+        if (enabling && (focused || alignOnEnable) && progressMs != null) {
+            jumpHoldSeconds = 0f
             strength = LyricWordSample(1f)
             drawRevision++
         }
@@ -97,6 +100,16 @@ internal class LyricWordLightMotion {
             jumpHoldSeconds = LYRIC_WORD_JUMP_HOLD_SECONDS
             cancelTail()
         }
+    }
+
+    /** 点击歌词造成的跳转：目标句和下一句不是旧句，明暗直接到位，不保持也不从全亮压暗。 */
+    fun alignToClock() {
+        if (held || progressMs == null) return
+        cancelTail()
+        if (enabled) {
+            jumpHoldSeconds = 0f
+            clockJumped = true
+        } else jumpHoldSeconds = LYRIC_WORD_JUMP_HOLD_SECONDS
     }
 
     /** 跨屏退场的窗口不再跟时钟，亮度停在当前样子随窗口淡出；下次 configure 解除。 */
@@ -157,6 +170,7 @@ internal class LyricWordLightMotion {
         return lyricWordSweepAlpha(samples[index].position, horizontalFraction, strength.position, animate)
     }
 
+    internal val rangeCount: Int get() = ranges.size
     internal fun sweepProgress(index: Int): Float = if (ranges[index].word == null) 1f else samples[index].position
     internal val sweepStrength: Float get() = strength.position
     internal val spatialLight: Boolean get() = animate

@@ -8,6 +8,8 @@ import android.database.sqlite.SQLiteOpenHelper
 internal class MusicLibraryDatabase(context: Context) : SQLiteOpenHelper(context, "musicone_library.db", null, 3) {
     init { setWriteAheadLoggingEnabled(true) }
     override fun onConfigure(db: SQLiteDatabase) { db.setForeignKeyConstraintsEnabled(true) }
+    // 不升库版本：测试包可能已改过名称，同时要保留退回 0.3.0 时能打开数据库。
+    override fun onOpen(db: SQLiteDatabase) { if (!db.isReadOnly) db.restoreUnifiedPlaylistTitle() }
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE songs (id TEXT PRIMARY KEY, source TEXT NOT NULL, data TEXT NOT NULL, title_override TEXT, artist_override TEXT, artwork_override TEXT, lyric_path TEXT, default_lyric_path TEXT, lyric_offset INTEGER NOT NULL DEFAULT 0)")
         db.execSQL("CREATE TABLE playlists (id TEXT PRIMARY KEY, title TEXT NOT NULL, position INTEGER NOT NULL, remote_folder INTEGER, owner TEXT, manual_order INTEGER NOT NULL DEFAULT 0)")
@@ -43,4 +45,8 @@ internal class MusicLibraryDatabase(context: Context) : SQLiteOpenHelper(context
             }
         }
     }
+}
+
+internal fun SQLiteDatabase.restoreUnifiedPlaylistTitle() {
+    execSQL("UPDATE playlists SET title=? WHERE id=? AND title<>?", arrayOf("综合歌单", UNIFIED_PLAYLIST_ID, "综合歌单"))
 }

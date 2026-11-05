@@ -99,8 +99,9 @@ internal fun ImmersiveLyrics(
     val wordProgress = remember(verbatimProgressMs, track.timing) {
         verbatimProgressMs?.let { clock -> { lyricWordDisplayPosition(clock(), track.timing) } }
     }
-    val lines = remember(track.id, onlineLines, track.retryable) {
-        onlineLines.ifEmpty { listOf(TimedLyric(0L, if (track.retryable) "歌词加载失败，点击重试" else "暂无歌词")) }
+    val lyricContent = ExperiencePreferences.options.lyricDisplayContent
+    val lines = remember(track.id, onlineLines, track.retryable, lyricContent) {
+        lyricDisplayLines(onlineLines, lyricContent).ifEmpty { listOf(TimedLyric(0L, if (track.retryable) "歌词加载失败，点击重试" else "暂无歌词")) }
     }
     val tapFocus = remember(track.id, lines) { LyricTapFocus() }
     val current by remember(lines, progressMs, tapFocus, track.timing) {
@@ -127,6 +128,7 @@ internal fun ImmersiveLyrics(
     val activePane = controller.currentPane
     val drawEpoch = LocalPlayerLyricsContent.current?.drawEpoch
     val openingMotion = LocalRetainedPhoneLyricsMotion.current
+    PublishPhoneLyricsListEdge(openingMotion?.listEdge, controller, active)
     val preparationTurn = LocalPhonePlayerTurn.current
     val preparationRotation = LocalPhonePlayerRotation.current
     val drawingWindow = LocalPhoneLyricsDrawingWindow.current
@@ -149,8 +151,8 @@ internal fun ImmersiveLyrics(
     val lyricDensity = remember(density.density) { lyricDisplayDensity(density) }
     val latestMiddleProgress by rememberUpdatedState(entranceProgress ?: { 1f - exitProgress() })
     LyricSeekPreviewEffect(controller, current, isSeeking, active && followPlayback && !middleOwnsPosition && !freezeWindow)
-    LyricAnimationEffect(activePane.playbackStep, freezeWindow, residency.pauseWords) {
-        if (!freezeWindow && !residency.pauseWords) activePane.playbackStep.run()
+    LyricAnimationEffect(activePane.playbackStep, tapFocus, freezeWindow, residency.pauseWords) {
+        if (!freezeWindow && !residency.pauseWords) activePane.playbackStep.run { tapFocus.line }
     }
     LyricAnimationEffect(freezeWindow, isSeeking) {
         if (freezeWindow || isSeeking) {
@@ -689,6 +691,14 @@ internal fun LyricListView(
         lineWindow?.let { LyricBoundaryViewport(it, boundaryLayout::height) }
     }
     val fling = rememberLyricFlingBinding()
+    // 行只拿稳定的读取入口，列表因切句重组时，参数未变的远处行可以直接跳过。
+    val currentLine = remember(pane) { { pane.currentLine } }
+    val latestSettle by rememberUpdatedState(lyricSettleProgress)
+    val settleProgress = remember { { latestSettle() } }
+    val latestLineClick by rememberUpdatedState(onLineClick)
+    // 列表本身订阅焦点（重组只到这一层），由它登记真实焦点句。
+    val presentedLine = pane.currentLine
+    SideEffect { if (!freezeVisual) pane.playbackStep.presentEmphasis(presentedLine) }
     LazyColumn(
         state = pane.listState,
         modifier = modifier.fillMaxSize().lyricListHost(pane, LocalPhonePlayerTurn.current).then(fling.modifier),
@@ -701,12 +711,12 @@ internal fun LyricListView(
         itemsIndexed(
             lines,
             key = { index, line -> "$index-${line.timeMs}" },
-            contentType = { _, line -> line.translation != null },
+            contentType = { _, line -> lyricRowContent(line) },
         ) { index, line ->
             ImmersiveLyricLine(
-                line = line,
+                sourceLine = line,
                 index = index,
-                current = pane.currentLine,
+                currentLine = currentLine,
                 typography = typography,
                 layoutProof = layoutProof,
                 readingAnchor = readingAnchor,
@@ -715,11 +725,11 @@ internal fun LyricListView(
                 animateEmphasis = !pane.isFrozen && animateEmphasis,
                 freezeVisual = freezeVisual,
                 holdWords = holdWords || pane.isFrozen,
-                settleProgress = lyricSettleProgress,
+                settleProgress = settleProgress,
                 playbackMotion = pane.playbackStep,
                 playbackStepActive = active && !pane.isFrozen && !isSeeking && !shortSeeking,
                 smoothProgressMs = smoothProgressMs,
-                onClick = { onLineClick(index, line) },
+                onClick = remember(index, line) { { latestLineClick(index, line) } },
                 boundary = remember(lineWindow, boundaryLayout, boundaryViewport, index, viewportGeometry) {
                     lineWindow?.let { bounds -> LyricLineBoundary(bounds,
                         rowTop = { boundaryLayout.top(index) }, viewportHeight = boundaryLayout::height,

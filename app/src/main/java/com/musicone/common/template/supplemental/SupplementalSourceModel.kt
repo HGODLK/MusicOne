@@ -270,14 +270,14 @@ internal class SupplementalSourceModel(context: Context, val instance: SourceIns
         if (pageProvider != null) ensureCurrent(revision)
         mutable.update { it.copy(message = if (play) "已开始播放" else "已加入${it.targetTitle}") }
     }
-    fun playCollection(collection: SourceRemoteCollection) = action {
+    fun playCollection(collection: SourceRemoteCollection, sort: PlaylistSort = PlaylistSort.ADDED_DESC) = action {
         requireSupplementalAction(entry, play = true)
         if (state.value.playingCollection != null) return@action
         val revision = generation
         mutable.update { it.copy(playingCollection = collection.identity.remoteId) }
         try {
             val repo = checkNotNull(repository)
-            val contents = repo.complete(repo.entry(collection, "")).contents
+            val contents = sortedSupplementalContents(repo.complete(repo.entry(collection, "")).contents, sort)
             val tracks = if (pageProvider != null) contents.flatMap { content ->
                 supplementalDefaultTracks(entry, content)
             }.distinctBy { it.stableId } else contents.mapNotNull { it.playableTrack }

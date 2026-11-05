@@ -61,6 +61,8 @@ internal class PlaylistMultiSelection(val key: (MusicTrack) -> String = { it.id 
 
 internal val LocalPlaylistMultiSelection = staticCompositionLocalOf<PlaylistMultiSelection?> { null }
 internal val LocalPlaylistRemovalLabel = staticCompositionLocalOf<String?> { null }
+/** 多选底栏的移除直接执行，与歌曲菜单里的移除共用同一套逻辑，不再弹出二级菜单。 */
+internal val LocalPlaylistBatchRemoval = compositionLocalOf<((List<MusicTrack>) -> Unit)?> { null }
 
 @Composable
 internal fun PlaylistSelectionToolbar(onDeleteCache: ((List<MusicTrack>) -> Unit)? = null,
@@ -92,9 +94,12 @@ internal fun PlaylistSelectionToolbar(onDeleteCache: ((List<MusicTrack>) -> Unit
                     menu.openBatch(selection.tracks.filter { selection.key(it) in selection.ids }, anchor)
                 }
             }
+            val batchRemoval = LocalPlaylistBatchRemoval.current
             LocalPlaylistRemovalLabel.current?.let { label ->
                 SelectionAction(label, selection.ids.isNotEmpty() && available) {
-                    menu.openBatch(selection.tracks.filter { selection.key(it) in selection.ids }, anchor, chooseTargets = false)
+                    val selected = selection.tracks.filter { selection.key(it) in selection.ids }
+                    if (batchRemoval != null) batchRemoval(selected)
+                    else menu.openBatch(selected, anchor, chooseTargets = false)
                 }
             }
             }

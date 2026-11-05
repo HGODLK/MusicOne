@@ -15,6 +15,7 @@ internal fun encodeCachedLyrics(lyrics: List<TimedLyric>): String = JSONObject()
                 .put("parserVersion", line.parserVersion).apply {
                     line.translation?.takeIf { it.isNotBlank() && !it.trim().matches(Regex("^/+$")) }
                         ?.let { put("translation", it) }
+                    line.transliteration?.takeIf { it.isNotBlank() }?.let { put("transliteration", it) }
                     if (line.words.isNotEmpty()) put("words", JSONArray().apply {
                         line.words.forEach { word ->
                             put(JSONObject().put("s", word.startMs).put("e", word.endMs).put("t", word.text))
@@ -39,6 +40,7 @@ internal fun decodeCachedLyrics(raw: String): List<TimedLyric> = runCatching {
             }
         }.orEmpty()
         TimedLyric(value.getLong("time"), value.getString("text"), translation, words,
-            if (current) value.optInt("parserVersion", 0) else 0)
+            if (current) value.optInt("parserVersion", 0) else 0,
+            transliteration = value.optString("transliteration").takeIf { it.isNotBlank() })
     }
 }.getOrDefault(emptyList())

@@ -53,7 +53,8 @@ internal fun systemLyricLinesForPlayback(track: MusicTrack, manualOffsetMs: Long
     applyManualOffset: Boolean = track.source.supportsOnlineLyricOffset): List<SystemLyricLine> {
     val offset = if (applyManualOffset) manualOffsetMs else 0L
     val lead = timing.lineLeadMs
-    return track.lyrics.map { SystemLyricLine(it.timeMs + (if (it.libraryTimeline) 0 else offset) - lead, it.text, it.translation) }
+    val showTranslation = ExperiencePreferences.options.lyricDisplayContent != LyricDisplayContent.ORIGINAL
+    return track.lyrics.map { SystemLyricLine(it.timeMs + (if (it.libraryTimeline) 0 else offset) - lead, it.text, it.translation.takeIf { showTranslation }) }
 }
 
 private data class PreparedSystemPlayback(

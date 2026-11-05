@@ -2,7 +2,7 @@ package com.musicone.source.sdk
 
 import androidx.compose.runtime.Composable
 
-/** 开发阶段继续使用 API 1，通过可选接口启用新能力，旧入口保留原路径。 */
+/** API 1 补充音源按可选页面接口声明逐页页面策略。 */
 object SourceSupplementalContract { const val API_VERSION = 1 }
 enum class SourceSupplementalPage { HOME, LINK, CONTENT, COLLECTIONS, COLLECTION, ACCOUNT, SETTINGS }
 enum class SourceSupplementalPageMode { DEFAULT, CUSTOM, DISABLED }
@@ -11,7 +11,7 @@ data class SourceSupplementalPagePolicy(
     val allowPublicFallback: Boolean = false,
 )
 
-/** 守卫入口透明转发可选能力；空值不能被解释成新契约。 */
+/** 守卫入口透明转发可选能力；空值表示未提供该能力。 */
 interface SourceSupplementalPageProviderAccess {
     val supplementalPageProvider: SourceSupplementalPageProvider?
 }

@@ -14,7 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.*
 import kotlinx.coroutines.*
 
-/** 专辑详情沿用歌单内容、搜索和定位，原始曲序不做收藏时间排序。 */
+/** 专辑详情沿用歌单内容、搜索、定位和排序，默认保持专辑原曲序。 */
 @Composable
 internal fun EntityAlbumScreen(initial: MusicPlaylist, state: MusicOneUiState, bottomInset: Dp,
     created: List<MusicPlaylist>, onBack: () -> Unit, onPlay: (List<MusicTrack>, MusicTrack?) -> Unit,
@@ -32,6 +32,8 @@ internal fun EntityAlbumScreen(initial: MusicPlaylist, state: MusicOneUiState, b
         catch (failure: Exception) { error = failure.asUserMessage() }
         finally { loading = false }
     }
+    val sort = rememberPlaylistSortSelection(initial, initial.sourceAccountId, created)
+    val displayed = remember(album, sort.value) { album.copy(tracks = sortedPlaylistTracks(album.tracks, sort.value)) }
     val toolbar = rememberPlaylistToolbarOverlayState()
     val localTools = rememberPlaylistFloatingToolsOverlayState()
     val tools = LocalEntityFrame.current?.floatingTools ?: localTools
@@ -54,9 +56,9 @@ internal fun EntityAlbumScreen(initial: MusicPlaylist, state: MusicOneUiState, b
         Box(Modifier.fillMaxSize().onGloballyPositioned { bounds = it.boundsInRoot() }) {
             Box(Modifier.fillMaxSize().playerQualityBackdropSnapshot(backdrop, LocalMainSourcePlaylistSongMenu.current?.expanded == true)) {
                 CompositionLocalProvider(LocalPlaylistContentEntrance provides { activation?.entrance?.value ?: 1f }) {
-                RecommendationScreen(album, state, bottomInset, loading, error, false, false, null, false,
-                    PlaylistSort.ADDED_DESC, {}, onBack, {}, { onPlay(album.tracks, null) },
-                    { onShuffle(album) }, { onPlay(album.tracks, it) }, favorites.toggle, toolbar, tools,
+                RecommendationScreen(displayed, state, bottomInset, loading, error, false, false, null, false,
+                    sort.value, sort.select, onBack, {}, { onPlay(displayed.tracks, null) },
+                    { onShuffle(album) }, { onPlay(displayed.tracks, it) }, favorites.toggle, toolbar, tools,
                     contentMounted = activation?.mounted != false, dataEntrance = { tracksEntrance.value })
                 }
             }

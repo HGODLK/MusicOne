@@ -72,7 +72,6 @@ internal fun SourceManagementScreen(
                             Text(title, style = MaterialTheme.typography.titleMedium)
                             Text(when {
                                 source.pendingRemoval -> "已停用 · 下次启动时删除，可撤销"
-                                source.removed -> "已移除 · 账号与资料保留"
                                 instance == null -> source.error ?: "重启后生效"
                                 else -> "已启用"
                             }, style = MaterialTheme.typography.bodySmall)
@@ -119,5 +118,5 @@ internal fun SourceManagementScreen(
         text = { Text(text) }, confirmButton = { TextButton(onClick = { error = null }) { Text("知道了") } }) }
 }
 
-internal fun visibleInSourceManagement(source: InstalledSource): Boolean =
-    source.kind != SourceKind.MAIN || !source.removed
+// 已移除的音源不再显示卡片；账号与资料仍保留在仓库记录中，重新导入即可恢复。
+internal fun visibleInSourceManagement(source: InstalledSource): Boolean = !source.removed

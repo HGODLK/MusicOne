@@ -42,14 +42,14 @@ internal class BiliFolderCache(context: Context) : BiliFolderCacheStore {
     @Synchronized override fun content(account: String, folder: Long): BiliFolderSnapshot? = runCatching { read(account, "$folder")?.let { json ->
         BiliFolderSnapshot(json.optJSONArray("videos")?.searchObjects().orEmpty().map {
             BiliVideoItem(it.getLong("aid"), it.optString("bvid"), it.optLong("cid"), it.optString("title"),
-                it.optString("cover"), it.optString("up"), it.optLong("duration"), it.optBoolean("invalid"))
+                it.optString("cover"), it.optString("up"), it.optLong("duration"), it.optBoolean("invalid"), it.optInt("pages", 0))
         }, json.getInt("page"), json.getBoolean("more"))
     } }.getOrNull()
     @Synchronized override fun saveContent(account: String, folder: Long, content: BiliFolderSnapshot) = write(account, "$folder", JSONObject()
         .put("page", content.page).put("more", content.hasMore).put("videos", JSONArray().apply {
             content.videos.forEach { put(JSONObject().put("aid", it.aid).put("bvid", it.bvid).put("cid", it.cid)
                 .put("title", it.title).put("cover", it.cover).put("up", it.upName).put("duration", it.durationSec)
-                .put("invalid", it.isInvalid)) }
+                .put("invalid", it.isInvalid).put("pages", it.pageCount)) }
         }))
 }
 

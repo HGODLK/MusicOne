@@ -192,6 +192,11 @@ internal class LyricPlaybackStepMotion(
         wake()
     }
 
+    /** 列表按真实焦点登记；远处行不重组时，新补入的行仍按它初始化。 */
+    fun presentEmphasis(current: Int) {
+        if (!trackFadeFrozen) emphasisIndex = current
+    }
+
     fun consume(targetIndex: Int, enabled: Boolean, resumeInterrupted: Boolean = false): LyricPlaybackStepChange {
         if (trackFadeFrozen) return LyricPlaybackStepChange.NONE
         val previous = presentedIndex
@@ -299,7 +304,16 @@ internal class LyricPlaybackStepMotion(
         }
     }
 
-    suspend fun run() = coroutineScope {
+    /** 词时钟发生跳转时调用；tapLine 是点击的目标句，其他行都按旧句处理。 */
+    internal fun jumpWords(tapLine: Int?) {
+        rows.forEach { (line, row) ->
+            if (tapLine != null && (line == tapLine || line == tapLine + 1)) row.words.alignToClock()
+            else row.words.snapToClock()
+        }
+        wake()
+    }
+
+    suspend fun run(tapLine: () -> Int? = { null }) = coroutineScope {
         if (trackFadeFrozen) return@coroutineScope
         val owner = coroutineContext[Job]
         runner = owner
@@ -312,8 +326,7 @@ internal class LyricPlaybackStepMotion(
                 // 重绑后的数值可能与旧时钟相同，绑定版本也必须触发唤醒。
                 wordBindings to wordObservers.keys.mapNotNull { it.words.observedPosition() }
             }.collect { (_, positions) ->
-                if (clockJump.update(positions.firstOrNull())) rows.values.forEach { it.words.snapToClock() }
-                wake()
+                if (clockJump.update(positions.firstOrNull())) jumpWords(tapLine()) else wake()
             }
         }
         try {
@@ -408,7 +421,7 @@ internal class LyricPlaybackRowMotion(val index: Int, current: Int, initialPosit
         if (!playback) words.cancelTail()
         opacity.retarget(if (words.finishingTail) maxOf(.72f, opacityTarget) else opacityTarget, opacitySpec)
         blur.retarget(lyricBlurDp(index, current),
-            if (!animate) snap() else if (playback) musicSpring(185f, .01f) else musicMotion(350))
+            if (!animate) snap() else if (playback) lyricRowBlurPlaybackSpec() else musicMotion(350))
     }
 
     fun advance(elapsed: Long, finish: Boolean, positionHeld: Boolean = false) {

@@ -5,6 +5,6 @@ interface SourceEntityArtwork {
     suspend fun artwork(reference: SourceEntityRef): SourceArtwork
 }
 
-/** 旧音源仍通过既有实体接口读取图片，不向旧实现添加抽象方法。 */
+/** 实体图片由此可选接口提供，不向 SourceEntry 增加抽象成员。 */
 suspend fun SourceEntities.artwork(reference: SourceEntityRef): SourceArtwork =
     (this as? SourceEntityArtwork)?.artwork(reference) ?: entity(reference).artwork

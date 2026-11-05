@@ -29,6 +29,8 @@ internal data class PlatformSettingsUiState(
     val account: MusicAccount? = null,
     val sessionStatus: SessionStatus = SessionStatus.CHECKING,
     val sessionRevision: Long = 0L,
+    // 提供设置页的主音源，主音源页标题旁显示齿轮。
+    val settingsSourceIds: Set<String> = emptySet(),
     // 首页使用实际会话代次，资料刷新仍沿用原有全局通知。
     val homeSessionRevision: Long = 0L,
     val phone: String = "",
@@ -56,4 +58,5 @@ internal enum class SettingsDestination {
     MUSIC_LIBRARY,
     SUPPLEMENTAL,
     SOURCE_MANAGEMENT,
+    AI_ASSISTANT,
 }

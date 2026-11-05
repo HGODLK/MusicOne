@@ -33,7 +33,7 @@ internal fun LibrarySongMenuActions(menu: MainSourcePlaylistSongMenuState, playl
     if (track.source == MusicSource.LOCAL) SongMenuRow("重新关联音频文件", !ui.busy) { menu.dismiss(); ui.chooseRelinkFile(track) }
     if (track.source == MusicSource.LOCAL) SongMenuRow("从本地音乐移除", !ui.busy && !menu.busy) {
         menu.dismiss()
-        ui.work("正在移除…") { ui.store.removeLocalSong(track.id); ui.message = "已从本地音乐移除，原文件保留" }
+        ui.removeLocal(listOf(track))
     }
     if (track.source.supportsManualLyrics) {
         val lyricRevision = ui.snapshot.lyricRevision

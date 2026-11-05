@@ -9,4 +9,6 @@ internal data class TimedLyric(
     val words: List<LyricWord> = emptyList(),
     // 零表示来源未经当前解析器确认，不能仅凭非空内容升级旧缓存。
     val parserVersion: Int = 0,
+    // 宿主约定的逐词注音文本，生成规则见 QqLyricRomaji.kt。
+    val transliteration: String? = null,
 )

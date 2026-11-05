@@ -1,6 +1,6 @@
 package com.musicone.source.sdk
 
-/** 可选音质目录，由 SourceMediaPlayback 的实现同时实现；旧包无需实现。 */
+/** 可选音质目录，由 SourceMediaPlayback 的实现同时实现；未声明时使用宿主默认音质策略。 */
 interface SourceQualityCatalog {
     val qualityCatalog: List<SourceQualityDefinition>
     val defaultCatalogQualityId: String

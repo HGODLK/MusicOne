@@ -35,8 +35,10 @@ internal fun PhoneExpandedPlayer(
     val spec = LocalPlayerLayoutSpec.current
     val canHideControls = spec.mode == PlayerLayoutMode.COMPACT_SINGLE
     val hiddenProgress = if (canHideControls) controls.progress else 0f
-    var controlsHeightPx by remember(density) {
-        mutableIntStateOf(with(density) { PHONE_CONTROLS_ESTIMATED_HEIGHT.roundToPx() })
+    val compactControls = ExperiencePreferences.options.compactPlayerControls
+    var controlsHeightPx by remember(density, compactControls) {
+        mutableIntStateOf(PlayerControlsHeightMemory.read(density, compactControls)
+            ?: with(density) { playerControlsMetrics(compactControls).estimatedHeight.roundToPx() })
     }
     val controlsInset = with(density) { controlsHeightPx.toDp() } * (1f - hiddenProgress)
     val lyricsSurface = LocalPhoneLyricsSurface.current
@@ -73,6 +75,7 @@ internal fun PhoneExpandedPlayer(
                 .padding(horizontal = spec.horizontalPadding)
                 .onSizeChanged {
                     controlsHeightPx = it.height
+                    PlayerControlsHeightMemory.write(density, compactControls, it.height)
                     controls.updateTravel(it.height.toFloat())
                 }
                 .playerControlsDrag(controls, enabled = lyrics && canHideControls, reserveBottomButtons = true)
@@ -99,5 +102,4 @@ internal fun PhoneExpandedPlayer(
     }
 }
 
-private val PHONE_CONTROLS_ESTIMATED_HEIGHT = 208.dp
 internal val PHONE_PLAYER_TOP_PADDING = 44.dp

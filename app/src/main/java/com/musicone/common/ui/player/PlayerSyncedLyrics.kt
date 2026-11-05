@@ -274,8 +274,9 @@ internal fun PlayerSyncedLyricsContent(
         val column = LocalPhoneLyricsColumnWidth.current
         val density = androidx.compose.ui.platform.LocalDensity.current
         val columnDp = column?.let { it / density.density }
-        val typography = remember(layoutMode, maxWidth, touchPadding, columnDp) {
-            lyricTypographyForWidth(layoutMode, minOf(columnDp ?: (maxWidth - touchPadding).value, 760f))
+        val lyricFontSize = ExperiencePreferences.options.lyricFontSize
+        val typography = remember(layoutMode, maxWidth, touchPadding, columnDp, lyricFontSize) {
+            lyricTypographyForWidth(layoutMode, minOf(columnDp ?: (maxWidth - touchPadding).value, 760f), lyricFontSize)
         }
         val windows = if (held.active) held.layers.map { it.window } else outgoing.toList() + listOfNotNull(current)
         windows.forEach { window ->

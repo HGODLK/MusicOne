@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
+    <!-- 用户可在 AI 其他服务中配置 HTTP 兼容接口，包括本机和局域网地址。 -->
+    <base-config cleartextTrafficPermitted="true" />
     <!-- 酷狗与网易云部分旧媒体地址仍返回 HTTP，按平台域名定向兼容。 -->
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">kugou.com</domain>

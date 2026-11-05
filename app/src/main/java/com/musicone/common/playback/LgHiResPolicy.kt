@@ -8,14 +8,43 @@ import java.nio.ByteOrder
 internal fun isLgAudioDevice(manufacturer: String): Boolean =
     manufacturer.trim().lowercase() in setOf("lge", "lg", "lg electronics")
 
-internal fun isLgG7G8(model: String): Boolean =
-    Regex("(?:LM-|LG-)?G(?:710|820)[A-Z0-9-]*", RegexOption.IGNORE_CASE).matches(model.trim()) ||
-        Regex("LG G[78](?: ThinQ)?", RegexOption.IGNORE_CASE).matches(model.trim())
+/** 带 Hi-Fi Quad DAC 的 LG 机型；codes 为型号代码，aliases 为部分系统直接报出的机型名。 */
+private class LgQuadDacModel(val name: String, codes: String, aliases: String, val verified: Boolean = false) {
+    private val code = Regex("(?:LG-|LGM-|LM-)?(?:$codes)[A-Z0-9-]*", RegexOption.IGNORE_CASE)
+    private val alias = Regex("LG (?:$aliases)(?: ThinQ)?", RegexOption.IGNORE_CASE)
+    fun matches(model: String) = code.matches(model) || alias.matches(model)
+}
 
-internal fun lgAudioDeviceName(model: String): String = when {
-    isLgG7G8(model) && model.contains("G7", ignoreCase = true) -> "LG G7 ThinQ"
-    isLgG7G8(model) -> "LG G8 ThinQ"
-    else -> model.trim()
+// 只有 G7／G8 实机验证过；其余同为 Quad DAC 机型，输出路径相同，初始化失败时自动回退系统输出。
+// G6 只有部分地区版带 Quad DAC，型号代码无法区分，不列入。
+private val LG_QUAD_DAC_MODELS = listOf(
+    LgQuadDacModel("LG G7 ThinQ", "G710", "G7", verified = true),
+    LgQuadDacModel("LG G8 ThinQ", "G820", "G8", verified = true),
+    LgQuadDacModel("LG G8S ThinQ", "G810", "G8S"),
+    LgQuadDacModel("LG G8X ThinQ", "G850", "G8X"),
+    LgQuadDacModel("LG V20", "H990|H910|H915|H918|F800|LS997|VS995|US996", "V20"),
+    LgQuadDacModel("LG V30", "H930|H931|H932|H933|LS998|VS996|US998|V300", "V30|V30\\+|V30S"),
+    LgQuadDacModel("LG V35 ThinQ", "V350", "V35"),
+    LgQuadDacModel("LG V40 ThinQ", "V405|V409", "V40"),
+    LgQuadDacModel("LG V50 ThinQ", "V450|V500", "V50"),
+    LgQuadDacModel("LG V50S ThinQ", "V510", "V50S"),
+    LgQuadDacModel("LG V60 ThinQ", "V600", "V60"),
+)
+
+private fun lgQuadDacModel(model: String) = model.trim().let { value -> LG_QUAD_DAC_MODELS.firstOrNull { it.matches(value) } }
+
+internal fun isLgQuadDacModel(model: String): Boolean = lgQuadDacModel(model) != null
+
+/** 是否为实机验证过的机型；其他 Quad DAC 机型在设置里标注未实测。 */
+internal fun isLgVerifiedModel(model: String): Boolean = lgQuadDacModel(model)?.verified == true
+
+internal fun lgAudioDeviceName(model: String): String = lgQuadDacModel(model)?.name ?: model.trim()
+
+/** 开关关闭时的说明：区分已验证、未实测和没有 Quad DAC 的 LG 机型。 */
+internal fun lgHiResIdleDescription(model: String): String = when {
+    isLgVerifiedModel(model) -> "适配原厂 3.5mm 耳机口，需开启系统 Hi-Fi Quad DAC"
+    isLgQuadDacModel(model) -> "本机型未实测；适配原厂 3.5mm 耳机口，需开启系统 Hi-Fi Quad DAC"
+    else -> "本机没有 Hi-Fi Quad DAC，开启后仍走系统输出"
 }
 
 internal fun lgPcmOutputDepth(format: Format, sourceDepth: Int): Int? {

@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
 import android.provider.DocumentsContract
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -24,7 +25,7 @@ internal data class MusicArchivePreview(val folder: File, val data: JSONObject, 
     val playlists get() = data.optJSONArray("playlists")?.length() ?: 0
 }
 
-/** 归档只携带音乐库资料和用户选择的本地文件，不打包登录态与播放缓存。 */
+/** 归档携带音乐库、简短音乐偏好和用户选择的本地文件，不打包登录态与播放缓存。 */
 internal class MusicLibraryArchive(private val context: Context, private val store: MusicLibraryStore) {
     suspend fun export(uri: Uri, includeAudio: Boolean) = withContext(Dispatchers.IO) {
         val staged = File(context.cacheDir, "msco-export-${UUID.randomUUID()}.zip")
@@ -53,6 +54,7 @@ internal class MusicLibraryArchive(private val context: Context, private val sto
                 }
             }
             val songs = data.getJSONArray("songs")
+            data.put("aiMemory", AiMusicMemoryStore.get(context).export())
             for (i in 0 until songs.length()) {
                 val row = songs.getJSONObject(i)
                 val track = JSONObject(row.getString("data"))
@@ -99,7 +101,11 @@ internal class MusicLibraryArchive(private val context: Context, private val sto
             } } ?: error("无法读取归档")
             val manifest = JSONObject(File(folder, "manifest.json").readText())
             require(manifest.optString("format") == "msco" && manifest.optInt("version") == 1) { "不支持此归档版本" }
-            MusicArchivePreview(folder, JSONObject(File(folder, "library.json").readText()), manifest.optBoolean("audio"))
+            val data = JSONObject(File(folder, "library.json").readText())
+            data.optJSONObject("aiMemory")?.let { memory ->
+                require(memory.optInt("version") == 1 && memory.opt("preferences") is String) { "归档中的音乐偏好格式无效" }
+            }
+            MusicArchivePreview(folder, data, manifest.optBoolean("audio"))
         } catch (error: Exception) { folder.deleteRecursively(); throw error }
     }
 
@@ -200,6 +206,8 @@ internal class MusicLibraryArchive(private val context: Context, private val sto
                     }, SQLiteDatabase.CONFLICT_IGNORE)
                 }
             }
+            // 曲库事务提交后恢复偏好，兼容不含此字段的旧归档。
+            withContext(NonCancellable) { AiMusicMemoryStore.get(context).restore(preview.data.optJSONObject("aiMemory")) }
         } catch (error: Exception) {
             if (!committed) {
                 imported.forEach(File::delete)

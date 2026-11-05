@@ -15,7 +15,7 @@ abstract class GenerateSourceManifest : DefaultTask() {
     @get:OutputDirectory abstract val outputDirectory: DirectoryProperty
     @TaskAction fun generate() {
         outputDirectory.get().asFile.apply { mkdirs() }.resolve("musicone-source.json").writeText("""
-        {"id":"org.example.main","name":"外部音源示例 main","kind":"MAIN","versionCode":${sourceVersion.get()},"versionName":"1.0.${sourceVersion.get()}","entryClass":"org.example.source.ExampleSource","apiVersion":1,"minHostVersionCode":4,"minHostVersionName":"0.3.0-麦辣鸡腿堡","minAndroid":23,"kotlinVersion":"2.3.21","composeVersion":"1.11.4","capabilities":["HOME","SEARCH","PLAYLIST","ARTIST","ALBUM"],"useCustomPages":true,"presentation":{"pageColorArgb":4281559415}}
+        {"id":"org.example.main","name":"外部音源示例 main","kind":"MAIN","versionCode":${sourceVersion.get()},"versionName":"1.0.${sourceVersion.get()}","entryClass":"org.example.source.ExampleSource","apiVersion":1,"minHostVersionCode":5,"minHostVersionName":"0.3.1-过桥米线","minAndroid":23,"kotlinVersion":"2.3.21","composeVersion":"1.11.4","capabilities":["HOME","SEARCH","PLAYLIST","ARTIST","ALBUM"],"useCustomPages":true,"presentation":{"pageColorArgb":4281559415}}
         """.trimIndent())
     }
 }

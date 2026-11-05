@@ -34,10 +34,11 @@ class PlayerRetentionTest {
         assertFalse(state.shouldMount(false))
     }
 
-    @Test fun backgroundReleasesEvenExpandedPageAndForegroundCanRestoreIt() {
+    @Test fun backgroundKeepsExpandedPageButReleasesHiddenPage() {
         val state = PlayerRetentionState(true)
         state.foreground = false
-        assertFalse(state.shouldMount(true))
+        // 展开的播放页保留，回到前台时其中的关联详情页仍在。
+        assertTrue(state.shouldMount(true))
         assertFalse(state.shouldMount(false))
         assertTrue(state.launchReady)
         state.release()

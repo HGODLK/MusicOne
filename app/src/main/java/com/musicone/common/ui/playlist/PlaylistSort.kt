@@ -20,7 +20,7 @@ internal enum class PlaylistSort(val label: String) {
 }
 
 internal fun sortedPlaylistTracks(tracks: List<MusicTrack>, sort: PlaylistSort): List<MusicTrack> = when (sort) {
-    // 接口原始顺序为加入时间倒序；切换时始终从原始列表计算。
+    // 默认保持来源的原始顺序（歌单多为加入时间倒序，专辑为原曲序）；切换时始终从原始列表计算。
     PlaylistSort.ADDED_DESC -> tracks
     PlaylistSort.ADDED_ASC -> tracks.reversed()
     PlaylistSort.NAME -> {

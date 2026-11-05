@@ -31,13 +31,16 @@ fun MusicOneApp(viewModel: MusicPlaybackRuntime = viewModel<MusicOneViewModel>()
     val sourceHost = com.musicone.sourceintegration.SourceApplicationHost.get(androidx.compose.ui.platform.LocalContext.current)
     androidx.compose.runtime.SideEffect { sourceHost.bind(viewModel) }
     CurrentTrackThemeHost(viewModel) {
-        MusicLibraryHost(viewModel) { MusicOneContent(viewModel) }
+        PlaybackFailureNoticeHost { MusicLibraryHost(viewModel) { MusicOneContent(viewModel) } }
     }
 }
 
 @Composable
 private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
     PlaybackPresentationLifecycle(viewModel)
+    val aiContext = androidx.compose.ui.platform.LocalContext.current
+    val aiAssistant = remember(aiContext) { AiAssistantController.get(aiContext) }
+    androidx.compose.runtime.SideEffect { aiAssistant.bindPlayback(viewModel) }
     val pageBackground = androidx.compose.material3.MaterialTheme.colorScheme.background
     ExperiencePreferences.initialize(androidx.compose.ui.platform.LocalContext.current)
     val navigation by rememberAppPlaybackNavigation(viewModel.state)
@@ -68,6 +71,7 @@ private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
     val immersiveSourceSurface = sourceVisual != null &&
         (globalSourceBackground ||
             navigation.page == MusicOnePage.MY && platformState.sessionStatus == SessionStatus.CONNECTED)
+    val playSortedPlaylist = rememberSortedPlaylistPlay(platformState.account?.userId, viewModel::playPlaylist)
     val recommendationNavigation = rememberRecommendationNavigation()
     com.musicone.sourceintegration.SourceCollectionUiHost(recommendationNavigation)
     val settingsNavigation = rememberSettingsNavigation()
@@ -148,6 +152,7 @@ private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
     val phonePresentation = rememberPhonePlayerPresentation(navigation.playerExpanded, playerMotion, queueState)
     val sourcePlayer = com.musicone.sourceintegration.rememberSourcePlayerMotion(viewModel, playerMotion, phonePresentation)
     PhonePlayerSystemBars(phonePresentation.rotationDegrees != 0 && !phonePresentation.relatedPages && playerMotion.mounted)
+    PlaybackNoticePlacementEffect(playerMotion.mounted, phonePresentation.rotationDegrees, rootVisible, barMeasurements)
 
     com.musicone.sourceintegration.SourcePublicPageSessionHost {
     androidx.compose.runtime.CompositionLocalProvider(
@@ -227,7 +232,7 @@ private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
                     SourceBackdropForeground(sourceVisual.takeIf { globalSourceBackground }) {
                     Column(Modifier.fillMaxSize()) {
                         if (platformState.selectedSource == MusicSource.LOCAL) {
-                            LocalMusicScreen(state, barMeasurements.detailInset, recommendationNavigation::open, viewModel::playPlaylist) {
+                            LocalMusicScreen(state, barMeasurements.detailInset, recommendationNavigation::open, playSortedPlaylist) {
                                 settingsNavigation.origin = it
                                 settingsNavigation.openLibrary()
                             }
@@ -268,7 +273,7 @@ private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
                                         },
                                         onOpenLoadedPlaylist = recommendationNavigation::open,
                                         onPlayRecommendation = { playlist ->
-                                            catalogViewModel.loadPlaylist(playlist, viewModel::playPlaylist)
+                                            catalogViewModel.loadPlaylist(playlist, playSortedPlaylist)
                                         },
                                         onRefreshRecommendations = catalogViewModel::refreshRecommendations,
                                         onRefreshRecommendedTracks = catalogViewModel::refreshRecommendedTracks,
@@ -283,8 +288,8 @@ private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
                                         },
                                         mainLibraryViewModel::refresh,
                                         { playlist ->
-                                            if (playlist.isManagedLibrary) viewModel.playPlaylist(playlist)
-                                            else catalogViewModel.loadPlaylist(playlist, viewModel::playPlaylist)
+                                            if (playlist.isManagedLibrary) playSortedPlaylist(playlist)
+                                            else catalogViewModel.loadPlaylist(playlist, playSortedPlaylist)
                                         },
                                     )
                                 }
@@ -331,17 +336,21 @@ private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
                 com.musicone.sourceintegration.SourcePublicPageHost(publicPages, viewModel,
                     barMeasurements.detailInset.value, interactive = !playerMotion.mounted && !settingsMotion.mounted)
             }
-            Box(Modifier.fillMaxSize().playerStableStatusBarsPadding()) {
+            // 设置表面的状态栏避让移到各页自身：AI 聊天顶栏需要整条铺到屏幕最顶，各页仍按原样避让。
+            Box(Modifier.fillMaxSize()) {
                 SettingsPageHost(settingsNavigation, platformState, platformViewModel, settingsMotion, barMeasurements.detailInset,
                     listOfNotNull(mainLibraryState.favoritePlaylist) + mainLibraryState.createdPlaylists +
                         mainLibraryState.collectedPlaylists,
-                    viewModel::playTrackNext, state.currentTrack?.id, state.isPlaying)
+                    viewModel::playTrackNext, state.currentTrack?.id, state.isPlaying,
+                    aiController = aiAssistant)
             }
             }
 
             run {
                 val publicRootHeader = publicScene?.rootHeader
-                com.musicone.sourceintegration.SourcePublicSceneHeader(publicScene)
+                // AI 有自己的顶栏，进入时卸下根页透明命中层，离开后沿原动效恢复。
+                if (settingsNavigation.destination != SettingsDestination.AI_ASSISTANT)
+                    com.musicone.sourceintegration.SourcePublicSceneHeader(publicScene)
                 if (com.musicone.sourceintegration.sourcePrimaryHeaderVisible(sourcePages.isCustom, sourcePages.atRoot,
                         publicRootSearch.mounted, sourcePages.hostRootTransition, publicScene) &&
                     !publicPages.mounted && entityNavigation.pages.isEmpty()) {
@@ -371,6 +380,7 @@ private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
                         settingsProgress = { settingsMotion.value },
                         settingsMounted = { settingsMotion.mounted },
                         contentColor = sourceVisual?.foreground.takeIf { immersiveSourceSurface },
+                        showAction = settingsNavigation.destination != SettingsDestination.AI_ASSISTANT,
                     )
                 }
                 if (rootSearchEnabled) MainSourceSearchMenu(

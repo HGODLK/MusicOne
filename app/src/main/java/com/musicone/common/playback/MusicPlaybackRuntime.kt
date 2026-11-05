@@ -123,12 +123,21 @@ class MusicPlaybackRuntime(private val application: Application) {
             Log.w("MusicPlayback", "Media3 播放失败：errorCode=${error.errorCode}，cause=$causeType")
             val previous = SupplementalPlaybackRequests.resource(track.previewUrl)
             if (playWhenReadyRequested && failureRecovery.mayRenew(track)) {
-                startTrack(track.copy(previewUrl = ""), _state.value.queue, currentPlaybackPosition(),
-                    preserveRadio = _state.value.radioActive, recoverFrom = previous?.takeIf { it.sourceResource != null })
+                // 间隔两秒后从断点重新取源续播；期间切歌、暂停都会让这次续播失效。
+                val generation = playbackRequestGeneration
+                val position = currentPlaybackPosition()
+                scope.launch {
+                    delay(PLAYER_ERROR_RENEW_DELAY_MS)
+                    if (generation != playbackRequestGeneration || !playWhenReadyRequested ||
+                        _state.value.currentTrack?.id != track.id) return@launch
+                    startTrack(track.copy(previewUrl = ""), _state.value.queue, position,
+                        preserveRadio = _state.value.radioActive, recoverFrom = previous?.takeIf { it.sourceResource != null })
+                }
                 return
             }
             sourcePlaybackSessions.finish(SourcePlaybackSessionEndReason.ERROR, currentPlaybackPosition())
-            if ((track.source.playbackBehavior?.skipOnPlayerError != false) && recoverUnavailableTrack("播放失败")) return
+            // 续播次数用尽后统一跳过，不再按音源声明保留在失败歌曲上。
+            if (recoverUnavailableTrack("播放失败")) return
             if (track.source.playbackBehavior?.pauseOnFailure == true) {
                 playWhenReadyRequested = false
                 playbackSession.whenReady(Player::pause)
@@ -301,6 +310,7 @@ class MusicPlaybackRuntime(private val application: Application) {
     }
 
     fun removeTrackFromQueue(track: MusicTrack) = queueRemoval.remove(track)
+    fun removeTracksFromQueue(tracks: List<MusicTrack>) = queueRemoval.removeAll(tracks)
 
     private fun rejectUnavailableQueueTrack(track: MusicTrack): Boolean {
         val status = queueSourceStatus(track.source)
@@ -475,6 +485,12 @@ class MusicPlaybackRuntime(private val application: Application) {
 
     fun refreshManualLyrics() {
         val track = _state.value.currentTrack?.takeIf { it.source.supportsManualLyrics } ?: return
+        loadLyrics(track.copy(lyrics = emptyList()), playbackRequestGeneration)
+    }
+
+    /** AI 歌词层变化可能涉及任何音源的歌曲，不受手动歌词权限限制。 */
+    fun refreshLyrics() {
+        val track = _state.value.currentTrack ?: return
         loadLyrics(track.copy(lyrics = emptyList()), playbackRequestGeneration)
     }
 
@@ -880,7 +896,7 @@ class MusicPlaybackRuntime(private val application: Application) {
             }
             is PlaybackTrackEvent.Failed -> {
                 sourcePlaybackSessions.finish(SourcePlaybackSessionEndReason.ERROR, currentPlaybackPosition())
-                if (event.maySkip && recoverUnavailableTrack(event.message)) return
+                if (recoverUnavailableTrack(event.message)) return
                 playWhenReadyRequested = false
                 if (_state.value.currentTrack?.source?.playbackBehavior?.pauseOnFailure == true) {
                     _playbackActivity.value = PlaybackActivity(event.key.trackId, false)
@@ -898,15 +914,21 @@ class MusicPlaybackRuntime(private val application: Application) {
         val snapshot = _state.value
         val track = snapshot.currentTrack ?: return false
         if (!playWhenReadyRequested) return false
-        val next = failureRecovery.next(track, snapshot.queue, ::queueTrackSourceAvailable)
-        if (next != null) {
-            startTrack(next, snapshot.queue, preserveRadio = snapshot.radioActive)
-            _state.update { it.copy(playbackMessage = "${track.title}：$message，已跳过") }
-        } else {
-            playWhenReadyRequested = false
-            playbackSession.whenReady(Player::pause)
-            playbackPresentation.transportStopped(playbackPresentationKey(track))
-            _state.update { it.withExhaustedPlaybackQueue("队列中暂无可用歌曲，已停止重试") }
+        Log.w("MusicPlayback", "歌曲无法播放：$message")
+        when (val outcome = failureRecovery.fail(track, snapshot.queue, ::queueTrackSourceAvailable)) {
+            is PlaybackFailureOutcome.Skip -> {
+                startTrack(outcome.next, snapshot.queue, preserveRadio = snapshot.radioActive)
+                PlaybackFailureNotices.show("《${track.title}》无法播放，已跳过")
+            }
+            PlaybackFailureOutcome.LimitReached, PlaybackFailureOutcome.Exhausted -> {
+                val notice = if (outcome == PlaybackFailureOutcome.LimitReached)
+                    "连续 $PLAYBACK_CONSECUTIVE_FAILURE_LIMIT 首无法播放，已暂停" else "队列中暂无可用歌曲，已暂停"
+                playWhenReadyRequested = false
+                playbackSession.whenReady(Player::pause)
+                playbackPresentation.transportStopped(playbackPresentationKey(track))
+                _state.update { it.withExhaustedPlaybackQueue(notice) }
+                PlaybackFailureNotices.show(notice)
+            }
         }
         return true
     }

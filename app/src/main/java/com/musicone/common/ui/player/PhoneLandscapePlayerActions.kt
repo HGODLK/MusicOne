@@ -60,16 +60,22 @@ internal fun PhonePlayerFixedActions(rotation: Int, enabled: Boolean, showLyrics
                 Row(Modifier.fillMaxSize(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onLyrics, Modifier.size(width = 64.dp, height = 56.dp).semantics {
-                        contentDescription = if (showLyrics) "切换为时钟" else "切换为歌词"
-                    }, enabled = interactive, colors = buttonColors) {
-                        LyricsToggleIcon(lyricsProgress,
-                            Modifier.size(28.dp).graphicsLayer { rotationZ = animatedRotation?.value ?: rotation.toFloat() })
+                    val lyricsAction: @Composable () -> Unit = {
+                        IconButton(onLyrics, Modifier.size(width = 64.dp, height = 56.dp).semantics {
+                            contentDescription = if (showLyrics) "切换为时钟" else "切换为歌词"
+                        }, enabled = interactive, colors = buttonColors) {
+                            LyricsToggleIcon(lyricsProgress,
+                                Modifier.size(28.dp).graphicsLayer { rotationZ = animatedRotation?.value ?: rotation.toFloat() })
+                        }
                     }
-                    IconButton(onQueue, Modifier.size(width = 64.dp, height = 56.dp), enabled = interactive, colors = buttonColors) {
-                        Icon(Icons.AutoMirrored.Filled.QueueMusic, "播放列表",
-                            Modifier.size(28.dp).graphicsLayer { rotationZ = animatedRotation?.value ?: rotation.toFloat() })
+                    val queueAction: @Composable () -> Unit = {
+                        IconButton(onQueue, Modifier.size(width = 64.dp, height = 56.dp), enabled = interactive, colors = buttonColors) {
+                            Icon(Icons.AutoMirrored.Filled.QueueMusic, "播放列表",
+                                Modifier.size(28.dp).graphicsLayer { rotationZ = animatedRotation?.value ?: rotation.toFloat() })
+                        }
                     }
+                    if (PhonePlayerPreferences.swapBottomActions) { queueAction(); lyricsAction() }
+                    else { lyricsAction(); queueAction() }
                 }
             }
         }

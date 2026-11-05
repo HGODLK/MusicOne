@@ -17,6 +17,12 @@ internal data class ExperienceOptions(
     val uiAnimationFrameRate: AnimationFrameRate = AnimationFrameRate.DISPLAY,
     val lyricAnimationFrameRate: AnimationFrameRate = AnimationFrameRate.DISPLAY,
     val fontMode: AppFontMode = AppFontMode.DEFAULT,
+    val lyricDisplayContent: LyricDisplayContent = LyricDisplayContent.TRANSLATION,
+    val lyricFontSize: LyricFontSize = LyricFontSize.MEDIUM,
+    val compactPlayerControls: Boolean = false,
+    // 仅作用于公共模板“我的”页：手机改为左右并排，隐藏对手机和平板都生效。
+    val phoneSideBySideLibraryCards: Boolean = false,
+    val hideUnifiedPlaylist: Boolean = false,
 )
 
 /** 显示偏好独立保存，渲染层读取同一份可观察状态。 */
@@ -41,6 +47,11 @@ internal object ExperiencePreferences {
             uiAnimationFrameRate = AnimationFrameRate.fromStored(store.getInt("ui_animation_fps", 0)),
             lyricAnimationFrameRate = AnimationFrameRate.fromStored(store.getInt("lyric_animation_fps", 0)),
             fontMode = AppFontMode.fromStored(store.getString("font_mode", null)),
+            lyricDisplayContent = LyricDisplayContent.fromStored(store.getString("lyric_display_content", null)),
+            lyricFontSize = LyricFontSize.fromStored(store.getString("lyric_font_size", null)),
+            compactPlayerControls = store.getBoolean("compact_player_controls", false),
+            phoneSideBySideLibraryCards = store.getBoolean("phone_side_by_side_library_cards", false),
+            hideUnifiedPlaylist = store.getBoolean("hide_unified_playlist", false),
         )
     }
 
@@ -55,6 +66,11 @@ internal object ExperiencePreferences {
             ?.putBoolean("verbatim_lyric_animation", value.verbatimLyricAnimation)
             ?.putInt("ui_animation_fps", value.uiAnimationFrameRate.fps)
             ?.putInt("lyric_animation_fps", value.lyricAnimationFrameRate.fps)
-            ?.putString("font_mode", value.fontMode.storedValue)?.apply()
+            ?.putString("font_mode", value.fontMode.storedValue)
+            ?.putString("lyric_display_content", value.lyricDisplayContent.storedValue)
+            ?.putString("lyric_font_size", value.lyricFontSize.storedValue)
+            ?.putBoolean("compact_player_controls", value.compactPlayerControls)
+            ?.putBoolean("phone_side_by_side_library_cards", value.phoneSideBySideLibraryCards)
+            ?.putBoolean("hide_unified_playlist", value.hideUnifiedPlaylist)?.apply()
     }
 }

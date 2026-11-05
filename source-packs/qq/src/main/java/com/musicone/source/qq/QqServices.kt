@@ -334,7 +334,7 @@ internal class QqServices(private val context: Context, private val auth: QqAuth
     }
     override suspend fun lyrics(track: SourceTrackDetails): SourceLyrics = io { session -> api.lyrics(track.musicTrack(), session.credential).sdkLyrics() }
     override fun timing(track: SourceTrackDetails) = SourceLyricTiming(275, 105)
-    override val parserVersion = 2
+    override val parserVersion = com.musicone.source.qq.internal.CURRENT_LYRIC_PARSER_VERSION
     override val refreshPlainLyricsForVerbatim = true
     override val defaultQualityId = "EXHIGH"
     override fun normalizePreferredQuality(savedQualityId: String?, mainQualityId: String?): String =
@@ -370,7 +370,13 @@ internal class QqServices(private val context: Context, private val auth: QqAuth
             SourcePlaybackPurpose.PREFETCH -> QqRequestOrigin.PRELOAD
             SourcePlaybackPurpose.CACHE -> QqRequestOrigin.BATCH_CACHE
         }
-        val resource = api.playbackSource(ready, session.credential, quality, guid = qqStableGuid(session.deviceId), origin = origin)
+        val guid = qqStableGuid(session.deviceId)
+        // 高档位常常不存在且校验慢，点播时并行换取下一档，宿主降档时直接接上。
+        val fallback = if (request.purpose == SourcePlaybackPurpose.PLAYBACK)
+            qqSpeculativeFallback(quality)?.let { api.prefetchFallback(ready, session.credential, it, guid) } else null
+        val resource = api.playbackSource(ready, session.credential, quality, guid = guid, origin = origin)
+        // 高档位成功就不再需要下一档；失败或被宿主超时取消时保留，留给接下来的降档请求。
+        fallback?.let(api::cancelFallback)
         if (request.purpose == SourcePlaybackPurpose.PLAYBACK)
             listenDuration.remember(request.track.musicTrack(), ready, resource, session, playbackRevision)
         SourcePlaybackResource(PlaybackAddress(resource.url, resource.requestHeaders, mimeType = resource.mimeType,

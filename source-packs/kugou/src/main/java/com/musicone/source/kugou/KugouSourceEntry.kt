@@ -6,10 +6,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 class KugouSourceEntry : SourceEntry, SourceMembershipProvider {
-    override val descriptor = SourceDescriptor(KUGOU_SOURCE_ID, "酷狗音乐", SourceKind.MAIN, 1, "1.0",
+    override val descriptor = SourceDescriptor(KUGOU_SOURCE_ID, "酷狗音乐", SourceKind.MAIN, 2, "1.1",
         setOf(SourceCapability.PLAYBACK, SourceCapability.HOME, SourceCapability.SEARCH, SourceCapability.ACCOUNT,
             SourceCapability.PLAYLIST, SourceCapability.ARTIST, SourceCapability.ALBUM, SourceCapability.RADIO,
-            SourceCapability.LYRICS, SourceCapability.SETTINGS),
+            SourceCapability.LYRICS),
         useCustomPages = true, requiresLogin = true,
         permissions = SourcePermissions(editTrackMetadata = false, replaceManualLyrics = false, adjustLineOffset = true),
         presentation = SourcePresentation(pageColorArgb = KUGOU_PAGE_COLOR, radioColorArgb = KUGOU_PAGE_COLOR,
@@ -49,7 +49,6 @@ class KugouSourceEntry : SourceEntry, SourceMembershipProvider {
     override val radio: SourceRadio = radioService
     override val mediaPlayback: SourceMediaPlayback = playbackService
     override val lyricProvider: SourceLyricProvider = playbackService
-    override val settings: SourceSettings = object : SourceSettings { @Composable override fun Content() { loginPage.Content() } }
     override val trackTheme: SourceTrackTheme = object : SourceTrackTheme { override suspend fun colorArgb(track: SourceTrackDetails): Long? = KUGOU_PAGE_COLOR }
     override fun initialize(environment: SourceEnvironment) {
         check(!::state.isInitialized)

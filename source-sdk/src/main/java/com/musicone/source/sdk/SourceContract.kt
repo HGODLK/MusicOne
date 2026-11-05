@@ -81,7 +81,7 @@ interface SourceHost {
     val library: SourceLibraryHost? get() = null
     val cache: SourceCacheHost? get() = null
     val ui: SourceUiHost? get() = null
-    // 旧宿主不提供时，包可使用自己的页面；此能力与 useCustomPages 相互独立。
+    // 宿主未提供此能力时，包可使用自己的页面；此能力与 useCustomPages 相互独立。
     val contentUi: SourceContentUi? get() = null
     val playerState: StateFlow<SourcePlayerState>? get() = null
     val reduceMotion: Boolean get() = false

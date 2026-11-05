@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 internal fun SettingsHomeScreen(state: PlatformSettingsUiState, onBack: () -> Unit, onOpenSources: () -> Unit,
     bottomInset: androidx.compose.ui.unit.Dp = 0.dp, onOpenCachedMusic: () -> Unit = {},
-    onOpenLibrary: () -> Unit = {}, onOpenSupplemental: () -> Unit = {}) {
+    onOpenLibrary: () -> Unit = {}, onOpenSupplemental: () -> Unit = {}, onOpenAiAssistant: () -> Unit = {}) {
     PlaybackSettingsMenuHost {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             LazyColumn(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
@@ -27,6 +27,7 @@ internal fun SettingsHomeScreen(state: PlatformSettingsUiState, onBack: () -> Un
                 item { PlaybackSettings(state.selectedSource) }
                 item { LibraryActionRow("本地音乐库", "文件、关联目录与 .msco 备份", onClick = onOpenLibrary) }
                 item { LibraryActionRow("补充音源", "账号、内容导入与收藏夹订阅", onClick = onOpenSupplemental) }
+                item { LibraryActionRow("Mio", "找歌推荐、品味点评与歌单整理", onClick = onOpenAiAssistant) }
                 item { DisplaySettings() }
                 item { CacheManagementEntry(onOpenCachedMusic) }
                 item { AboutSettings() }

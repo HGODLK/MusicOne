@@ -16,7 +16,8 @@ class SourceManagementVisibilityTest {
         assertFalse(visibleInSourceManagement(source.copy(removed = true)))
     }
 
-    @Test fun supplementalRemovalKeepsItsExistingPresentation() {
-        assertTrue(visibleInSourceManagement(source.copy(kind = SourceKind.SUPPLEMENTAL, removed = true)))
+    @Test fun removedSupplementalAndUnknownSourcesAreHidden() {
+        assertFalse(visibleInSourceManagement(source.copy(kind = SourceKind.SUPPLEMENTAL, removed = true)))
+        assertFalse(visibleInSourceManagement(source.copy(kind = null, removed = true)))
     }
 }

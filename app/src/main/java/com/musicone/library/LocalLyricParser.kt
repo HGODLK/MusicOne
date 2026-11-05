@@ -21,6 +21,8 @@ private data class LocalLyricRow(
     val words: List<Pair<Long, String>>,
     var end: Long? = null,
     val translations: MutableList<String> = mutableListOf(),
+    // 行内 {原文|读音} 注音，text 已去掉标注。
+    val ruby: String? = null,
 )
 
 /** LRC 同时刻按文件顺序配对；XLRC 和 SPL 的扩展标记只在各自格式内解释。 */
@@ -71,7 +73,7 @@ internal fun parseLibraryLyrics(raw: String, extension: String = "lrc"): List<Ti
             it.value.startsWith('<') && it.value.endsWith('>') ||
                 spl && it.value.startsWith('[') && it.value.endsWith(']')
         }.toList()
-        val text = buildString {
+        val marked = buildString {
             var position = 0
             for (marker in markers) {
                 append(clean(body.substring(position, marker.range.first)))
@@ -79,6 +81,10 @@ internal fun parseLibraryLyrics(raw: String, extension: String = "lrc"): List<Ti
             }
             append(clean(body.substring(position)))
         }.trim()
+        // 注音标注只影响显示文本，逐字片段里的标注同样去掉。
+        val ruby = marked.takeIf(::lyricRubyMarked)
+        val text = ruby?.let(::lyricRubyPlainText) ?: marked
+        fun plain(piece: String) = if (ruby == null) piece else lyricRubyPlainText(piece)
         if (text.isEmpty()) {
             parents = emptyList()
             continue
@@ -98,7 +104,7 @@ internal fun parseLibraryLyrics(raw: String, extension: String = "lrc"): List<Ti
                 val time = marker.localMillis()
                 if (time >= wordStart && (end == null || time <= end)) {
                     if (content.isNotEmpty()) {
-                        words += wordStart to content.toString()
+                        words += wordStart to plain(content.toString())
                         content.setLength(0)
                     }
                     wordStart = time
@@ -106,8 +112,8 @@ internal fun parseLibraryLyrics(raw: String, extension: String = "lrc"): List<Ti
                 position = marker.range.last + 1
             }
             content.append(clean(body.substring(position)))
-            if (content.isNotEmpty()) words += wordStart to content.toString()
-            LocalLyricRow(start, text, if (markers.isEmpty()) emptyList() else words, end).also(rows::add)
+            if (content.isNotEmpty()) words += wordStart to plain(content.toString())
+            LocalLyricRow(start, text, if (markers.isEmpty()) emptyList() else words, end, ruby = ruby).also(rows::add)
         }
     }
     val sorted = rows.sortedBy { it.start }
@@ -121,6 +127,10 @@ internal fun parseLibraryLyrics(raw: String, extension: String = "lrc"): List<Ti
                 addAll(translated.translations)
             }
         }.filter { it.isNotBlank() && it != original.text }.distinct()
+        // 同一时刻去掉标注后与原文相同的行是注音行，不当作翻译（已由上面的过滤排除）。
+        val ruby = (listOf(original) + group.drop(1)).firstNotNullOfOrNull { row ->
+            row.ruby?.takeIf { row.text == original.text }
+        }
         val end = group.mapNotNull { it.end }.minOrNull() ?: groups.asSequence().drop(index + 1).map { it.first().start }
             .firstOrNull { it > original.start }
         TimedLyric(
@@ -131,6 +141,7 @@ internal fun parseLibraryLyrics(raw: String, extension: String = "lrc"): List<Ti
                 val next = original.words.getOrNull(wordIndex + 1)?.first ?: end ?: (start + 500)
                 LyricWord(start + offset, maxOf(start, next) + offset, text)
             },
+            transliteration = ruby,
         )
     }
 }

@@ -9,7 +9,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.musicone.source.sdk.*
@@ -46,8 +45,9 @@ internal fun SupplementalCollectionCard(folder: SourceRemoteCollection, loading:
 internal fun SupplementalCollectionHeader(folder: SourceRemoteCollection, sourceName: String, playing: Boolean,
     subscribing: Boolean, subscribed: Boolean, canPlay: Boolean, canSubscribe: Boolean,
     onPlay: () -> Unit, onSubscribe: () -> Unit, onRefresh: () -> Unit, onRemove: () -> Unit,
-    showPlay: Boolean = true) {
+    showPlay: Boolean = true, sortAction: (@Composable () -> Unit)? = null) {
     val menu = LocalPlaybackSettingsMenu.current
+    val subscriptionTrigger = rememberMenuTriggerOrigin()
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val coverSize = if (maxWidth >= 600.dp) 152.dp else 112.dp
         Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -62,11 +62,13 @@ internal fun SupplementalCollectionHeader(folder: SourceRemoteCollection, source
                         enabled = canPlay && !playing && folder.count != 0)
                     if (canSubscribe) LibraryActionButton(
                         if (subscribing) "正在同步…" else if (!subscribed) "订阅歌单" else "已订阅",
-                        { if (!subscribed) onSubscribe() else menu?.open("收藏夹订阅", Offset.Zero, listOf(
+                        { if (!subscribed) onSubscribe() else menu?.open("收藏夹订阅", subscriptionTrigger.origin, listOf(
                             PlaybackSettingsMenuOption("刷新订阅", false, select = onRefresh),
                             PlaybackSettingsMenuOption("取消订阅（保留歌曲）", false, select = onRemove),
-                        )) }, icon = if (!subscribed) Icons.Default.Add else Icons.Default.Check,
+                        )) }, Modifier.menuTriggerOrigin(subscriptionTrigger),
+                        icon = if (!subscribed) Icons.Default.Add else Icons.Default.Check,
                         enabled = !subscribing, primary = false)
+                    sortAction?.invoke()
                 }
             }
         }

@@ -53,6 +53,7 @@ internal fun PlayerSongInformation(track: MusicTrack, favorite: Boolean, motion:
                     .basicMarquee(iterations = if (textMarquee) Int.MAX_VALUE else 0))
         }
         PlayerFavoriteButton(actionTrack, favorite, onFavorite,
-            Modifier.playerDetailReveal(motion).offset(x = PLAYER_FAVORITE_PROGRESS_SHIFT))
+            // 位移放在淡入图层外侧：透明度小于 1 时离屏缓冲按图层大小裁剪，放里面会切掉红心右缘。
+            Modifier.offset(x = PLAYER_FAVORITE_PROGRESS_SHIFT).playerDetailReveal(motion))
     }
 }

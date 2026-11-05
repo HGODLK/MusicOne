@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 internal fun FlyingPlaylistArtwork(motion: PageMotion, imageUrl: String?, start: Long, end: Long, mark: String,
     followPull: Boolean = true, centeredMark: Boolean = false, artistAvatar: ArtistAvatarPresentation? = null,
-    sourceRotation: Float = 0f) {
+    sourceRotation: Float = 0f, modifier: Modifier = Modifier) {
     val loadedBitmap by rememberArtworkBitmap(imageUrl.takeIf { artistAvatar == null })
     val bitmap = artistAvatar?.bitmap ?: LocalPlaylistCardTransition.current?.activeArtwork ?: loadedBitmap
     val image = remember(bitmap) { bitmap?.asImageBitmap() }
@@ -44,7 +44,7 @@ internal fun FlyingPlaylistArtwork(motion: PageMotion, imageUrl: String?, start:
     val path = remember { Path() }
     val pull = LocalPlaylistPull.current.takeIf { followPull }
     // 画布始终挂载，和源、目标封面在同一绘制帧切换，避免阶段变化时短暂露出页面底色。
-    Canvas(Modifier.fillMaxSize()) {
+    Canvas(modifier.fillMaxSize()) {
         if (!motion.moving) return@Canvas
         val source = motion.sourceSnapshot[motion.coverKey] ?: return@Canvas
         val target = motion.targetSnapshot[motion.coverKey] ?: return@Canvas

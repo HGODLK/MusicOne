@@ -44,7 +44,8 @@ internal fun RemoteArtwork(
 ) {
     val bitmap by rememberArtworkBitmap(imageUrl, maxSide = maxSide)
     if (LocalArtworkEntrancePolicy.current.fadeArtwork) {
-        CrossfadingArtworkBitmapOrPlaceholder(bitmap, bitmap == null, start, end, mark,
+        // 无封面地址时直接以占位为目标，避免列表复用时残留上一首的封面。
+        CrossfadingArtworkBitmapOrPlaceholder(bitmap, bitmap == null && !imageUrl.isNullOrBlank(), start, end, mark,
             modifier, markSize, shape, markAlignment)
     } else ArtworkBitmapOrPlaceholder(bitmap, start, end, mark, modifier, markSize, shape, markAlignment)
 }

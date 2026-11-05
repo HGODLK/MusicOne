@@ -8,10 +8,10 @@ import kotlinx.coroutines.flow.filterNotNull
 
 /** QQ 协议与会话只在独立包内初始化，宿主使用公共模板展示资料。 */
 class QqSourceEntry : SourceEntry, SourceMembershipProvider {
-    override val descriptor = SourceDescriptor(QQ_SOURCE_ID, "QQ音乐", SourceKind.MAIN, 1, "1.0",
+    override val descriptor = SourceDescriptor(QQ_SOURCE_ID, "QQ音乐", SourceKind.MAIN, 3, "1.2",
         setOf(SourceCapability.HOME, SourceCapability.SEARCH, SourceCapability.ACCOUNT, SourceCapability.PLAYBACK,
             SourceCapability.PLAYLIST, SourceCapability.ARTIST, SourceCapability.ALBUM, SourceCapability.RADIO,
-            SourceCapability.LYRICS, SourceCapability.SETTINGS), false, true,
+            SourceCapability.LYRICS), false, true,
         SourcePermissions(adjustLineOffset = true), SourcePresentation(0xFF31C27C, 0xFF09664C, "猜你喜欢", 275, 105,
             listOf(0xFF09664C, 0xFFF4FAED, 0xFF9EE7B9, 0xFFF3FAED, 0xFF073D2F),
             listOf(0xFF0D624B, 0xFFF2F8E9, 0xFF8ED5B0, 0xFFEBF5DF, 0xFF133B2B)))
@@ -25,9 +25,6 @@ class QqSourceEntry : SourceEntry, SourceMembershipProvider {
     private var registration: AutoCloseable? = null
     override val authentication: SourceAuthentication get() = auth
     override val authenticationPage: SourceAuthenticationPage get() = pages
-    override val settings: SourceSettings = object : SourceSettings {
-        @Composable override fun Content() { QqQualitySettings(services) }
-    }
     override val playback: SourcePlayback get() = services
     override val mediaPlayback: SourceMediaPlayback get() = services
     override val catalog: SourceCatalog get() = services

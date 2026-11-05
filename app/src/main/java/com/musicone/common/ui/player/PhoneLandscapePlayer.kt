@@ -28,7 +28,8 @@ import kotlin.math.sin
 /** 旋转宿主提供横向画布；这里仅负责布局，不改变 Activity 的方向。 */
 @Composable
 internal fun PhoneLandscapePlayer(state: MusicOneUiState, track: MusicTrack, visualTrack: MusicTrack, motion: PageMotion,
-    viewModel: MusicPlaybackRuntime, contentActivated: Boolean, showLyrics: Boolean, lyricsEndInset: Dp) {
+    viewModel: MusicPlaybackRuntime, contentActivated: Boolean, showLyrics: Boolean, lyricsEndInset: Dp,
+    onCloseLyrics: () -> Unit = {}) {
     val favorites = LocalMusicFavorites.current
     val actionTrack = playerVisualActionTrack(track, visualTrack)
     val ink = LocalContentColor.current
@@ -165,7 +166,8 @@ internal fun PhoneLandscapePlayer(state: MusicOneUiState, track: MusicTrack, vis
                     LocalPlayerLyricsMoving provides (motion.moving || motion.phase == MotionPhase.PREPARING || panel.isRunning),
                     LocalPlayerLyricsDisplayed provides lyricsDisplayed) {
                     PlayerSyncedLyrics(track, state.lyricLoadState, viewModel,
-                        Modifier.fillMaxSize().then(if (lyricsDisplayed) Modifier else Modifier.clearAndSetSemantics { }),
+                        Modifier.fillMaxSize().then(if (lyricsDisplayed) Modifier else Modifier.clearAndSetSemantics { })
+                            .landscapeLyricsTopPull(retainedLyrics?.listEdge, visible && showLyrics, onCloseLyrics),
                         active = visible && showLyrics,
                         followPlayback = visible && showLyrics, animateTrackChange = visible && showLyrics,
                         exitAlignment = lyricExitAlignment,

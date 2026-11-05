@@ -10,7 +10,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -71,13 +70,20 @@ internal fun SupplementalImportDestination(destinations: List<SourceLocalCollect
     val menu = LocalPlaybackSettingsMenu.current
     val eligible = destinations.filter { it.acceptsManualTracks }
     val selected = eligible.firstOrNull { it.id == selectedId }
+    val trigger = rememberMenuTriggerOrigin()
     LaunchedEffect(destinations, selectedId) { if (selected == null) eligible.firstOrNull()?.let(onSelect) }
-    LibraryActionRow("添加到：${selected?.title.orEmpty()}", enabled = menu != null && eligible.isNotEmpty()) {
-        menu?.open("选择导入目标", Offset.Zero, eligible.map { target ->
-            PlaybackSettingsMenuOption(target.title, target.id == selectedId) { onSelect(target) }
-        })
+    LibraryActionRow("添加到：${selected?.title.orEmpty()}", enabled = menu != null && eligible.isNotEmpty(),
+        modifier = Modifier.menuTriggerOrigin(trigger)) {
+        menu?.open("选择导入目标", trigger.origin, supplementalDestinationOptions(destinations, selectedId, onSelect))
     }
 }
+
+/** 导入目标菜单项：只列出接受手动添加的本地歌单。 */
+internal fun supplementalDestinationOptions(destinations: List<SourceLocalCollection>, selectedId: String?,
+    onSelect: (SourceLocalCollection) -> Unit): List<PlaybackSettingsMenuOption> =
+    destinations.filter { it.acceptsManualTracks }.map { target ->
+        PlaybackSettingsMenuOption(target.title, target.id == selectedId) { onSelect(target) }
+    }
 
 @Composable
 internal fun SupplementalImportActions(selectedCount: Int, hasChildren: Boolean, busy: Boolean,

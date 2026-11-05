@@ -157,11 +157,51 @@ class LyricWordClockJumpTest {
         assertTrue(motion.alpha(0) < 1f)
     }
 
+    @Test fun 点回已唱完的句子不会先亮后暗() {
+        var position = 60_000L
+        val motion = LyricWordLightMotion()
+        motion.configure(ranges, { position }, true, false, true)
+        assertEquals(1f, motion.alpha(0), .00001f)
+        // 落点在句首预留区，时钟不在这句范围内，也不能走旧句保持。
+        position = 0L
+        motion.alignToClock()
+        motion.advance(1f / 60)
+        assertEquals(.7f, motion.alpha(0), .00001f)
+        assertFalse(motion.running)
+    }
+
+    @Test fun 点击后才进入范围的下一句直接压暗() {
+        var position = 60_000L
+        val motion = LyricWordLightMotion()
+        motion.configure(ranges, { position }, false, false, true)
+        assertEquals(1f, motion.alpha(0), 0f)
+        position = 0L
+        motion.alignToClock()
+        // 启用前的帧不能消耗掉这次校正。
+        motion.advance(1f / 60)
+        assertEquals(1f, motion.alpha(0), 0f)
+        motion.configure(ranges, { position }, true, false, true)
+        assertEquals(.7f, motion.alpha(0), .00001f)
+    }
+
+    @Test fun 没有点击时未启用的行不受跳转影响且启用后仍柔和压暗() {
+        var position = 60_000L
+        val motion = LyricWordLightMotion()
+        motion.configure(ranges, { position }, false, false, true)
+        position = 0L
+        motion.snapToClock()
+        motion.configure(ranges, { position }, true, false, true)
+        assertEquals(1f, motion.alpha(0), 0f)
+    }
+
     @Test fun 行模糊只按档位变化且关闭时为零档() {
-        assertEquals(8, lyricRowBlurStep(2f, disabled = false))
-        assertEquals(4, lyricRowBlurStep(1.05f, disabled = false))
-        assertEquals(4, lyricRowBlurStep(.95f, disabled = false))
-        assertEquals(0, lyricRowBlurStep(.1f, disabled = false))
+        assertEquals(10, lyricRowBlurStep(2f, disabled = false))
+        assertEquals(6, lyricRowBlurStep(1.05f, disabled = false))
+        assertEquals(6, lyricRowBlurStep(.95f, disabled = false))
+        // 靠近清晰的一端分档更细，最后一步落差最小。
+        assertEquals(2, lyricRowBlurStep(.12f, disabled = false))
+        assertEquals(1, lyricRowBlurStep(.04f, disabled = false))
+        assertEquals(0, lyricRowBlurStep(.02f, disabled = false))
         assertEquals(0, lyricRowBlurStep(2f, disabled = true))
     }
 }

@@ -78,7 +78,9 @@ import androidx.lifecycle.compose.LifecycleEventEffect
                     FilledIconButton(onClick = { owner.action {
                         val expected = owner.revision.get(); val cookie = owner.credential(); val vip = owner.account?.hasVipAccess == true
                         val full = withContext(Dispatchers.IO) { owner.api.playlistDetail(playlist.remoteId(), cookie, vip) }
-                        owner.check(expected); owner.play(full.tracks)
+                        owner.check(expected)
+                        val sortId = owner.collectionSort.selected(playlist.toCollection(owner.account?.userId), owner.account?.userId)
+                        owner.play(sortedNeteaseCollection(full.tracks, sortId) { it.title })
                     } }, modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)) { Icon(Icons.Default.PlayArrow, "播放歌单") }
                 }
             }

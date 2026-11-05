@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -33,9 +34,10 @@ internal fun ImmersivePlaybackControls(state: MusicOneUiState, track: MusicTrack
     viewModel: MusicPlaybackRuntime, tablet: Boolean, lyrics: Boolean, onLyrics: () -> Unit,
     onQueue: () -> Unit, modifier: Modifier = Modifier,
     lyricsProgress: () -> Float = { if (lyrics) 1f else 0f }) {
+    val metrics = playerControlsMetrics()
     Column(modifier.fillMaxWidth()) {
         PlayerProgressTimeline(viewModel, motion, Modifier.playerDetailReveal(motion))
-        Row(Modifier.fillMaxWidth().height(if (tablet) 80.dp else 100.dp),
+        Row(Modifier.fillMaxWidth().height(if (tablet) metrics.tabletRow else metrics.row),
             horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
             PhoneTurnElement("quality") {
                 AudioQualityButton(
@@ -43,18 +45,18 @@ internal fun ImmersivePlaybackControls(state: MusicOneUiState, track: MusicTrack
                     track.source,
                     state.activeQuality,
                     viewModel::selectQuality,
-                    Modifier.size(48.dp).playerDetailReveal(motion),
+                    Modifier.size(metrics.sideButton).playerDetailReveal(motion),
                 )
             }
             PhoneTurnElement("previous") {
                 PlaybackControlButton(
                     onClick = viewModel::requestPrevious,
-                    modifier = Modifier.size(56.dp).playerDetailReveal(motion),
+                    modifier = Modifier.size(metrics.trackButton).playerDetailReveal(motion),
                     horizontalMotion = (-7).dp,
                 ) {
                     val phoneTurn = LocalPhonePlayerTurn.current
                     val presentation = LocalPhonePlayerPresentation.current
-                    Icon(PlayerControlIcons.FastRewind, "上一首", Modifier.size(38.dp).graphicsLayer {
+                    Icon(PlayerControlIcons.FastRewind, "上一首", Modifier.size(metrics.trackIcon).graphicsLayer {
                         rotationZ = PhonePlayerTrackActionPolicy.iconRotation(0, phoneTurn?.currentPose("previous")?.rotation ?: 0f,
                             presentation?.actionRotation?.value ?: 0f)
                     })
@@ -63,11 +65,12 @@ internal fun ImmersivePlaybackControls(state: MusicOneUiState, track: MusicTrack
             PhoneTurnElement("play") {
                 PlaybackControlButton(
                     onClick = viewModel::togglePlay,
-                    modifier = Modifier.size(70.dp).motionAnchor(motion, "play", true),
+                    modifier = Modifier.size(metrics.playButton)
+                        .motionAnchor(motion, "play", true, markSize = metrics.playIcon.value),
                 ) {
                     val presentation = LocalPhonePlayerPresentation.current
                     val phoneTurn = LocalPhonePlayerTurn.current
-                    PlaybackStateIcon(state.isPlaying, Modifier.size(54.dp).graphicsLayer {
+                    PlaybackStateIcon(state.isPlaying, Modifier.size(metrics.playIcon).graphicsLayer {
                         if (phoneTurn != null) rotationZ = presentation?.actionRotation?.value ?: 0f
                     })
                 }
@@ -75,12 +78,12 @@ internal fun ImmersivePlaybackControls(state: MusicOneUiState, track: MusicTrack
             PhoneTurnElement("next") {
                 PlaybackControlButton(
                     onClick = viewModel::requestNext,
-                    modifier = Modifier.size(56.dp).playerDetailReveal(motion),
+                    modifier = Modifier.size(metrics.trackButton).playerDetailReveal(motion),
                     horizontalMotion = 7.dp,
                 ) {
                     val phoneTurn = LocalPhonePlayerTurn.current
                     val presentation = LocalPhonePlayerPresentation.current
-                    Icon(PlayerControlIcons.FastForward, "下一首", Modifier.size(38.dp).graphicsLayer {
+                    Icon(PlayerControlIcons.FastForward, "下一首", Modifier.size(metrics.trackIcon).graphicsLayer {
                         rotationZ = PhonePlayerTrackActionPolicy.iconRotation(0, phoneTurn?.currentPose("next")?.rotation ?: 0f,
                             presentation?.actionRotation?.value ?: 0f)
                     })
@@ -90,7 +93,7 @@ internal fun ImmersivePlaybackControls(state: MusicOneUiState, track: MusicTrack
                 PlaybackModeButton(
                     playerPlaybackMode(state.shuffle, state.repeatMode),
                     viewModel::cyclePlaybackMode,
-                    Modifier.size(48.dp).playerDetailReveal(motion),
+                    Modifier.size(metrics.sideButton).playerDetailReveal(motion),
                     enabled = !state.radioActive,
                 )
             }
@@ -103,9 +106,9 @@ internal fun ImmersivePlaybackControls(state: MusicOneUiState, track: MusicTrack
                 }
             }
             CompositionLocalProvider(LocalViewConfiguration provides forgivingTap) {
-            Row(Modifier.fillMaxWidth().height(58.dp), horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically) {
-                if (!tablet && !LocalPhonePlayerFixedActions.current) {
+            val fixedActions = LocalPhonePlayerFixedActions.current
+            val lyricsAction: @Composable () -> Unit = {
+                if (!tablet && !fixedActions) {
                     val retryLyrics = state.lyricLoadState == LyricLoadState.RETRYABLE && track.lyrics.isEmpty()
                     IconButton({
                         if (retryLyrics && !lyrics) viewModel.retryLyrics()
@@ -116,10 +119,19 @@ internal fun ImmersivePlaybackControls(state: MusicOneUiState, track: MusicTrack
                         LyricsToggleIcon(lyricsProgress, Modifier.size(28.dp))
                     }
                 } else Spacer(Modifier.size(48.dp))
-                if (!tablet && LocalPhonePlayerFixedActions.current) Spacer(Modifier.size(width = 64.dp, height = 56.dp))
+            }
+            val queueAction: @Composable () -> Unit = {
+                if (!tablet && fixedActions) Spacer(Modifier.size(width = 64.dp, height = 56.dp))
                 else IconButton(onQueue, Modifier.size(width = 64.dp, height = 56.dp)) {
                     Icon(Icons.AutoMirrored.Filled.QueueMusic, "播放列表", Modifier.size(28.dp))
                 }
+            }
+            // 紧凑模式下这一行只收窄占位，按钮和手机固定按钮行都保持原尺寸。
+            Row(Modifier.fillMaxWidth().height(metrics.bottomRow), horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                // 平板横屏只有播放列表按钮，没有可交换的对象。
+                if (PhonePlayerPreferences.swapBottomActions && !tablet) { queueAction(); lyricsAction() }
+                else { lyricsAction(); queueAction() }
             }
             }
         }
@@ -131,6 +143,8 @@ internal fun PlayerProgressTimeline(viewModel: MusicPlaybackRuntime, motion: Pag
     compactBottomTrack: Boolean = false) {
     val ink = LocalContentColor.current
     val visible = LocalPlayerVisible.current
+    // 横屏底边进度条有自己的布局，不跟随竖屏紧凑模式。
+    val metrics = if (compactBottomTrack) PlayerControlsMetrics.Normal else playerControlsMetrics()
     val timeline by rememberPlayerTimelineSnapshot(viewModel)
     val switching = timeline.switching
     val lyricSeek by viewModel.seekPreview.lyricSeek.collectAsStateWithLifecycle()
@@ -202,8 +216,9 @@ internal fun PlayerProgressTimeline(viewModel: MusicPlaybackRuntime, motion: Pag
             }
         }, enabled = !switching, interactionSource = sliderInteraction,
             visualValue = { playerProgressVisualValue(seeking, userDragged, progressMotion.value) * (entrance?.value ?: 1f) },
-            compactBottomTrack = compactBottomTrack)
-        if (!compactBottomTrack) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            compactBottomTrack = compactBottomTrack, height = metrics.timeline)
+        if (!compactBottomTrack) Row(Modifier.fillMaxWidth().playerTimeLabelsLift(metrics.timeLabelsLift),
+            horizontalArrangement = Arrangement.SpaceBetween) {
             PhoneTurnElement("elapsed") {
                 Text(formatDuration((progress * timeline.durationMs).toLong()), color = ink.copy(alpha = .48f), fontSize = 11.sp)
             }
@@ -225,11 +240,11 @@ internal fun shouldPreviewLyricsDuringProgressChange(dragging: Boolean, dragged:
 private fun PlayerThinSlider(value: Float, onValue: (Float) -> Unit, label: String,
     modifier: Modifier = Modifier, onFinished: (() -> Unit)? = null, enabled: Boolean = true,
     interactionSource: MutableInteractionSource,
-    visualValue: () -> Float = { value }, compactBottomTrack: Boolean = false) {
+    visualValue: () -> Float = { value }, compactBottomTrack: Boolean = false, height: Dp = 64.dp) {
     val ink = LocalContentColor.current
     // 扩大上下触摸空间，细线绘制与原有点击、拖动判定保持独立。
     // 底边模式连同滑块的命中区域一起下移，避免只移动细线后触摸仍留在上方。
-    PhoneTurnElement("timeline", modifier.fillMaxWidth().height(64.dp)
+    PhoneTurnElement("timeline", modifier.fillMaxWidth().height(height)
         .offset(y = if (compactBottomTrack) 27.dp else 0.dp)) {
     Slider(value, onValue, Modifier.fillMaxWidth()
         .semantics { contentDescription = label }, enabled = enabled,

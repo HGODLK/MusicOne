@@ -111,7 +111,7 @@ internal fun RecommendationDestination(
             onDispose { catalog.playlists.release(playlist.id, paging) }
         }
         val sorted = remember(playlist, sort.value) {
-            if (playlist.isSourceAlbum) playlist else playlist.copy(tracks = sortedPlaylistTracks(playlist.tracks, sort.value))
+            playlist.copy(tracks = sortedPlaylistTracks(playlist.tracks, sort.value))
         }
         val contentActivation = rememberPlaylistContentActivation(playlist.id, navigation.motion)
         val dataEntrance = androidx.compose.runtime.key(playlist.id) {

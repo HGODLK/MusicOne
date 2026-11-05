@@ -1,0 +1,14 @@
+<resources>
+    <style name="Theme.MusicOne.Launch" parent="Theme.MusicOne.LaunchBase">
+        <item name="android:windowSplashScreenBackground">@color/launch_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/launch_mark</item>
+    </style>
+    <!-- App 设为始终深色而系统是浅色时使用，由 HomeLaunchWindow 交给系统保存。 -->
+    <style name="Theme.MusicOne.Launch.Dark">
+        <item name="android:statusBarColor">@color/launch_background_dark</item>
+        <item name="android:navigationBarColor">@color/launch_background_dark</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowSplashScreenBackground">@color/launch_background_dark</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/launch_mark_dark</item>
+    </style>
+</resources>

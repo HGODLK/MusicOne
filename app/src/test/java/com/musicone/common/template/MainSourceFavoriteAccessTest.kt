@@ -33,4 +33,18 @@ class MainSourceFavoriteAccessTest {
         assertEquals(MainSourceFavoriteAccess.LOGIN_REQUIRED,
             mainSourceFavoriteAccess(false, true, true, true))
     }
+
+    @Test fun unsupportedFavoritesKeepUnifiedPlaylistEvenWhenHidden() {
+        val favorite = playlist("favorite")
+        val unified = playlist(UNIFIED_PLAYLIST_ID)
+        // 我喜欢不可用时，隐藏设置不生效，只显示综合歌单。
+        for (hidden in listOf(false, true)) assertEquals(unified to null,
+            mainSourceLibraryCards(favorite, unified, MainSourceFavoriteAccess.UNSUPPORTED, hidden))
+        assertEquals(favorite to null,
+            mainSourceLibraryCards(favorite, unified, MainSourceFavoriteAccess.LOGIN_REQUIRED, true))
+        assertEquals(favorite to unified,
+            mainSourceLibraryCards(favorite, unified, MainSourceFavoriteAccess.AVAILABLE, false))
+    }
+
+    private fun playlist(id: String) = MusicPlaylist(id, MusicSource.LOCAL, id, "", "", 0, 0, 0, "", emptyList())
 }

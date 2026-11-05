@@ -3,6 +3,7 @@ package com.musicone
 import androidx.compose.animation.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -69,7 +70,9 @@ internal fun SupplementalSourcesScreen(bottomInset: Dp = 0.dp, onBack: () -> Uni
             items(sources, key = { it.entry.descriptor.id }) { source ->
                 val descriptor = source.entry.descriptor
                 LibrarySettingsGroup {
-                    LibraryActionRow(descriptor.name, source.entry.authentication?.currentAccount()?.account?.displayName ?: if (descriptor.requiresLogin) "尚未登录" else "无需登录") {
+                    SupplementalSourceChoice(descriptor.name,
+                        source.entry.authentication?.currentAccount()?.account?.displayName ?: if (descriptor.requiresLogin) "尚未登录" else "无需登录",
+                        descriptor.presentation.pageColorArgb ?: MusicSource.fromId(descriptor.id).accent) {
                         selectedId = descriptor.id
                     }
                 }
@@ -80,5 +83,16 @@ internal fun SupplementalSourcesScreen(bottomInset: Dp = 0.dp, onBack: () -> Uni
         }
         }
     }
+    }
+}
+
+/** 与主音源选择行一致：行首显示音源主题色小圆点。 */
+@Composable
+private fun SupplementalSourceChoice(title: String, subtitle: String, accent: Long, onClick: () -> Unit) {
+    androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().clickable(onClick = onClick),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Surface(shape = androidx.compose.foundation.shape.CircleShape, color = androidx.compose.ui.graphics.Color(accent),
+            modifier = Modifier.padding(start = 12.dp).size(12.dp)) {}
+        Box(Modifier.weight(1f)) { LibraryActionRow(title, subtitle, onClick = onClick) }
     }
 }

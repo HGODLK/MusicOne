@@ -4,7 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 
-/** 主音源可选的完整播放器页面，属于未验证的实验性功能；旧包继续使用宿主播放器。 */
+/** 主音源可选的完整播放器页面；未提供该接口时由宿主显示播放器页面。 */
 interface SourcePlayerUiProviderAccess {
     val playerUiProvider: SourcePlayerUiProvider?
 }
@@ -12,7 +12,7 @@ interface SourcePlayerUiProviderAccess {
 fun SourceEntry.playerUiProviderOrNull(): SourcePlayerUiProvider? =
     (this as? SourcePlayerUiProviderAccess)?.playerUiProvider ?: this as? SourcePlayerUiProvider
 
-/** 未验证的实验性功能：由主音源提供完整播放器界面，宿主仅负责挂载与受控能力。 */
+/** 由主音源提供完整播放器界面，宿主负责挂载页面并提供受控能力。 */
 interface SourcePlayerUiProvider {
     val playerUiDeclaration: SourcePlayerUiDeclaration
     @Composable fun Player(context: SourcePlayerUiContext)

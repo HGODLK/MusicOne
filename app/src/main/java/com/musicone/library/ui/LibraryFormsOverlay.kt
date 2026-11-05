@@ -35,6 +35,7 @@ internal fun LibraryFormsOverlay(ui: MusicLibraryUiController, backdrop: Graphic
                 Column(Modifier.heightIn(max = 600.dp).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     retainedForm?.let { form ->
                         Text(form.title, style = MaterialTheme.typography.titleLarge)
+                        form.detail?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
                         form.labels.forEachIndexed { index, label -> LibraryFormField(label, form.values[index].value, { form.values[index].value = it }, !ui.busy) }
                         LibraryActionRow(if (ui.busy) "正在保存…" else if (form.labels.isEmpty()) "确认" else "保存", enabled = !ui.busy, onClick = ui::submit)
                     }

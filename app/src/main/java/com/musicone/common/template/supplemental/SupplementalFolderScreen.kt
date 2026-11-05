@@ -39,9 +39,17 @@ internal fun SupplementalFolderScreen(state: SupplementalState, model: Supplemen
         supplementalAttempt { repository.first(entry, refresh = true) }
     }
     ObserveSupplementalPagination(scroll, entry) { repository.more(entry) }
+    val folderPlaylist = remember(folder.identity) { folder.asSupplementalPlaylist() }
+    val sort = rememberPlaylistSortSelection(folderPlaylist, state.account?.id, emptyList())
+    // 非默认排序要先读完全部分页；失败后等用户重试，错误清除时再继续补齐。
+    val needsAllPages = sort.value != PlaylistSort.ADDED_DESC && content.snapshot?.hasMore == true && content.error == null
+    LaunchedEffect(entry, needsAllPages) {
+        if (needsAllPages) supplementalAttempt { repository.complete(entry) }
+    }
     val contents = content.snapshot?.contents.orEmpty()
-    val tracks = remember(contents) { contents.map { it.asSupplementalTrack() } }
-    val contentByTrack = remember(contents, tracks) { tracks.zip(contents).associate { (track, item) -> track.id to item } }
+    val unsortedTracks = remember(contents) { contents.map { it.asSupplementalTrack() } }
+    val tracks = remember(unsortedTracks, sort.value) { sortedPlaylistTracks(unsortedTracks, sort.value) }
+    val contentByTrack = remember(contents, unsortedTracks) { unsortedTracks.zip(contents).associate { (track, item) -> track.id to item } }
     val selection = remember(entry) { PlaylistMultiSelection() }
     val menu = LocalPlaybackSettingsMenu.current
     val player by sourcePlayerStateForTemplate()
@@ -66,12 +74,12 @@ internal fun SupplementalFolderScreen(state: SupplementalState, model: Supplemen
             LazyColumn(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
                 .playerQualityBackdropSnapshot(backdrop, true, captureContinuously = true), state = scroll,
                 contentPadding = PaddingValues(start = gutter, end = gutter, bottom = bottomInset + 96.dp)) {
-                item("header") { SupplementalFolderHeader(folder, state, model) }
+                item("header") { SupplementalFolderHeader(folder, state, model, sort) }
                 item("selection") {
                     SupplementalSelectionToolbar(selection, state, model,
-                        loadAll = { repository.complete(entry).contents.map { it.asSupplementalTrack() } },
+                        loadAll = { sortedSupplementalContents(repository.complete(entry).contents, sort.value).map { it.asSupplementalTrack() } },
                         selected = {
-                            val complete = repository.complete(entry).contents
+                            val complete = sortedSupplementalContents(repository.complete(entry).contents, sort.value)
                             complete.filter { it.asSupplementalTrack().id in selection.ids }
                         })
                 }
@@ -118,18 +126,27 @@ internal fun SupplementalFolderScreen(state: SupplementalState, model: Supplemen
 private fun SupplementalSelectionToolbar(selection: PlaylistMultiSelection, state: SupplementalState,
     model: SupplementalSourceModel, loadAll: suspend () -> List<MusicTrack>, selected: suspend () -> List<SourceContent>) {
     val scope = rememberCoroutineScope()
+    val menu = LocalPlaybackSettingsMenu.current
+    val addTrigger = rememberMenuTriggerOrigin()
+    val canChoose = menu != null && state.destinations.any { it.acceptsManualTracks }
     AnimatedVisibility(selection.active, enter = expandVertically(musicMotion(220)) + fadeIn(musicMotion(180)),
         exit = shrinkVertically(musicMotion(180)) + fadeOut(musicMotion(140))) {
         Column {
             FlowRow(Modifier.fillMaxWidth().heightIn(min = 52.dp), itemVerticalAlignment = Alignment.CenterVertically, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("已选 ${selection.ids.size}", Modifier.padding(end = 8.dp))
                 TextButton(onClick = { scope.launch { selection.selectAll(loadAll) } }, enabled = !state.busy && !selection.loading) { Text(if (selection.loading) "正在全选…" else "全选") }
-                if (model.canImport) TextButton(onClick = { scope.launch { supplementalAttempt { model.importContents(selected()) } } }, enabled = selection.ids.isNotEmpty() && !state.busy) { Text("添加到") }
+                // 先从按钮处选择目标歌单，选中后才导入，不再静默写入默认歌单。
+                if (model.canImport) TextButton(onClick = {
+                    menu?.open("添加到歌单", addTrigger.origin, supplementalDestinationOptions(state.destinations, state.targetId) { target ->
+                        model.target(target.id, target.title)
+                        scope.launch { supplementalAttempt { model.importContents(selected()) } }
+                    })
+                }, Modifier.menuTriggerOrigin(addTrigger), enabled = selection.ids.isNotEmpty() && !state.busy && canChoose) { Text("添加到") }
                 if (model.canPlay) TextButton(onClick = { scope.launch { supplementalAttempt { model.importContents(selected(), play = true) } } }, enabled = selection.ids.isNotEmpty() && !state.busy) { Text("播放所选") }
                 TextButton(onClick = selection::close, enabled = !state.busy) { Text("取消") }
             }
-            if (model.canImport) SupplementalImportTarget(state, model)
             selection.error?.let { MainSourceInlineMessage(it) }
+            (state.error ?: state.message)?.let { MainSourceInlineMessage(it) }
         }
     }
 }

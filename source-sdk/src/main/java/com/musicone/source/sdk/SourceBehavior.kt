@@ -1,6 +1,6 @@
 package com.musicone.source.sdk
 
-/** 可选播放策略；旧服务无需实现此接口，宿主使用相同默认值。 */
+/** 可选播放策略；未实现此接口时，宿主使用默认值。 */
 interface SourcePlaybackBehavior {
     val renewOnPlayerErrorLimit: Int get() = 0
     val skipOnPlayerError: Boolean get() = true

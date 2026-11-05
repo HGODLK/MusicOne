@@ -21,6 +21,8 @@ internal fun DisplaySettings() {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("显示与动态", style = MaterialTheme.typography.headlineSmall)
         AppFontSettings()
+        LyricDisplayContentSettings()
+        LyricFontSizeSettings()
         AnimationFrameRateSettings()
         DisplaySetting("关闭横屏播放页", "开启后内置手机播放页固定竖屏，不影响平板和音源自定义播放页",
             PhonePlayerPreferences.disableLandscapePlayer) {
@@ -29,6 +31,14 @@ internal fun DisplaySettings() {
         DisplaySetting("锁定竖屏时仍允许横屏播放", "仅手机播放页生效，关闭后跟随系统自动旋转开关",
             PhonePlayerPreferences.allowLandscapeWhenRotationLocked) {
             PhonePlayerPreferences.updateAllowLandscapeWhenRotationLocked(it)
+        }
+        DisplaySetting("交换歌词和播放列表按钮", "第三方音源自定义的播放页不生效",
+            PhonePlayerPreferences.swapBottomActions) {
+            PhonePlayerPreferences.updateSwapBottomActions(it)
+        }
+        DisplaySetting("播放页紧凑模式", "缩小底部播放控件，给封面和歌词留出更多空间，第三方音源自定义的播放页不生效",
+            options.compactPlayerControls) {
+            ExperiencePreferences.update(options.copy(compactPlayerControls = it))
         }
         DisplaySetting("始终使用深色模式", "打开后始终为深色，关闭后跟随系统", options.alwaysDark) {
             ExperiencePreferences.update(options.copy(alwaysDark = it))
@@ -50,6 +60,13 @@ internal fun DisplaySettings() {
         }
         DisplaySetting("关闭推荐页音乐卡片彩色效果", "保留封面，卡片背景使用中性色", options.disableCardColors) {
             ExperiencePreferences.update(options.copy(disableCardColors = it))
+        }
+        DisplaySetting("“我喜欢”卡片改为左右并排", "仅手机生效，使用公共模板的音源可用，平板和音源自定义页面不生效",
+            options.phoneSideBySideLibraryCards) {
+            ExperiencePreferences.update(options.copy(phoneSideBySideLibraryCards = it))
+        }
+        DisplaySetting("隐藏综合歌单", "“我的”页不再显示综合歌单卡片，仍可在本地音乐页进入；音源不支持我喜欢时仍会显示", options.hideUnifiedPlaylist) {
+            ExperiencePreferences.update(options.copy(hideUnifiedPlaylist = it))
         }
     }
 }

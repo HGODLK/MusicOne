@@ -16,7 +16,8 @@ internal fun SettingsPageHost(navigation: SettingsNavigation, state: PlatformSet
     model: PlatformSettingsViewModel, motion: PageMotion, bottomInset: androidx.compose.ui.unit.Dp,
     cachePlaylists: List<MusicPlaylist> = emptyList(), onPlayCached: (MusicTrack) -> Unit = {},
     currentTrackId: String? = null, playing: Boolean = false,
-    onSelectSource: (MusicSource) -> Unit = model::selectSource) {
+    onSelectSource: (MusicSource) -> Unit = model::selectSource,
+    aiController: AiAssistantController? = null) {
     val settingsPages = rememberSaveableStateHolder()
     val supplementalModels = rememberSupplementalSourceModels()
     val sourceController = com.musicone.sourceintegration.SourcePackageController.get(androidx.compose.ui.platform.LocalContext.current)
@@ -24,8 +25,12 @@ internal fun SettingsPageHost(navigation: SettingsNavigation, state: PlatformSet
     var origin by remember { mutableStateOf(Rect.Zero) }
     var loginBack by remember { mutableStateOf<(() -> Unit)?>(null) }
     var supplementalBack by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val aiBack: (() -> Unit)? = remember(aiController, navigation) { aiController?.let { controller ->
+        { if (!controller.backFromConfiguration()) navigation.backPage() }
+    } }
     // 在组合阶段读取局部返回状态，表单退回后必须重新登记，避免旧处理器一直吞掉返回。
     val backInterceptor = if (navigation.destination == SettingsDestination.SUPPLEMENTAL) supplementalBack
+        else if (navigation.destination == SettingsDestination.AI_ASSISTANT) aiBack
         else if (navigation.destination != SettingsDestination.PLATFORM_LOGIN) null
         else loginBack
     SideEffect { navigation.backInterceptor = backInterceptor }
@@ -65,7 +70,10 @@ internal fun SettingsPageHost(navigation: SettingsNavigation, state: PlatformSet
                     when (displayed) {
                         SettingsDestination.SETTINGS -> SettingsHomeScreen(state,
                             navigation::back, navigation::openSources, bottomInset, navigation::openCachedMusic,
-                            navigation::openLibrary, navigation::openSupplemental)
+                            navigation::openLibrary, navigation::openSupplemental, navigation::openAiAssistant)
+                        SettingsDestination.AI_ASSISTANT -> aiController?.let {
+                            AiAssistantRoute(it, navigation::backPage, bottomInset)
+                        }
                         SettingsDestination.MUSIC_LIBRARY -> MusicLibrarySettingsScreen(navigation::back, bottomInset)
                         SettingsDestination.SUPPLEMENTAL -> Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
                             SupplementalSourcesScreen(bottomInset, navigation::backPage, { supplementalBack = it },
@@ -96,6 +104,7 @@ internal fun SettingsPageHost(navigation: SettingsNavigation, state: PlatformSet
                             },
                             onLogout = model::logout,
                             onOpenManagement = navigation::openSourceManagement,
+                            onOpenSourceSettings = model::openSourceSettings,
                         )
                         SettingsDestination.PLATFORM_LOGIN -> {
                             LaunchedEffect(state.loginSource) { model.startLogin(state.loginSource); navigation.backPage() }

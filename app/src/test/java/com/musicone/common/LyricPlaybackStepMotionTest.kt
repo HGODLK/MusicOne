@@ -395,6 +395,22 @@ class LyricPlaybackStepMotionTest {
         assertTrue(second.isCompleted)
     }
 
+    @Test fun tappedLineAndItsNextLineAlignWhileOtherRowsHold() {
+        val word = listOf(LyricHighlightRange(0, 1, LyricWord(1_000, 2_000, "光")))
+        var position = 3_000L
+        val motion = LyricPlaybackStepMotion(5)
+        for (index in 3..6) motion.configureWords(index, word, { position }, true, index == 5, true)
+        val held = motion.row(5).words.alpha(0)
+        assertEquals(1f, held, .00001f)
+        position = 0L
+        motion.jumpWords(tapLine = 3)
+        for (index in 3..6) motion.row(index).advance(16_666_667L, finish = false)
+        assertEquals(.7f, motion.row(3).words.alpha(0), .00001f)
+        assertEquals(.7f, motion.row(4).words.alpha(0), .00001f)
+        assertEquals(held, motion.row(5).words.alpha(0), 0f)
+        assertEquals(held, motion.row(6).words.alpha(0), 0f)
+    }
+
     @Test fun repeatedEmphasisUpdatesDoNotRestartTheAnimation() = checkMotion {
         val job = step(1, 100f)
         repeat(150) {

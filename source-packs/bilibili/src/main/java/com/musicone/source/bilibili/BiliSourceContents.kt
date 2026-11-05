@@ -97,10 +97,18 @@ internal class BiliSourceContents(private val state: () -> BiliPackageState) : S
         val response = state().api.getFavoriteVideos(folder, page, session.cookie)
         require(!response.hasMore || response.videos.isNotEmpty()) { "收藏夹分页不完整，已保留原订阅" }
         val items = response.videos.mapIndexed { index, video ->
-            SourceSubscriptionItem(video.bvid.ifBlank { "av${video.aid}" }, listOf(BiliSourceMapping.track(video, null, session.mid, false)),
+            currentCoroutineContext().ensureActive()
+            SourceSubscriptionItem(video.bvid.ifBlank { "av${video.aid}" }, subscriptionTracks(video, session),
                 (page - 1) * 20L + index)
         }
         SourcePage(items, if (response.hasMore) cursor(session.mid, folder, page + 1) else null)
+    }
+    /** 多 P 视频订阅时默认拆成每个分 P 一首；读取失败直接抛出，保留原订阅不提交半成品。 */
+    private fun subscriptionTracks(video: BiliVideoItem, session: BiliAccountSession): List<SourceTrackDetails> {
+        if (video.isInvalid || video.bvid.isBlank() || video.pageCount == 1) return listOf(BiliSourceMapping.track(video, null, session.mid, false))
+        val parts = state().api.getVideoPages(video.bvid, session.cookie)
+        if (parts.size <= 1) return listOf(BiliSourceMapping.track(video, parts.firstOrNull(), session.mid, false))
+        return parts.map { BiliSourceMapping.track(video, it, session.mid, true) }
     }
     private fun cursor(account: String, folder: Long, page: Int) = "$account:$folder:$page"
     private fun validateAccount(identity: TrackIdentity, request: BiliAccountRequest) {
@@ -108,5 +116,5 @@ internal class BiliSourceContents(private val state: () -> BiliPackageState) : S
         require(identity.accountId == null || identity.accountId == request.session?.mid) { "内容所属账号已变化，请重新打开" }
     }
     private fun BiliVideoDetails.video() = BiliVideoItem(aid, bvid, pages.firstOrNull()?.cid ?: 0,
-        title, cover, upName, durationSec)
+        title, cover, upName, durationSec, pageCount = pages.size)
 }

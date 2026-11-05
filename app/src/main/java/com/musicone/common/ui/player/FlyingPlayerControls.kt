@@ -122,8 +122,9 @@ internal fun FlyingPlayerControls(motion: PageMotion, track: MusicTrack, playing
             }
         }
         FlyingControl(motion, "play", target, playFlight, Alignment.Center) {
-            val targetMark = if (rotation != 0) (motion.targetSnapshot["play"] ?: motion.targets["play"])
-                ?.markSize?.takeIf { it > 0f } ?: 54f else 54f
+            // 落点图标大小以实际锚点为准：横屏和紧凑模式都比默认的 54 小。
+            val targetMark = (motion.targetSnapshot["play"] ?: motion.targets["play"])
+                ?.markSize?.takeIf { it > 0f } ?: 54f
             Icon(if (playing) PlayerControlIcons.Pause else PlayerControlIcons.Play, null,
                 tint = playerInk, modifier = Modifier.size((if (target) targetMark else 21f).dp)
                     .playerFlightTint(playColor, playerInk, motion))

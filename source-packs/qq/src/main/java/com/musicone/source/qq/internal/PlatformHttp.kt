@@ -39,6 +39,8 @@ internal data class PlatformHttpResponse(
 }
 
 internal object PlatformHttp {
+    data class ReadableProbe(val url: String?, val missing: Boolean)
+
     private data class PlaybackProbe(
         val url: String,
         val status: Int? = null,
@@ -130,9 +132,16 @@ internal object PlatformHttp {
         urls: List<String>,
         headers: Map<String, String> = emptyMap(),
         maxWaitMs: Long = 2_500L,
-    ): String? {
+    ): String? = readableProbe(urls, headers, maxWaitMs).url
+
+    /** 除可读地址外，还报告是否所有候选都明确 404/410（文件不存在，而不是超时或网络故障）。 */
+    fun readableProbe(
+        urls: List<String>,
+        headers: Map<String, String> = emptyMap(),
+        maxWaitMs: Long = 2_500L,
+    ): ReadableProbe {
         val candidates = urls.distinct().take(MAX_PARALLEL_READ_CANDIDATES)
-        if (candidates.isEmpty()) return null
+        if (candidates.isEmpty()) return ReadableProbe(null, missing = false)
         val executor = Executors.newFixedThreadPool(candidates.size)
         val completion = ExecutorCompletionService<PlaybackProbe>(executor)
         val completedProbes = mutableListOf<PlaybackProbe>()
@@ -145,20 +154,21 @@ internal object PlatformHttp {
                 val remaining = deadline - System.nanoTime()
                 if (remaining <= 0L) {
                     logPlaybackProbes(completedProbes, candidates.size)
-                    return null
+                    return ReadableProbe(null, missing = false)
                 }
                 val completed = completion.poll(remaining, TimeUnit.NANOSECONDS)
                 if (completed == null) {
                     logPlaybackProbes(completedProbes, candidates.size)
-                    return null
+                    return ReadableProbe(null, missing = false)
                 }
                 runCatchingCancellable { completed.get() }.getOrNull()?.let { probe ->
                     completedProbes += probe
-                    if (probe.readable) return probe.url
+                    if (probe.readable) return ReadableProbe(probe.url, missing = false)
                 }
             }
             logPlaybackProbes(completedProbes, candidates.size)
-            null
+            ReadableProbe(null, missing = completedProbes.size == candidates.size &&
+                completedProbes.all { it.status == 404 || it.status == 410 })
         } finally {
             executor.shutdownNow()
         }

@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
@@ -24,12 +25,15 @@
             android:configChanges="density|orientation|screenLayout|screenSize|smallestScreenSize"
             android:exported="true"
             android:screenOrientation="unspecified"
+            android:theme="@style/Theme.MusicOne.Launch"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <service android:name="com.musicone.AiReplyService" android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <service
             android:name="com.musicone.MusicPlaybackService"
             android:exported="true"

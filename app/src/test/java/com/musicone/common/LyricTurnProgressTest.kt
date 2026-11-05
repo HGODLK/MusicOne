@@ -53,4 +53,27 @@ class LyricTurnProgressTest {
         clock.sample(1600, 936_000_000, true, 1)
         assertEquals(2000L, clock.sample(2000, 1_336_000_000, false, 1, reduceMotion = true))
     }
+
+    @Test fun 采样小幅回退时停住等真实时钟追上不往回走() {
+        val clock = LyricTurnProgress()
+        clock.sample(0, 0, false, 1)
+        assertEquals(1_000L, clock.sample(1_000, 1_000_000_000, false, 1))
+        // 起播输出延迟：真实采样比推算值少 200ms。
+        assertEquals(1_000L, clock.sample(800, 1_016_000_000, false, 1))
+        assertEquals(1_000L, clock.sample(950, 1_166_000_000, false, 1))
+        assertFalse(clock.presenting)
+        assertEquals(1_016L, clock.sample(1_016, 1_232_000_000, false, 1))
+        assertEquals(1_032L, clock.sample(1_032, 1_248_000_000, false, 1))
+    }
+
+    @Test fun 超出容差的回退和应用内跳转仍直接回退() {
+        val clock = LyricTurnProgress()
+        clock.sample(10_000, 0, false, 1)
+        assertEquals(10_000L - LYRIC_CLOCK_BACKWARD_TOLERANCE_MS - 1,
+            clock.sample(10_000L - LYRIC_CLOCK_BACKWARD_TOLERANCE_MS - 1, 16_000_000, false, 1))
+        clock.sample(20_000, 32_000_000, false, 1)
+        assertEquals(19_900L, clock.sample(19_900, 48_000_000, false, 1, seeking = true))
+        clock.sample(30_000, 64_000_000, false, 1)
+        assertEquals(29_900L, clock.sample(29_900, 80_000_000, false, 2))
+    }
 }

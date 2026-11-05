@@ -6,7 +6,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 
@@ -28,58 +30,91 @@ internal fun Modifier.phoneLyricsGesture(
     val latestVisible by rememberUpdatedState(visible)
     val latestChange by rememberUpdatedState(onVisibleChange)
     val latestOffset by rememberUpdatedState(positionOffset)
+    val presentation = LocalPhonePlayerPresentation.current
+    val turn = LocalPhonePlayerTurn.current
+    val canTopPull = rememberUpdatedState {
+        motion.lyricsProgress >= 1f && motion.listEdge.atTop() &&
+            presentation?.menuLocks?.active != true && turn?.orientationChanging != true
+    }
     return pointerInput(motion, region, enabled) {
         if (!enabled) return@pointerInput
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
             val original = latestVisible
             val startRegion = if (original) region.closing else region.opening
-            if (!startRegion.contains(down.position - latestOffset())) return@awaitEachGesture
-            val tracker = VelocityTracker().apply { addPosition(down.uptimeMillis, down.position) }
-            val release = GestureReleaseVelocity(down.uptimeMillis, density, stablePlayerSettlement = true)
-            val displacement = PlayerGestureDisplacement(original)
-            var started = false
-            var distance = 0f
-            var initial = motion.lyricsProgress
-            val travel = motion.dragTravelPx.coerceAtLeast(1f)
-            fun move(delta: Float) {
-                distance -= delta
-                motion.dragTo(initial + distance / travel)
-            }
-            try {
-                val end = awaitOwnedVerticalGesture(down, tracker, release,
-                    begin = { over ->
-                        val allowed = (over < 0f && motion.lyricsProgress < 1f) ||
-                            (over > 0f && motion.lyricsProgress > 0f)
-                        if (allowed) {
-                            initial = motion.lyricsProgress
-                            motion.beginDrag()
-                            started = true
-                        }
-                        allowed
-                    }, move = ::move, observe = { displacement.move(-it) })
-                if (end != null && started) {
-                    val completed = end.completed
-                    val rawVelocityY = tracker.calculateVelocity().y
-                    val now = end.timeMillis
-                    // 判定速度与动画接续速度分别计算，抬手微抖不改变原方向。
-                    val intentVelocityY = release.released(now, rawVelocityY, completed)
-                    val target = lyricsDragTarget(motion.lyricsProgress, intentVelocityY / density,
-                        -displacement.distancePx / density, original, completed,
-                        displacement.reverseDistancePx / density)
-                    val settlingVelocity = release.settlingVelocity(now, rawVelocityY, completed)
-                    motion.settleDrag(target, settlingVelocity, gestureReleaseTimeNanos(now))
-                    started = false
-                    latestChange(target)
-                }
-            } finally {
-                if (started) {
-                    val target = lyricsDragTarget(motion.lyricsProgress, 0f, original = original,
-                        completed = false)
-                    motion.settleDrag(target, 0f)
-                    latestChange(target)
+            val change = { target: Boolean -> latestChange(target) }
+            val point = down.position - latestOffset()
+            if (startRegion.contains(point)) {
+                awaitLyricsDrag(down, motion, original, null, change)
+            } else if (original && region.opening.contains(point)) {
+                // opening 是控件上方的区域，这里只剩歌词列表。手指先交给列表滚动，到顶后才接成关闭；中途让出后还能再次接管。
+                while (currentEvent.changes.any { it.id == down.id && it.pressed }) {
+                    val start = awaitLyricsTopPullStart(down.id) { canTopPull.value() } ?: break
+                    if (awaitLyricsDrag(start, motion, true, canTopPull.value, change)) break
                 }
             }
+        }
+    }
+}
+
+/** 返回 true 表示这根手指已被开合手势接管并完成收尾。 */
+private suspend fun AwaitPointerEventScope.awaitLyricsDrag(
+    start: PointerInputChange,
+    motion: PhoneLyricsMotion,
+    original: Boolean,
+    canTopPull: (() -> Boolean)?,
+    onVisibleChange: (Boolean) -> Unit,
+): Boolean {
+    val tracker = VelocityTracker().apply { addPosition(start.uptimeMillis, start.position) }
+    val release = GestureReleaseVelocity(start.uptimeMillis, density, stablePlayerSettlement = true)
+    val displacement = PlayerGestureDisplacement(original)
+    var started = false
+    var distance = 0f
+    var initial = motion.lyricsProgress
+    val travel = motion.dragTravelPx.coerceAtLeast(1f)
+    fun move(delta: Float) {
+        if (canTopPull != null) {
+            val progress = motion.lyricsProgress
+            val split = lyricsTopPullSplit(delta, progress, travel, motion.listEdge.atTop())
+            if (split.progress != 0f) motion.dragTo(progress + split.progress)
+            if (split.list != 0f) motion.listEdge.scrollList(split.list)
+        } else {
+            distance -= delta
+            motion.dragTo(initial + distance / travel)
+        }
+    }
+    try {
+        val end = awaitOwnedVerticalGesture(start, tracker, release,
+            begin = { over ->
+                val allowed = if (canTopPull != null) over > 0f && canTopPull() else
+                    (over < 0f && motion.lyricsProgress < 1f) || (over > 0f && motion.lyricsProgress > 0f)
+                if (allowed) {
+                    initial = motion.lyricsProgress
+                    motion.beginDrag()
+                    started = true
+                }
+                allowed
+            }, move = ::move, observe = { displacement.move(-it) })
+        if (end == null || !started) return false
+        val completed = end.completed
+        val rawVelocityY = tracker.calculateVelocity().y
+        val now = end.timeMillis
+        // 判定速度与动画接续速度分别计算，抬手微抖不改变原方向。
+        val intentVelocityY = release.released(now, rawVelocityY, completed)
+        val target = lyricsDragTarget(motion.lyricsProgress, intentVelocityY / density,
+            -displacement.distancePx / density, original, completed,
+            displacement.reverseDistancePx / density)
+        val settlingVelocity = release.settlingVelocity(now, rawVelocityY, completed)
+        motion.settleDrag(target, settlingVelocity, gestureReleaseTimeNanos(now))
+        started = false
+        onVisibleChange(target)
+        return true
+    } finally {
+        if (started) {
+            val target = lyricsDragTarget(motion.lyricsProgress, 0f, original = original,
+                completed = false)
+            motion.settleDrag(target, 0f)
+            onVisibleChange(target)
         }
     }
 }

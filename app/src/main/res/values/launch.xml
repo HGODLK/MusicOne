@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 启动窗口配色，与 MusicOneTheme 的 background、onBackground 一致；灰色 M 为 30% 不透明度。 -->
+    <color name="launch_background_light">#FFFFFFFF</color>
+    <color name="launch_mark_light">#4D19202C</color>
+    <color name="launch_background_dark">#FF121314</color>
+    <color name="launch_mark_dark">#4DF1F1F1</color>
+    <color name="launch_background">@color/launch_background_light</color>
+    <color name="launch_mark">@color/launch_mark_light</color>
+    <bool name="launch_light_bars">true</bool>
+</resources>

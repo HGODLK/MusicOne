@@ -52,7 +52,7 @@ internal fun PlaylistCardReorderState.arrange(playlists: List<MusicPlaylist>): L
 @Composable
 internal fun Modifier.playlistCardLift(state: PlaylistCardReorderState, id: String): Modifier {
     val scale by animateFloatAsState(if (state.activeId == id && state.dragging && state.moved) 1.035f else 1f,
-        musicSpring(), label = "歌单拖动抬起")
+        musicSpring(visibilityThreshold = PLAYLIST_CARD_MOTION_THRESHOLD), label = "歌单拖动抬起")
     return zIndex(if (state.activeId == id) 2f else 0f).graphicsLayer {
         val offset = state.translation(id)
         translationX = offset.x; translationY = offset.y

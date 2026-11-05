@@ -31,11 +31,11 @@ internal class PlaylistPageActions(
 
     suspend fun selectionTracks(): List<MusicTrack> {
         val full = controller.complete(playlist())
-        return if (full.isSourceAlbum) full.tracks else sortedPlaylistTracks(full.tracks, sort())
+        return sortedPlaylistTracks(full.tracks, sort())
     }
 
     fun loadedSelectionTracks(): List<MusicTrack>? = entry.page?.playlist?.let {
-        if (it.isSourceAlbum) it.tracks else sortedPlaylistTracks(it.tracks, sort())
+        sortedPlaylistTracks(it.tracks, sort())
     }
 
     fun more() {
@@ -61,8 +61,7 @@ internal class PlaylistPageActions(
                         controller.complete(playlist())
                     }
                 }
-                val sorted = if (full.isSourceAlbum) full else
-                    full.copy(tracks = sortedPlaylistTracks(full.tracks, sort()))
+                val sorted = full.copy(tracks = sortedPlaylistTracks(full.tracks, sort()))
                 val selected = if (online) track else track?.let { wanted ->
                     sorted.tracks.firstOrNull { it.id == wanted.id } ?: error("这首歌曲尚未完整缓存")
                 }

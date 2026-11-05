@@ -25,7 +25,7 @@ android {
     androidResources { additionalParameters += listOf("--package-id", "0x73", "--allow-reserved-package-id") }
     defaultConfig {
         applicationId = "com.musicone.source.bilibili"
-        minSdk = 23; targetSdk = 37; versionCode = 1; versionName = "1.0"
+        minSdk = 23; targetSdk = 37; versionCode = 2; versionName = "1.1"
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     buildFeatures { compose = true }
@@ -80,11 +80,11 @@ tasks.register<Sync>("packageDebugSource") {
     dependsOn("assembleDebug")
     from(layout.buildDirectory.file("outputs/apk/debug/bilibili-debug.apk"))
     into(layout.buildDirectory.dir("outputs/source-packs/debug"))
-    rename { "bilibili-1.0.mscp" }
+    rename { "bilibili-1.1.mscp" }
 }
 tasks.register<Sync>("packageReleaseSource") {
     dependsOn("assembleRelease")
     from(layout.buildDirectory.file("outputs/apk/release/bilibili-release.apk"))
     into(layout.buildDirectory.dir("outputs/source-packs/release"))
-    rename { "bilibili-1.0.mscp" }
+    rename { "bilibili-1.1.mscp" }
 }

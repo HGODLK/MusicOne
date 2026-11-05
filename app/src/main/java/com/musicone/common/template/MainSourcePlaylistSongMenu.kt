@@ -72,11 +72,24 @@ internal fun MainSourcePlaylistSongMenuHost(
         (playlist.isOwned && com.musicone.source.sdk.SourceCollectionOperation.CHANGE_TRACKS in
             com.musicone.sourceintegration.SourcePackageController.get(context).running(playlist.source.id)
                 ?.entry?.collectionEditing?.supportedOperations.orEmpty()))
+    // 手机存储即全部本地音乐，移除等于不再跟踪，走音乐库确认流程而不是延迟移出歌单。
+    val localMirror = !addOnly && !relatedOnly && playlist.isLocalLibraryMirror
     val removalModel: PlaylistRemovalViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val removalBatch = if (removable && !favorites) removalModel.batch(playlist) else null
     val removalActions = if (removalBatch == null) PlaylistRemovalActions() else PlaylistRemovalActions(
         playlist.id, removalBatch.ids, removalBatch::set)
     SideEffect { menu.removals = removalActions }
+    // 底栏直接移除：普通歌单与我喜欢仍是可撤销的延迟移除，手机存储走不再跟踪的确认流程。
+    val batchRemoval: ((List<MusicTrack>) -> Unit)? = when {
+        localMirror -> { tracks -> selection.close(); musicLibraryUi.removeLocal(tracks) }
+        !removable -> null
+        favorites -> { tracks ->
+            tracks.filter { it.id !in favoriteActions.state.deferredRemovalIds && it.id !in favoriteActions.state.updating }
+                .forEach(favoriteActions.toggleDeferredRemoval)
+            selection.close()
+        }
+        else -> { tracks -> tracks.forEach { removalActions.set(it, true) }; selection.close() }
+    }
     DisposableEffect(removalBatch) {
         onDispose { removalBatch?.let { removalModel.flush(it, onChanged) { error -> musicLibraryUi.message = error } } }
     }
@@ -106,9 +119,10 @@ internal fun MainSourcePlaylistSongMenuHost(
     val menuVisible = menu.expanded || visibility.currentState || !visibility.isIdle
     SideEffect { menu.visible = menuVisible }
     PhonePlayerMenuLock(menu, menuVisible)
-    CompositionLocalProvider(LocalSongMenuWorking provides menu.busy, LocalPlaylistRemovals provides removalActions, LocalPlaylistMultiSelection provides selection, LocalMainSourcePlaylistSongMenu provides menu.takeIf { playlist.supportsSongMenu || addOnly },
+    CompositionLocalProvider(LocalSongMenuWorking provides menu.busy, LocalPlaylistRemovals provides removalActions,
+        LocalPlaylistBatchRemoval provides batchRemoval, LocalPlaylistMultiSelection provides selection, LocalMainSourcePlaylistSongMenu provides menu.takeIf { playlist.supportsSongMenu || addOnly },
         LocalMenuArtistArtwork provides artistArtwork,
-        LocalPlaylistRemovalLabel provides if (!removable) null else if (favorites) "移除喜欢" else "移出歌单") {
+        LocalPlaylistRemovalLabel provides if (localMirror) "移除" else if (!removable) null else if (favorites) "移除喜欢" else "移出歌单") {
         BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { bounds = it.boundsInRoot() }) {
             Box(Modifier.fillMaxSize().playerQualityBackdropSnapshot(backdrop, if (liveBackdrop) menuVisible else menu.expanded,
                 captureContinuously = liveBackdrop)) { content() }
@@ -214,6 +228,12 @@ internal fun MainSourcePlaylistSongMenuHost(
                                             selection.close()
                                             menu.dismiss()
                                         }
+                                    }
+                                    if (localMirror && !phase.second && menu.batchTracks.isNotEmpty()) SongMenuRow("从本地音乐移除", !menu.busy && !musicLibraryUi.busy) {
+                                        val tracks = menu.batchTracks
+                                        selection.close()
+                                        menu.dismiss()
+                                        musicLibraryUi.removeLocal(tracks)
                                     }
                                     if (!relatedOnly && !phase.second && menu.batchTracks.isEmpty() && queueActions != null) {
                                         SongMenuRow(if (queueMenu) "下一首播放" else "插入队列", !menu.busy) {

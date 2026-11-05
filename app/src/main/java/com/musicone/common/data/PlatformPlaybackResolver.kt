@@ -66,15 +66,16 @@ internal class PlatformPlaybackResolver(
     ): ResolvedPlayback {
         if (track.source == MusicSource.LOCAL) {
             val local = localPlayback.enrichTrack(track)
-            return ResolvedPlayback(local.copy(previewUrl = local.localUri, lyrics = localPlayback.lyrics(local)), localPlayback.resolve(local, preferredQuality))
+            val lyrics = AiLyricLayer.compose(localLibrary, local) { localPlayback.lyrics(local) }
+            return ResolvedPlayback(local.copy(previewUrl = local.localUri, lyrics = lyrics), localPlayback.resolve(local, preferredQuality))
         }
         awaitSourceStartup(track, requirePlayback = true)
         // 初始化账号后再绑定版本，迟到的取票不能污染后来登录的账号。
         sourceAccountState(context, track.source)
         val availabilityRevision = availability.revisionFor(track)
         val localLyrics = if (hasReusableLyrics(track, track.lyrics)) track.lyrics
-            else cachedLyrics.read(track).ifEmpty {
-                cachedLyrics.readFallback(track)
+            else AiLyricLayer.compose(localLibrary, track) {
+                cachedLyrics.read(track).ifEmpty { cachedLyrics.readFallback(track) }
             }
         val readyTrack = track.copy(lyrics = localLyrics)
         val preferExactOnline = preferredQuality.capabilityQuality == AudioQuality.DOLBY &&
@@ -280,15 +281,22 @@ internal class PlatformPlaybackResolver(
         } else {
             ladder
         }).distinct().filter(DolbyPlaybackPolicy::permits)
-        val source = candidates.firstNotNullOfOrNull { quality ->
+        // 起播重试时跳过本次已确认没有地址的档位，每档单独限时，超时只降档不放弃。
+        val session = currentCoroutineContext()[PlaybackResolveSession]
+        val pending = candidates.filterNot { session?.skips(it) == true }
+        val source = pending.firstNotNullOfOrNull { quality ->
             try {
-                val candidate = adapter.resolveAutomatic(resolvedTrack, quality, verifyMedia)
+                val candidate = if (session == null) adapter.resolveAutomatic(resolvedTrack, quality, verifyMedia)
+                    else withTimeoutOrNull(session.tierTimeoutMs) { adapter.resolveAutomatic(resolvedTrack, quality, verifyMedia) }
+                        ?: run { session.uncertain(); return@firstNotNullOfOrNull null }
                 if ((candidate.actualQuality.isCustom && !DolbyPlaybackPolicy.permits(candidate)) || (candidate.actualQuality.isCustom &&
                     sourceCatalogQualities(track.source)?.none { it == candidate.actualQuality } != false)) {
+                    session?.missed(quality)
                     null
                 } else if (candidate.trial) {
                     // 高档试听源不能冒充完整音质；继续寻找较低档的完整地址。
                     if (trialFallback == null) trialFallback = candidate
+                    session?.missed(quality)
                     null
                 } else {
                     candidate
@@ -297,10 +305,14 @@ internal class PlatformPlaybackResolver(
                 throw error
             } catch (error: Throwable) {
                 if (error.stopsSourcePlaybackFallback()) throw error
+                if (error.isDefinitiveTierMiss()) session?.missed(quality) else session?.uncertain()
                 if (error is TrackUnavailableException) unavailable = error else uncertain = error
                 null
             }
-        } ?: trialFallback ?: throw (uncertain ?: unavailable ?: PlatformApiException("歌曲暂无可用播放地址"))
+        } ?: trialFallback ?: run {
+            session?.finish(pending)
+            throw (uncertain ?: unavailable ?: PlatformApiException("歌曲暂无可用播放地址"))
+        }
         source.cacheKey?.let { SupplementalPlaybackRequests.register(source.url, source.requestHeaders, it) }
         if (source.cacheKey == null) {
             val key = if (source.trial) "uncached-trial:${resolvedTrack.cacheIdentity()}"
@@ -362,7 +374,11 @@ internal class PlatformPlaybackResolver(
         save = { track, value, namespace -> cachedLyrics.save(track, value, namespace) },
         online = offline::hasNetwork,
     )
-    suspend fun lyrics(track: MusicTrack): List<TimedLyric> {
+    /** 显示用歌词：原歌词之上叠加 AI 歌词层。 */
+    suspend fun lyrics(track: MusicTrack): List<TimedLyric> = AiLyricLayer.compose(localLibrary, track) { sourceLyrics(track) }
+
+    /** 不含 AI 歌词层的原歌词，AI 读取底稿和从其他音源取歌词时使用。 */
+    suspend fun sourceLyrics(track: MusicTrack): List<TimedLyric> {
         awaitSourceStartup(track)
         return preferredLyrics(
             track.source.supportsManualLyrics, track.source.supportsOnlineLyrics,
@@ -372,9 +388,9 @@ internal class PlatformPlaybackResolver(
     }
 
     /** 快速切歌预览只读本地资料和缓存，不因允许手动歌词而提前发起在线请求。 */
-    suspend fun cachedOrLibraryLyrics(track: MusicTrack): List<TimedLyric> {
+    suspend fun cachedOrLibraryLyrics(track: MusicTrack): List<TimedLyric> = AiLyricLayer.compose(localLibrary, track) {
         awaitSourceStartup(track)
-        return preferredLyrics(
+        preferredLyrics(
             track.source.supportsManualLyrics, track.source.supportsOnlineLyrics,
             readLibrary = { withContext(Dispatchers.IO) { localLibrary.lyrics(track) } },
             readOnline = { cachedLyrics.read(track) },

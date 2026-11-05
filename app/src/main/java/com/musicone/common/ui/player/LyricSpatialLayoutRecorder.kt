@@ -10,13 +10,16 @@ internal class LyricSpatialLayoutRecorder(
     private val mode: PlayerLayoutMode,
 ) {
     private var width = -1
+    private var fontSize: LyricFontSize? = null
     private var typography: LyricTypography? = null
 
     fun record(layout: LazyListLayoutInfo, protection: LyricBlurProtection) {
         val actualWidth = layout.viewportSize.width
-        val type = typography?.takeIf { width == actualWidth }
-            ?: lyricTypographyForWidth(mode, actualWidth / density.density).also {
+        val currentFontSize = ExperiencePreferences.options.lyricFontSize
+        val type = typography?.takeIf { width == actualWidth && fontSize == currentFontSize }
+            ?: lyricTypographyForWidth(mode, actualWidth / density.density, currentFontSize).also {
                 width = actualWidth
+                fontSize = currentFontSize
                 typography = it
             }
         travel.record(layout, density, protection, type)

@@ -35,7 +35,7 @@ internal class KugouHomeActions(private val owner: KugouPackageState, private va
                 owner.check(captured)
                 require(tracks.isNotEmpty()) { "歌单暂时没有可播放的歌曲" }
                 tracks.forEach { requireCurrent(it.track.identity) }
-                owner.environment.host.playDetailed(tracks)
+                owner.environment.host.playDetailed(sortedKugouCollectionTracks(tracks, collections.selectedSort(detail)))
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { owner.environment.host.reportError(failure.message ?: "歌单加载失败") }
         }
