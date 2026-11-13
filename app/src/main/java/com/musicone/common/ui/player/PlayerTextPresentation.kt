@@ -11,8 +11,9 @@ private val trailingPlayerTitleDetails = Regex("(?:\\s*[（(][^()（）]*[）)])
 private val playerParentheticalDetails = Regex("\\s*(?:\\([^()（）]*\\)|（[^()（）]*）)")
 // 覆盖平假名、全角及半角片假名，不把括号内的纯中文或英文当作读音。
 private val playerKana = Regex("[ぁ-ゖゝ-ゟァ-ヺヽ-ヿㇰ-ㇿｦ-ﾟ]")
-private val playerJapaneseName = Regex("[\\p{IsHan}ぁ-ゖァ-ヺｦ-ﾟ]")
-private val playerLatinName = Regex("[\\p{IsLatin}]+(?:[\\s.'’·-]+[\\p{IsLatin}]+)*")
+// 文字类别必须写 \p{script=Xxx}：Android 9 的 ICU 不认 \p{IsXxx}，类加载即闪退。
+private val playerJapaneseName = Regex("[\\p{script=Han}ぁ-ゖァ-ヺｦ-ﾟ]")
+private val playerLatinName = Regex("[\\p{script=Latin}]+(?:[\\s.'’·-]+[\\p{script=Latin}]+)*")
 private val playerArtistSeparator = Regex("[、/／,，;&＆]")
 private val playerArtistVersion = Regex("(?i)\\b(live|remix|version|ver|edit|mix|feat|ft|dj)\\b")
 
