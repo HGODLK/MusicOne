@@ -25,7 +25,7 @@ android {
     androidResources { additionalParameters += listOf("--package-id", "0x72", "--allow-reserved-package-id") }
     defaultConfig {
         applicationId = "com.musicone.source.netease"
-        minSdk = 23; targetSdk = 37; versionCode = 1; versionName = "0.1"
+        minSdk = 23; targetSdk = 37; versionCode = 2; versionName = "0.2"
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     buildFeatures { compose = true }
@@ -78,11 +78,11 @@ tasks.register<Sync>("packageDebugSource") {
     dependsOn("assembleDebug")
     from(layout.buildDirectory.file("outputs/apk/debug/netease-debug.apk"))
     into(layout.buildDirectory.dir("outputs/source-packs/debug"))
-    rename { "netease-0.1.mscm" }
+    rename { "netease-0.2.mscm" }
 }
 tasks.register<Sync>("packageReleaseSource") {
     dependsOn("assembleRelease")
     from(layout.buildDirectory.file("outputs/apk/release/netease-release.apk"))
     into(layout.buildDirectory.dir("outputs/source-packs/release"))
-    rename { "netease-0.1.mscm" }
+    rename { "netease-0.2.mscm" }
 }

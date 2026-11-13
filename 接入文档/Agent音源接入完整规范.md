@@ -447,7 +447,7 @@ gradle -p source-packs/kugou -PsourceSdk=C:/sdk/source-sdk-release.aar -PsourceS
 
 `requiresLogin` 的清单缺省值仍为 false，不等于所有参考包都允许访客使用。当前酷狗自定义根页在未认证、会话过期或缺少账号时展示原认证页，非活动预组合根页不启动第二份认证任务；媒体请求还核对真实账号及凭据，不能只改清单绕过包内登录要求。
 
-当前各业务包的 debug 和 release 分发任务输出 `qq-1.2.mscm`、`kugou-1.1.mscm`、`netease-0.1.mscm`、`subsonic-0.1.mscm`、`bilibili-1.1.mscp`，位于各工程 `build/outputs/source-packs/debug` 或 `release`。这些是当前源码配置，不是自动递增规则；正式发布更新仍须遵守前述版本身份规则。
+当前各业务包的 debug 和 release 分发任务输出 `qq-1.2.mscm`、`kugou-1.1.mscm`、`netease-0.2.mscm`、`subsonic-0.1.mscm`、`bilibili-1.1.mscp`，位于各工程 `build/outputs/source-packs/debug` 或 `release`。这些是当前源码配置，不是自动递增规则；正式发布更新仍须遵守前述版本身份规则。
 
 ```powershell
 # 使用自己的Android Build Tools实际路径；不要把真实密码写进命令历史。
