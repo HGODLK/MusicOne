@@ -74,6 +74,8 @@ MusicOne 采用音源解耦设计，各音源作为独立模块运作，划分�
 
 Subsonic 音源可连接 Navidrome 等自建音乐服务器，目前为预览版，仅在 Navidrome 上做过小规模测试。
 
+
+- **LX 主音源（社区独立维护）**：详见[独立项目仓库](https://github.com/Cocoeew/lx-source-musicone)与[最新 Release](https://github.com/Cocoeew/lx-source-musicone/releases)。
 ## 📑 歌单体系
 
 在“我的”页面中，歌单按入口与管理维度分为两级结构：
