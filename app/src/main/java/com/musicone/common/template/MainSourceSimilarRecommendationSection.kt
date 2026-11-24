@@ -53,7 +53,7 @@ internal fun MainSourceSimilarRecommendationSection(
     state: MainSourceSimilarRecommendationUiState,
     currentTrackId: String?,
     playing: Boolean,
-    onTrackClick: (MusicTrack) -> Unit,
+    onTrackClick: HomeTrackPageClick,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
     edgeInset: Dp = 0.dp,
@@ -70,7 +70,7 @@ private fun MainSourceSimilarRecommendationContent(
     state: MainSourceSimilarRecommendationUiState,
     currentTrackId: String?,
     playing: Boolean,
-    onTrackClick: (MusicTrack) -> Unit,
+    onTrackClick: HomeTrackPageClick,
     onRefresh: () -> Unit,
     interactive: Boolean,
     edgeInset: Dp,
@@ -108,7 +108,8 @@ private fun MainSourceSimilarRecommendationContent(
             )
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxWidth().height(pagerHeight).clipToBounds(),
+                // 滑到最后一页后继续左滑交给根页面切到“我的”。
+                modifier = Modifier.fillMaxWidth().height(pagerHeight).clipToBounds().rootPageEdgeSwipe(pagerState),
                 contentPadding = PaddingValues(start = edgeInset, end = edgeInset + peek),
                 pageSpacing = 14.dp,
                 beyondViewportPageCount = 1,
@@ -121,9 +122,9 @@ private fun MainSourceSimilarRecommendationContent(
                         favoriteIds = favorites.state.ids,
                         currentTrackId = currentTrackId,
                         playing = playing,
-                        onTrackClick = { track ->
+                        onTrackClick = { tracks, index ->
                             if (interactive) {
-                                if (page == pagerState.settledPage && !pagerState.isScrollInProgress) onTrackClick(track)
+                                if (page == pagerState.settledPage && !pagerState.isScrollInProgress) onTrackClick(tracks, index)
                                 else scope.launch { pagerState.animateScrollToPage(page) }
                             }
                         },

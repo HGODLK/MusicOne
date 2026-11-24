@@ -44,6 +44,18 @@ internal fun PlayerQueueSheet(state: PlayerQueuePresentation, viewModel: MusicPl
     val list = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
     val fling = rememberPlayerVerticalFling(rotation)
     val reorder = rememberPlayerQueueReorder(list, viewModel)
+    // 多选只活在本次打开的抽屉里；队列变化时只保留仍在队列中的勾选，清空后退出多选。
+    val selection = remember { PlaylistMultiSelection() }
+    SideEffect { selection.update(state.queue) }
+    // 只在“有歌变成清空”时收起抽屉；打开时本来就为空的队列保持打开。
+    var hadSongs by remember { mutableStateOf(state.queue.isNotEmpty()) }
+    LaunchedEffect(state.queue.isEmpty()) {
+        if (state.queue.isEmpty()) {
+            selection.close()
+            if (hadSongs) queueState.dismiss()
+        }
+        hadSongs = state.queue.isNotEmpty()
+    }
     val overscroll = rememberOverscrollEffect()
     val context = remember {
         MusicPlaylist("player-queue", MusicSource.QQ, "播放列表", "", "", 0, 0L, 0L, "", emptyList())
@@ -53,7 +65,7 @@ internal fun PlayerQueueSheet(state: PlayerQueuePresentation, viewModel: MusicPl
     MaterialTheme(colorScheme = MusicOneDarkColors) {
         CompositionLocalProvider(LocalPlaybackQueueActions provides reorder.actions) {
             MainSourcePlaylistSongMenuHost(context, emptyList(), 0.dp, {}, {}, {}, addOnly = true,
-                avoidQueueRow = true, queueMenu = true, menuRotation = rotation) {
+                avoidQueueRow = true, queueMenu = true, menuRotation = rotation, externalSelection = selection) {
                 PhonePlayerWindowHost(rotation) {
                     Box(Modifier.fillMaxSize().clip(sheetShape)) {
                         // 实体底板独立命中，标题间隙和空列表不能把点击交给后面的关闭遮罩。
@@ -74,7 +86,8 @@ internal fun PlayerQueueSheet(state: PlayerQueuePresentation, viewModel: MusicPl
                                 Column(Modifier.weight(1f).fillMaxHeight().then(
                                     if (internallyRotated) Modifier else Modifier.navigationBarsPadding())) {
                                     PlayerQueueHeader(state.queue.size,
-                                        Modifier.queueDismissGesture(queueState) { true }, showHandle = !internallyRotated)
+                                        Modifier.queueDismissGesture(queueState) { true }, showHandle = !internallyRotated,
+                                        selection = selection, queue = state.queue)
                                     Box(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp)
                                         .clipToBounds().onGloballyPositioned {
                                             reorder.positionViewport(it)
@@ -112,6 +125,10 @@ internal fun PlayerQueueSheet(state: PlayerQueuePresentation, viewModel: MusicPl
                                                 Box(itemMotion.queueReorderRow(reorder, track.id, owned)
                                                     .onGloballyPositioned { if (!owned && wasOwned) wasOwned = false }
                                                     .clickable(enabled = !owned) {
+                                                        if (selection.active) {
+                                                            selection.toggle(selection.key(track))
+                                                            return@clickable
+                                                        }
                                                         val status = queueSourceStatus(track.source)
                                                         if (status == QueueSourceStatus.AVAILABLE || status == QueueSourceStatus.INITIALIZING) viewModel.playTrack(track)
                                                         else android.widget.Toast.makeText(androidContext, status.message(track.source), android.widget.Toast.LENGTH_SHORT).show()
@@ -123,6 +140,7 @@ internal fun PlayerQueueSheet(state: PlayerQueuePresentation, viewModel: MusicPl
                                         }
                                         PlayerQueueReorderOverlay(reorder)
                                     }
+                                    PlayerQueueSelectionBar(selection, state.queue, viewModel::removeTracksFromQueue)
                                 }
                                 if (rotation < 0) PlayerQueueSideHandle(queueState)
                             }

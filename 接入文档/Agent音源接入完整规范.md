@@ -30,11 +30,11 @@
 
 | 接口或模型 | 查阅位置 |
 | --- | --- |
-| SourcePlayerUiProvider、SourcePlayerUiProviderAccess、SourcePlayerUiDeclaration、SourcePlayerInsets、SourcePlayerUiContext、SourcePlayerUiActions | [主音源完整播放器](#player-ui) |
+| SourcePlayerUiProvider、SourcePlayerUiProviderAccess、SourcePlayerUiDeclaration、SourcePlayerInsets、SourcePlayerUiContext、SourcePlayerUiActions、SourcePlayerSeekPreviewActions、SourcePlayerQueueGestureActions、SourcePlayerTrackMenuActions、SourcePlayerDismissGestureActions、SourcePlayerSharedSourceAccess、SourcePlayerLyricsMotionAccess、SourcePlayerLyricsMotion、SourcePlayerQueueAccess、SourcePlayerLyricsDataAccess、SourcePlayerAudioInfoAccess、SourcePlayerBackdropAccess | [主音源完整播放器](#player-ui) |
 | SourceEntry、SourceEnvironment、SourceRoute、SourcePageState | [主页面组织](#main-source)、[生命周期](#lifecycle) |
 | SourceDiscovery、SourceSearch、SourceEntities、SourceCollectionEditing；collections、favorites、radio 服务 | [主业务对照](#main-source)、[能力与模板限制](#capabilities) |
 | SourceDailyRecommendations、SourceHomeSectionPresentation、SourceHomePresentation、SourceMySectionPresentation、SourceEntityArtwork、SourceHomeContinuation、SourceRemoteCollectionArtwork | [能力与可选扩展](#capabilities) |
-| SourceCollectionFavoritePolicy、SourceLibraryChanges、SourceCollectionDetailsEditing、SourceCollectionRemoteOrder、SourceEntityFollowing、SourceHotSearch、SourceCollectionDetailsEdit | [资料库可选扩展](#library-extensions) |
+| SourceCollectionFavoritePolicy、SourceLibraryChanges、SourceCollectionDetailsEditing、SourceCollectionRemoteOrder、SourceCollectionMembership、SourceEntityFollowing、SourceHotSearch、SourceCollectionDetailsEdit | [资料库可选扩展](#library-extensions) |
 | SourceContents、SourceContent、SourceChildItems、SourceChildItem、SourceRemoteCollections、SourceImporting、SourceSubscriptions、SourceSubscriptionItem、SourceSubscriptionIdentity | [补充业务与订阅](#supplemental-source) |
 | SimpleSupplementalSourceEntry、SimpleSupplementalSourceInfo、SourceSupplementalPageProvider、SourceSupplementalPagePolicy、SourceSupplementalPageContext、SourceSupplementalPageActions | [简化接入与逐页接管](#simple-supplemental) |
 | TrackIdentity、SourceTrack／SourceTrackDetails、SourceArtwork、TrackAccessInfo、SourceAudioQuality、SourceCollection、SourceEntity／SourceEntityRef、SourcePayload、SourceCursorRequest、SourcePage、SourceOperationException | [通用模型](#models)、[音质与访问展示](#playback) |
@@ -79,9 +79,12 @@
 | 宿主接口 | `minHostVersionCode` 至少 |
 | --- | --- |
 | `SourceHost.playRecommendation` | 5 |
+| `SourceHost.playRecommendations` | 6 |
+| 实现 `SourceCollectionMembership` | 6 |
+| 自建播放页 `SourcePlayerSeekPreviewActions`、`SourcePlayerQueueGestureActions`、`SourcePlayerTrackMenuActions`、`SourcePlayerDismissGestureActions`、`SourcePlayerSharedSourceAccess`、`SourcePlayerLyricsMotionAccess`，`SourcePlayerOpening` 新字段（含 `glass`、`barCrossfade`）、`SourcePlayerSharedSource` 墨色与尺寸字段、`SourcePlayerSnapshot.artworkColors`，以及 `SourcePlayerQueueAccess`、`SourcePlayerLyricsDataAccess`、`SourcePlayerAudioInfoAccess`、`SourcePlayerBackdropAccess` | 6 |
 | 本文其余宿主接口 | 4 |
 
-宿主新增包可调用的方法时须递增 versionCode 并在此表登记。
+宿主新增包可调用的方法时须递增 versionCode 并在此表登记。`SourceCollectionMembership` 是包实现的接口，但它在 code 6 才加入 SDK；实现它的类在更早的宿主上无法加载，整个包会启动失败，所以实现方同样要声明 ≥ 6。
 
 <a id="main-source"></a>
 
@@ -138,7 +141,7 @@ gradle -p source-packs/kugou -PsourceSdk=C:/sdk/source-sdk-release.aar -PsourceS
 | 歌手/专辑 | entities.kinds含artist/album；entity、tracks、collections；歌手内搜索由supportsTrackSearch声明；提供非空trackSortOptions时也须实现空查询的searchTracks，详见第7章 |
 | 我的/歌单 | collections.librarySections列出FAVORITE_TRACKS/CREATED_COLLECTIONS/SAVED_COLLECTIONS；library/detail/tracks；sortOptions/selectedSort/selectSort只在真实支持时声明；不声明时宿主负责保存排序，页面仍可排序 |
 | 远端收藏 | favoriteTrackIds返回包内stableId全量集合；SDK允许null，公共刷新此时保留已有索引，不调用isTrackFavorite逐曲补查；公共远端读写需要当前账号，详见第7章；editTrackMetadata对应的本地收藏分支见第11章；批量setTracksFavorite应override保留节流；收藏歌单须supportsCollections=true |
-| 编辑 | collectionEditing.supportedOperations为CREATE/EDIT/DELETE/CHANGE_TRACKS/REORDER的真实子集；writableCollections与create/edit/delete/changeTracks/reorder；未接入 SourceCollectionRemoteOrder 扩展时没有公共远端改序入口；页面排序与远端改序的区别见能力章节 |
+| 编辑 | collectionEditing.supportedOperations为CREATE/EDIT/DELETE/CHANGE_TRACKS/REORDER的真实子集；writableCollections与create/edit/delete/changeTracks/reorder；未接入 SourceCollectionRemoteOrder 扩展时没有公共远端改序入口；页面排序与远端改序的区别见能力章节；“添加到歌单”想先显示缓存再核对时实现 SourceCollectionMembership |
 | 电台 | radio.next(previousPayload)→SourceRadioBatch(tracks,continuation)；续页参数由包解释且只在同一会话、同一音源内传递，队列执行归宿主；feedback(track,action)是SDK必需方法，但当前宿主没有调用 |
 | 认证/设置 | authentication、authenticationPage、settings；公共模板不替代平台特有验证协议 |
 | 音频/歌词/主题 | mediaPlayback、lyricProvider、trackTheme；字段和边界见本文对应通用章节 |
@@ -173,10 +176,16 @@ SourceEntry.pageState提供StateFlow<SourcePageState(page,title,atRoot)>，内�
 | `opening.durationMillis` | 打开动画时长，由宿主统一推进并通过上下文提供进度。 |
 | `opening.barParticipates` | 底部 bar 是否参与打开过渡，必须显式选择；不开放 bar 外观。 |
 | `opening.sharedElements` | 共享元素集合，显式为空表示不使用；可选 `ARTWORK/TITLE/ARTIST/PLAY_PAUSE`。 |
+| `opening.pageFade` | 默认 true：整页随进度淡入，收起整页淡出且 `transition.progress` 停在开页终点。false：宿主不加整页透明度，页面从迷你条表面按圆角展开（与原生同一圆角曲线）、收起时收回；收起期间 `progress` 照常从 1 走到 0（`opening=false`），背景和非共享内容由包按进度自己安排；迷你条上被声明共享的元素在过渡中隐藏。 |
+| `opening.sharedOnClose` | 默认 false：收起时共享元素保持松手时姿态。true：收起时共享元素按同一进度飞回迷你条。 |
+| `opening.sharedScale` | 按元素指定 `STRETCH`（宽高分别按两端包围盒缩放）或 `UNIFORM`（按高度比等比缩放，横向裁剪从迷你条文字宽度展开到目标宽度）。未指定时标题、歌手为 `UNIFORM`，封面、播放键为 `STRETCH`。 |
+| `opening.artworkCornerDp` | 包页面封面的圆角（dp，默认 0）；过渡中从迷你条封面圆角插值裁剪到它，落地后不再裁剪。 |
+| `opening.glass` | 默认 false。true 且 `pageFade=false` 时，宿主在包页面下方画原生展开玻璃（背景模糊从迷你条过渡到封面）与背后压暗，迷你条表面在开合两个方向都让位给玻璃，收藏与下一首在原位淡出。包页面展开前段背景要透明（可按原生表面曲线：前 32% 进度平滑淡入），否则玻璃被盖住。手机横屏不画玻璃。 |
+| `opening.barCrossfade` | 默认 false。true 时宿主为已声明共享的标题、歌手、播放键各画一份迷你条样式副本（真实字号、字重与墨色），与包元素同轨飞行；副本按 1-p 淡出、包元素按 p 淡入，与原生一致，避免起步时样式突变。封面没有副本。 |
 
 声明校验要求 `supportsPhone` 与 `supportsTablet` 至少一项为 true，时长非负，`supportsPhoneLandscape=true` 时 `supportsPhone` 也须为 true；`barParticipates=false` 时共享集合必须为空。声明不合法会拒绝该能力接入，不将错误声明当作“未支持形态”。
 
-未声明支持当前形态时使用 MusicOne 原生播放器。声明支持后，由包提供完整 `Player(context)` UI；页面失败仅显示错误，不自动或通过错误页选项回退到原生播放器。此规则覆盖通用外部页面的公共页回退规则。收起、系统返回及关闭手势仍归宿主，包通过 `dismiss()` 请求收起。宿主“关闭横屏播放页”设置仅将内置手机播放页固定为竖屏，不影响平板或音源自定义播放页；自定义播放页仍按声明选择支持的形态。
+播放页只跟随用户选择的主音源，与当前歌曲属于哪个音源无关：主音源声明了自建播放页时，播放其他音源的歌曲也显示主音源的页面；主音源没有自建播放页时一律使用原生播放器，即使当前歌曲的音源自己有。因此包页面必须按宿主提供的 `snapshot`／`timeline` 展示任意音源的歌曲，不能假定当前歌曲属于本包，也不要按歌曲 ID 格式回查本包接口。宿主交给播放页的歌曲（含切歌过渡中的最近几首）可以直接传给本包 `forSource` 得到的公共组件（如 `SongTitle`、`TrackBadges`）显示；其他场景公共组件仍只接受本音源内容。未声明支持当前形态时使用 MusicOne 原生播放器。声明支持后，由包提供完整 `Player(context)` UI；页面失败仅显示错误，不自动或通过错误页选项回退到原生播放器。此规则覆盖通用外部页面的公共页回退规则。系统返回仍归宿主；包通过 `dismiss()` 请求收起，下拉收起手势由包调用 `dismissGestureOrNull()` 接入（见下）。宿主“关闭横屏播放页”设置仅将内置手机播放页固定为竖屏，不影响平板或音源自定义播放页；自定义播放页仍按声明选择支持的形态。
 
 包用 `context.SharedElement(element, modifier) { 真实UI }` 注册实际目标元素及边界。宿主从当前底部栏源位置向包目标运行共享过渡；应使用真实封面、文字和按钮，不能另放一套假元素或仅用整页淡入冒充共享动画。同一元素只注册一个可见目标，集合声明与实际目标保持一致。包可依 `transition.progress`、`opening`、`interactive`、`reduceMotion` 安排其余内容入场，不自行创建第二套开页或收起时钟。底部胶囊、bar 的布局和外观均不开放。
 
@@ -186,13 +195,44 @@ SourceEntry.pageState提供StateFlow<SourcePageState(page,title,atRoot)>，内�
 
 `snapshot` 提供只读歌曲、播放模式、收藏及音质展示；`timeline` 提供歌曲 ID、播放代际、位置、时长及是否推进。拖动进度调用 `actions.seekTo(trackId, generation, positionMs)`，使用同一次手势捕获的歌曲和代际，避免切歌后误跳新歌。动作必须在主线程、有效实例且 `transition.interactive=true` 时调用；旧上下文、过期进度和不在当前目录中的音质会被拒绝。`actions` 只发起受宿主校验的播放暂停、前后曲、模式、音质、队列、收藏及歌词重试动作；不能直接接管播放器、队列或解析流程。
 
+`actions` 另外实现四项能力，通过 `seekPreviewOrNull()`／`queueGestureOrNull()`／`trackMenuOrNull()`／`dismissGestureOrNull()` 取得，使用的包须声明 `minHostVersionCode` ≥ 6。
+
+- 进度预览 `actions.seekPreviewOrNull()?.previewSeek(trackId, generation, positionMs)`：拖动过程中反复调用，宿主歌词跟手预览；松手照常调用 `seekTo`，宿主按原生进度条的歌词衔接提交（预览过的直接接上预览位置，未预览的单击先让歌词从当前帧过渡再跳转）。取消拖动传 `positionMs = null` 结束预览。校验规则同 `seekTo`。
+- 跟手拉出队列 `actions.queueGestureOrNull()`：`queueDragStart()` 返回 false 时本轮放弃；之后 `queueDrag(deltaPx)` 传本次增量，`queueDragEnd(velocityPxPerSecond)` 抬手、`queueDragCancel()` 取消。位移与速度都取页面坐标中朝打开方向的分量（竖屏页面上滑为正），单位 px、px/s；手机横屏的画布已由宿主旋转，包按自身页面坐标计算即可。打开或回弹由宿主沿用底部胶囊上滑的原生判定。一轮手势内持有同一个对象，必须以 End 或 Cancel 结束。
+- 关联菜单 `actions.trackMenuOrNull()?.openTrackMenu(left, top, right, bottom, lyricOffset)`：锚点是以 Player 根布局左上角为原点的页面坐标区域（px），可在根布局记录 `LayoutCoordinates` 后用 `localBoundingBoxOf` 换算，也可传点击点的 2px 小区域；不要传 `boundsInRoot()`。菜单在锚点处弹出，查看歌手／专辑时在播放页内部开详情栈，返回回到菜单，不收起播放页。`lyricOffset = true` 对应横屏打开歌词时点标题，弹出“调整歌词偏移”。菜单项按音源权限决定，返回 false 表示当前歌曲没有可用菜单。
+- 下拉收起 `actions.dismissGestureOrNull()`：`dismissDragStart()` 返回 false 时本轮放弃（菜单、队列、详情页打开或页面不在静止展开态）；之后 `dismissDrag(deltaPx)`、`dismissDragEnd(velocityPxPerSecond)` 或 `dismissDragCancel()`。位移与速度取页面坐标中朝收起方向（竖屏页面向下）的分量。宿主直接驱动开合进度，松手沿用原生下拉收起判定（过半、或短距快划），收起走 `dismiss()`。拖动期间 `transition.interactive=false`，但宿主仍把手指事件交给包，Drag/End/Cancel 不要求可交互。一轮手势持有同一个对象，必须以 End 或 Cancel 结束；包自己决定哪些区域可以起手，避免与列表滚动冲突。
+
+`snapshot.artworkColors` 是宿主封面 3×3 色场（ARGB，按行共 9 个），封面取到色后随快照更新；为 null 时包自行取色。`context.sharedSourceOrNull(element)` 返回已声明共享元素的源端区域（页面坐标 px）、源端圆角（px）与当前进度，供包自己绘制圆角或文字过渡；迷你条不在时为 null。其中 `inkArgb` 是迷你条该元素在开合起点的真实前景色（随背景自适应，沉浸或深色背景下可能是白色），`textSizeSp`、`markSizeDp` 是迷你条文字字号与播放键图标边长，未知为 0；自己做颜色过渡时以 `inkArgb` 为起点，不要用主题色猜。
+
+<a id="player-host-data"></a>
+
+#### 宿主数据：队列、歌词、音频规格与背景
+
+以下四项由 context 按需实现，经 `xxxOrNull()` 取得（旧宿主为 null），需要 `minHostVersionCode` ≥ 6。都可在组合、布局、绘制阶段读取，宿主状态变化时自动触发重读。
+
+- 队列 `context.queueSnapshotOrNull()`：`currentIndex`、`size` 与从下一首起最多 50 首的 `upcoming`，顺序就是实际播放顺序（随机时为打乱后的顺序），不回绕。只读；打开完整队列仍用 `actions.openQueue()`。`upcoming` 里的歌曲可以交给本包 `forSource` 的公共组件显示。
+- 歌词 `context.lyricsDataOrNull()`：`state` 与逐行 `lines`（时间、原文、翻译、逐字时间、注音），只在 `READY` 时有正文；时间已含用户整行与逐字偏移。找当前行用 `timeline.positionMs + lineLeadMs`，找当前字用 `+ wordLeadMs`，与宿主歌词一致。包自己按帧补间位置；`context.Lyrics()` 与 `lyricsMotionOrNull()` 照常可用，两者可并存。
+- 音频规格 `context.audioInfoAccessOrNull()?.audioInfo`：解码器实际报告的 `codec`、`sampleRate`、`bitDepth`、`bitrate`，`summary` 是宿主音质菜单同款一行描述，`output` 是输出链路（UAC2 独占、系统输出规格等）。尚未解码时为 null。
+- 背景 `context.backdropOrNull()?.Backdrop(modifier)`：宿主原生播放页的封面流动色场与压暗层，随切歌过渡，铺满 modifier 区域。它按封面生成，不是对宿主页面的实时模糊。
+
+<a id="player-lyrics-motion"></a>
+
+#### 歌词开合
+
+`context.lyricsMotionOrNull()` 返回宿主歌词开合对象（同一次挂载内是同一个对象），需要 `minHostVersionCode` ≥ 6；取到 null 时退回 `context.Lyrics(modifier)` 静态显示。
+
+- `setOpened(Boolean)` 发起开合，`opened` 是目标状态；`lyricsProgress`、`headerProgress` 是实际进度（0 关闭、1 打开），可在组合、布局、绘制阶段读取。包按 `headerProgress` 摆放自己的封面与歌曲信息（如封面缩到页眉、标题平移），不要再自建开合时钟。
+- `LyricsPanel(style, modifier)` 给出歌词展开后的区域，宿主在区域内执行原生编排：打开前等列表对齐当前行（超时改为淡入），打开过程中锁住滚动与跟随，关闭后在隐藏态重新对齐。歌词从页面底边升入，绘制会超出区域下边，控件请放在面板之后绘制以盖在上面。
+- `style = STACKED` 为竖屏编排：歌词与页眉两条弹簧，歌词前两行在碰到页眉前先在区域下方软停，页眉让出空间后再接上；区域下方到页面底边的空间视为控件区。`SIDE` 为横屏／双栏编排：单条弹簧，`headerProgress` 直接到位。`TABLET` 分不出单栏或双栏，由包选择。
+- 跟手开合 `dragStart()`／`drag(deltaPx)`／`dragEnd(velocityPxPerSecond)`／`dragCancel()`：位移与速度取页面坐标中朝打开方向（竖屏页面向上）的分量，判定与原生上滑封面、下拉页眉一致；`dragStart()` 返回 false 时本轮放弃。
+
 歌词通过 `context.Lyrics(modifier)` 使用宿主歌词视图和既有时钟，包可决定区域排布；不自行轮询构建歌词时钟。`onFailure(message)` 报告包内可识别的页面故障；组合／布局／绘制故障交给宿主外部页面边界。快照不是可写核心状态，包不应把上下文保存在页面生命周期之外。
 
 同音源切歌保留页面挂载与 `remember` 状态，包应按歌曲身份更新歌曲专属临时状态。每次读取 `context.actions` 得到绑定当前歌曲／播放代际的动作对象，不长期缓存旧 `actions` 或通过 `remember` 固定旧方法引用；按钮应在点击时读取当前 `context.actions`。进度操作的 ID 必须取 `timeline.trackId`，不能使用 `snapshot.track.stableId` 代替宿主时间线身份。
 
 `context.safeDrawingInsets: SourcePlayerInsets` 给出当前播放器页面坐标中的绝对 `left/top/right/bottom: Dp` 安全边距，合并 `safeDrawing/displayCutout/waterfall`，并由宿主完成手机左右横屏转换。手机、平板均直接使用，无需包自行转向。内容区域使用 `Modifier.absolutePadding(insets.left, insets.top, insets.right, insets.bottom)`，背景仍可满幅绘制。不要叠加 `.safeDrawingPadding()`：自建手机横屏运行在旋转页面画布中，该原生 Modifier 仍反映竖屏 Activity 原始边距，不能代替页面坐标的安全区。
 
-播放页挂载区域还隔离同步触摸、键盘／DPAD、通用指针及无障碍节点动作中的异常，失败显示原有错误页，不回退原生。该边界不覆盖包自行创建的独立窗口或任意后台任务，不是进程级安全沙箱。屏幕常亮沿用宿主“播放页播放时屏幕常亮”设置，音源页不需要自行持有常亮状态。
+播放页挂载区域还隔离同步触摸、键盘／DPAD、通用指针及无障碍节点动作中的异常，失败显示原有错误页，不回退原生。播放页实例失效（包重载、卸载或换了主音源）后，旧 `context` 的读取（`snapshot`、`timeline`、`lyricsMotion` 等）返回最后一份状态，动作与手势调用静默忽略、起手类方法返回 false，不抛异常；宿主随后在下一次组合换上新页面。`graphicsLayer {}` 参数块不在异常隔离范围内，包不要在这里自行抛异常。该边界不覆盖包自行创建的独立窗口或任意后台任务，不是进程级安全沙箱。屏幕常亮沿用宿主“播放页播放时屏幕常亮”设置，音源页不需要自行持有常亮状态。
 
 可复制 [简洁示例](../examples/player-ui/README.md) 到主音源工程；它演示声明、共享标题／歌手／播放暂停、统一进度、歌词区域和受控操作，不提供完整 Gradle 工程。验收分别覆盖三种形态、未支持形态、页面故障不回退、打开来源元素连续性、收起、切歌中拖动进度和歌词时钟；源码存在不等于设备验收通过。
 
@@ -628,6 +668,7 @@ SourceHomeSection(
 | `SourceLibraryChanges` | `entry.collections` | `libraryChanges` 发送账号及变化分区。后台核对完成后发送，未变化不发送；公共资料库以 CACHE_FIRST 重读对应分区，首次缓存恢复期间先合并读取意图。换号、实例卸载与页面 ViewModel 销毁会取消订阅。 |
 | `SourceCollectionDetailsEditing` | `entry.collectionEditing` | `editableFields` 声明 DESCRIPTION/ARTWORK；公共歌单编辑窗口据此显示简介与系统选图。字段集为空时沿用旧名称编辑。 |
 | `SourceCollectionRemoteOrder` | `entry.collectionEditing` | `supportsRemoteOrder` 按具体歌单决定入口。`orderedTracks` 按服务器顺序完整分页；独立对话框支持移动到指定位置。保存仍调用原 `SourceCollectionEditing.reorder`，不改变本地排序偏好、队列或播放。 |
+| `SourceCollectionMembership` | `entry.collectionEditing`（同一对象一并实现） | 公共“添加到歌单”：打开时先调 `cachedWritableCollections()` 与 `containedTracks(…, CACHE_FIRST)` 立即显示歌单和勾选，再调 `writableCollections()` 与 `containedTracks(…, REFRESH)` 后台核对并替换；核对失败保留已显示的结果。`cachedWritableCollections` 和 CACHE_FIRST 只能读本地、不能联网，没有缓存返回 null（宿主显示加载中）；REFRESH 返回确定结果，失败抛异常。返回值是传入曲目中已在歌单里的 `stableId`。两者都应只拉变化过的歌单（如按歌单版本号或更新时间增量），一次打开会对每个可写歌单各调用一次，宿主并发 4。本机 `changeTracks` 成功后应同步更新本地索引。未实现时宿主逐页读取歌单内容判断，行为与旧包相同。需要 `minHostVersionCode` ≥ 6。 |
 | `SourceEntityFollowing` | `entry.entities` | `supportsFollowing` 控制歌手详情关注按钮及“我的 → 我关注的歌手”。实现读取状态、真实关注/取消及完整关注目录，不能返回假成功。 |
 | `SourceHotSearch` | `entry.search` | `supportsHotSearch` 控制空查询菜单的热搜区；点击热词复用原搜索提交。返回有序热词，不混入搜索历史。 |
 
@@ -642,6 +683,8 @@ SourceHomeSection(
 编辑和远端改序在打开窗口时捕获账号，写入前后核对；分页游标必须绑定账号、集合及对应顺序。宿主拒绝循环游标、重复歌曲和部分失败结果。音源保存顺序前仍需核对最新完整歌曲集合及版本，不能把“当前显示顺序”直接当成服务器顺序。
 
 公共创建、编辑、删除要求当前账号，并检查 `supportedOperations` 的 CREATE／EDIT／DELETE。编辑或删除还会重新读取 `writableCollections()`，目标必须匹配且不是 `accountFavorites`；仅提供 `owned=true` 或操作声明不足以完成写入。`editableFields` 非空时调用 `createDetails/editDetails`，为空时退回旧名称编辑。
+
+公共“我的”整页的歌单卡片支持多选（接口没有变化，音源无需适配）：“创建”分区在 `supportedOperations` 包含 DELETE 时可批量删除，“收藏”分区在 `favorites.supportsCollections` 为 true 时可批量取消收藏，本地分区始终可用。批量删除逐个调用 `delete(collection)`，`writableCollections()` 一批只读取一次，每删一个核对一次账号，账号变化立即停止；批量取消收藏逐个调用 `setCollectionFavorite(collection, false)`。单个失败不中断，失败项保留勾选。因此 `delete` 与 `setCollectionFavorite` 要能承受短时间内被连续调用几十次，需要限速的音源应在包内自行排队，不要直接报错。自绘“我的”页的音源不会出现这套多选。
 
 公共远端增删歌曲要求当前账号、`supportedOperations` 包含 `CHANGE_TRACKS`，真正写入时还会重新读取 `writableCollections()` 并匹配目标；歌曲必须与目标同源。只实现 `changeTracks` 或声明 `owned=true` 不足以完成写入，音源仍须核验真实远端归属与权限。这些远端条件不适用于宿主本地歌单导入。
 
@@ -668,7 +711,7 @@ SourceHomeSection(
 | 模型 | 必须保留的资料 |
 | --- | --- |
 | SourceTrack / SourceTrackDetails | identity、stableId、标题、artists/实体引用和artistsText、album/albumRef、durationMs、artwork、access、qualities、lyrics、localUri、payload、previewUrl、identityAliases |
-| SourceArtwork | url、startArgb/endArgb、mark；没有图不伪造平台占位成真实封面。占位渐变默认 0 即透明，需要可见占位时填写颜色。http 地址：公网升级为 https，失败退回 http；局域网、本机和带端口的地址保持 http |
+| SourceArtwork | url、startArgb/endArgb、mark；没有图不伪造平台占位成真实封面。占位渐变默认 0 即透明，需要可见占位时填写颜色。http 地址：公网升级为 https，失败退回 http；局域网、本机和带端口的地址保持 http；支持 `file://` 本地图片 URI（如内嵌封面或需鉴权下载的封面），须保存在包长期可读的私有目录中 |
 | TrackAccessInfo | badge(MEMBERSHIP/PURCHASE)、trialAvailable、playable、reason、可选displayBadge（自定义文字及亮暗文字/背景色）；不能删访问事实 |
 | SourceAudioQuality | id、label、mimeType、available、reason、payload；协议私有hash不充当跨来源公共字段 |
 | SourceCollection | identity、stableId、title/subtitle/description/count/artwork、owned、accountFavorites、payload |
@@ -902,11 +945,11 @@ lineLeadMs与wordLeadMs分别控制整行和逐字时钟，正数表示提前，
 
 `SourcePermissions.editTrackMetadata`、replaceManualLyrics、adjustLineOffset分别控制资料编辑、手动歌词替换、用户整行偏移，默认全false；允许偏移不等于允许替换或编辑。宿主在UI和写入接口再次检查权限，不能只隐藏按钮。歌词服务是否在线可用也不能推断这三项权限。
 
-当前 editTrackMetadata 还有公共收藏的行为影响：来源开启该权限后，宿主内置歌曲收藏及延迟取消收藏动作增删本地“综合歌单”，不调用远端 favorites.setTracksFavorite，也不依赖远端登录。该分支依据权限而非 MAIN／SUPPLEMENTAL 类型选择；公共菜单沿用此动作，包自己传入的 TrackList.onFavorite 等自定义回调仍由包决定。允许资料编辑的源不能期待宿主内置收藏按钮同时同步远端收藏。
+当前 editTrackMetadata 及未声明我喜欢能力的音源对公共收藏有如下行为影响：来源开启 editTrackMetadata，或未提供 `entry.favorites`（以及提供 `collections` 但 `librarySections` 未包含 `FAVORITE_TRACKS`）时，宿主内置红心按钮（含兜底播放页、迷你条及公共模板列表）默认增删本地“综合歌单”，不调用远端 `favorites.setTracksFavorite`，也不依赖远端登录。此外宿主提供“我喜欢按钮功能”用户设置（仅对应音源内“我喜欢”／“综合歌单”和“我喜欢”／仅“综合歌单”，仅对之后点击生效），支持远端收藏的音源按用户设置执行单写或双写；“我喜欢”歌单详情内的延迟移除仅作用于音源内“我喜欢”，包自己传入的 TrackList.onFavorite 等自定义回调仍由包决定，音源包无需额外适配。
 
 允许手动替换且存在有效覆盖时优先装载覆盖；无覆盖仍可读取已声明的在线lyricProvider，不提供在线歌词也不妨碍独立允许手动导入。在线歌词的用户偏移只移动整行时间；资料库手动歌词保持原行词共同偏移语义，装载后的来源标记阻止展示层再次施加偏移或音源默认提前量。
 
-`setManualLyrics` 的非 null URI 会立即读取并复制到宿主资料库的独立歌词文件，校验能解析出有效时间轴；失败时清理新副本。支持 LRC、XLRC、SPL，未知扩展按 LRC 处理；之后编辑原文件不会同步改变已导入副本。传 null 只清除人工覆盖，仍可能回退资料库保存的默认歌词，再按实际能力读取在线歌词，不能当作强制“无歌词”。
+`setManualLyrics` 的非 null URI 会立即读取并复制到宿主资料库的独立歌词文件，校验能解析出有效时间轴；失败时清理新副本。格式与宿主手动歌词导入一致，见[本地歌词](../docs/本地与补充音源.md#二数据与身份映射)；之后编辑原文件不会同步改变已导入副本。传 null 只清除人工覆盖，仍可能回退资料库保存的默认歌词，再按实际能力读取在线歌词，不能当作强制“无歌词”。
 
 SourcePresentation.pageColorArgb用于页面来源色；radioColorArgb/radioLabel用于电台入口，radioLabel默认“猜你喜欢”。可选radioPaletteLight/radioPaletteDark是两套ARGB列表，顺序为background/foreground/wave/badge/badgeInk；按完整五色声明，避免把平台调色规则硬编码到公共模板。SourceTrackTheme.colorArgb(track)独立返回当前曲目有效ARGB或null；null由宿主按背景使用黑/白。未提供 trackTheme（为 null）的音源，宿主以 pageColorArgb 作为其全部曲目的主题色；提供了 trackTheme 时完全以其结果为准，返回 null 即不要曲目色，宿主不再借用页面色。曲目结果须校验当前请求身份防止迟到覆盖。 宿主按音源及运行实例桥接已解析颜色，缓存曲目的旧账号或空账号不影响平台展示色；换曲和切回平台可沿用已解析色，实例替换或停用后失效。首次尚未取得有效曲目色时，有 trackTheme 的音源使用黑/白回退，没有 trackTheme 的音源直接使用页面色；两者都没有时使用黑/白。
 
@@ -942,6 +985,7 @@ SourcePresentation.pageColorArgb用于页面来源色；radioColorArgb/radioLabe
 - 从歌曲开始的电台，第一批 `radio.next` 收到的 previous 为 null；包返回的歌曲里如果包含起点歌曲，宿主会按曲目 ID 去重。
 - 只能提交本 sourceId 的曲目，否则抛出异常。与其他播放入口一样受实例租约和账号版本保护，账号变化后已排队的调用不会执行。
 - 不展开播放页，也不改变播放模式之外的页面状态；开电台时播放模式由宿主固定为电台顺序。
+- `playRecommendations(tracks, startIndex)` 是带货架页的版本：`tracks` 传被点击歌曲所在的那一页（公共货架每页 3 首），`startIndex` 是它在页内的位置。开电台、或已在同音源电台中时，从点击那首起按顺序取到页末依次入队（点中间一首时上面的不入队），接在当前歌后面、从点击那首开始播，原有的后续歌曲顺延；“保持队列”开启而插入普通队列时仍只插入点击的一首。不可播放或跨音源的后续歌曲会被跳过；点击的就是当前歌时切换播放／暂停。货架组件 `SongShelf` 只回传点击的一首，包要自己找回所在页（按 `chunked(3)` 分页时按 stableId 查找即可）。需要 `minHostVersionCode` ≥ 6，单首的 `playRecommendation` 保留不变。
 - 调用此方法的包必须声明 `minHostVersionCode` ≥ 5。SDK 使用 `jvmDefault=DISABLE`，低于 code 5 的宿主里没有这个方法，调用会抛 `AbstractMethodError`，这是 `Error`，普通 `catch (Exception)` 接不住。接口默认实现（只播放这一首）只对实现 `SourceHost` 的测试替身有意义，不是旧宿主的降级路径。
 
 | Host入口 | 用法与边界 |
@@ -1189,7 +1233,7 @@ shelves?.CollectionShelf(collections, edgeInsetDp = gutterDp,
 
 `edgeInsetDp` 填入列表已有的外层水平边距，须为有限非负值。公共组件扩宽横滑视口并保留内部首尾边距；调用方保留标题等内容的边距，不重复补偿。手机和平板按各自布局传值。
 
-带 `edgeInsetDp` 的货架使用对称首尾边距，歌单卡宽仍按内容宽度计算；不带该参数的入口保留尾部 20dp 布局。卡片交互、收藏及导航由公共组件处理；歌曲点击仍回调包提供的 `onClick`。首页推荐货架的 `onClick` 应调用 [`playRecommendation`](#play-recommendation)，这样“取消首页歌曲推荐替换播放队列”设置才对该货架生效。
+带 `edgeInsetDp` 的货架使用对称首尾边距，歌单卡宽仍按内容宽度计算；不带该参数的入口保留尾部 20dp 布局。卡片交互、收藏及导航由公共组件处理；歌曲点击仍回调包提供的 `onClick`。首页推荐货架的 `onClick` 应调用 [`playRecommendation`／`playRecommendations`](#play-recommendation)，这样“取消首页歌曲推荐替换播放队列”设置才对该货架生效。
 
 
 <a id="cached-artwork"></a>
@@ -1323,7 +1367,7 @@ remove(id)立即关闭实例和任务租约，删除active/pending/rollback代�
 | [SourceHomeContinuation.kt](#sdk-sourcehomecontinuation) | SourceHomeContinuation |
 | [SourceHomeShelfComponents.kt](#sdk-sourcehomeshelfcomponents) | SourceHomeShelfComponents |
 | [SourceHostServices.kt](#sdk-sourcehostservices) | SourceLocalCollection、SourceTrackMetadataEdit、SourceLibraryHost、SourceCacheEntry、SourceCacheHost、SourceUiRequest、SourceUiResult、SourceUiHost、SourceSettings、SourceAuthenticationPage |
-| [SourceLibraryFeatures.kt](#sdk-sourcelibraryfeatures) | SourceCollectionFavoritePolicy、SourceLibraryChange、SourceLibraryChanges、SourceCollectionEditField、SourceCollectionDetailsEdit、SourceCollectionDetailsEditing、SourceCollectionRemoteOrder、SourceEntityFollowing、SourceHotSearch |
+| [SourceLibraryFeatures.kt](#sdk-sourcelibraryfeatures) | SourceCollectionFavoritePolicy、SourceLibraryChange、SourceLibraryChanges、SourceCollectionEditField、SourceCollectionDetailsEdit、SourceCollectionDetailsEditing、SourceCollectionRemoteOrder、SourceCollectionMembership、SourceEntityFollowing、SourceHotSearch |
 | [SourceLoadedHomeComponents.kt](#sdk-sourceloadedhomecomponents) | SourceLoadedHomeComponents |
 | [SourceLyricsAndPlayback.kt](#sdk-sourcelyricsandplayback) | SourceLyricWord、SourceLyricLine、SourceLyrics、SourceLyricTiming、SourceLyricProvider、SourceTrackTheme、SourcePlaybackPurpose、SourcePlaybackRequest、SourceMediaSegment、SourcePlaybackResource、SourceMediaPlayback |
 | [SourceMedia.kt](#sdk-sourcemedia) | SourcePayload、SourceEntityRef、TrackAccessBadge、TrackAccessInfo、SourceAudioQuality、SourceArtwork、SourceTrackDetails、SourceCollection、SourceEntity、SourceFetchPolicy、SourceCursorRequest、SourceOperationException |
@@ -1332,7 +1376,8 @@ remove(id)立即关闭实例和任务租约，删除active/pending/rollback代�
 | [SourcePageUi.kt](#sdk-sourcepageui) | SourcePageRequest、SourceSupplementalTarget、SourcePageUi |
 | [SourcePlaybackSession.kt](#sdk-sourceplaybacksession) | SourcePlaybackSessionProvider、SourcePlaybackSessionObserver、SourcePlaybackSessionEvent、SourcePlaybackSessionEventType、SourcePlaybackSessionEndReason |
 | [SourcePlayerPresentation.kt](#sdk-sourceplayerpresentation) | SourcePlayerPresentation |
-| [SourcePlayerUi.kt](#sdk-sourceplayerui) | SourcePlayerUiProviderAccess、playerUiProviderOrNull、SourcePlayerUiProvider、SourcePlayerUiDeclaration、SourcePlayerOpening、SourcePlayerSharedElement、SourcePlayerForm、SourcePlayerQuality、SourcePlayerSnapshot、SourcePlayerTimeline、SourcePlayerTransition、SourcePlayerInsets、SourcePlayerUiContext、SourcePlayerUiActions |
+| [SourcePlayerExtras.kt](#sdk-sourceplayerextras) | SourcePlayerQueueSnapshot、SourcePlayerQueueAccess、SourcePlayerLyricsState、SourcePlayerLyricWord、SourcePlayerLyricLine、SourcePlayerLyrics、SourcePlayerLyricsDataAccess、SourcePlayerAudioInfo、SourcePlayerAudioInfoAccess、SourcePlayerBackdropAccess、queueSnapshotOrNull、lyricsDataOrNull、audioInfoAccessOrNull、backdropOrNull |
+| [SourcePlayerUi.kt](#sdk-sourceplayerui) | SourcePlayerUiProviderAccess、playerUiProviderOrNull、SourcePlayerUiProvider、SourcePlayerUiDeclaration、SourcePlayerOpening、SourcePlayerSharedElement、SourcePlayerForm、SourcePlayerQuality、SourcePlayerSnapshot、SourcePlayerTimeline、SourcePlayerTransition、SourcePlayerInsets、SourcePlayerUiContext、SourcePlayerUiActions、SourcePlayerSeekPreviewActions、SourcePlayerQueueGestureActions、SourcePlayerTrackMenuActions、seekPreviewOrNull、queueGestureOrNull、trackMenuOrNull、SourcePlayerSharedScale、SourcePlayerDismissGestureActions、SourcePlayerSharedSource、SourcePlayerSharedSourceAccess、SourcePlayerLyricsStyle、SourcePlayerLyricsMotion、SourcePlayerLyricsMotionAccess、dismissGestureOrNull、sharedSourceOrNull、lyricsMotionOrNull |
 | [SourceQualityCatalog.kt](#sdk-sourcequalitycatalog) | SourceQualityCatalog、SourceQualityDefinition |
 | [SourceRootPageUi.kt](#sdk-sourcerootpageui) | SourceRootPageUi、SourceRootScrollPosition |
 | [SourceSupplementalComponents.kt](#sdk-sourcesupplementalcomponents) | SourceSupplementalComponents |
@@ -1981,6 +2026,9 @@ interface SourceHost {
     fun enqueueDetailed(tracks: List<SourceTrackDetails>, playNext: Boolean = false) { error("宿主未提供队列操作") }
     // 首页推荐歌曲点击：由宿主按用户设置决定开电台或插入当前队列。调用方须声明 minHostVersionCode ≥ 5。
     fun playRecommendation(track: SourceTrackDetails) { playDetailed(listOf(track)) }
+    // 首页货架点歌（带上同一页的歌曲）：开启或已在猜你喜欢时从 startIndex 起按顺序入队，上面的不入队；
+    // 用户开着“保持队列”时只插入点击的一首。调用方须声明 minHostVersionCode ≥ 6。
+    fun playRecommendations(tracks: List<SourceTrackDetails>, startIndex: Int) { playRecommendation(tracks[startIndex]) }
     fun prepareSourceStorage(sourceId: String, context: Context) {}
     // 包启动的独立任务须登记取消回调；移除后不能继续提交账号、分页或资料结果。
     fun registerTask(cancel: () -> Unit): AutoCloseable = AutoCloseable { }
@@ -2164,6 +2212,21 @@ interface SourceCollectionDetailsEditing {
 interface SourceCollectionRemoteOrder {
     fun supportsRemoteOrder(collection: SourceCollection): Boolean
     suspend fun orderedTracks(collection: SourceCollection, request: SourceCursorRequest): SourcePage<SourceTrackDetails>
+}
+
+/**
+ * 歌单归属：由 [SourceCollectionEditing] 的实现对象一并实现。宿主“添加到歌单”先用本地结果立即显示，再联网核对。
+ * 未实现时宿主回退为逐页读取歌单内容判断，行为与旧包一致。
+ */
+interface SourceCollectionMembership {
+    val supportsMembership: Boolean get() = true
+    /** 本地已知的可写歌单，只读本地不联网；没有可用缓存返回 null。 */
+    suspend fun cachedWritableCollections(): List<SourceCollection>?
+    /**
+     * 返回 [tracks] 中已在 [collection] 内的曲目 `stableId`。
+     * CACHE_FIRST 只读本地索引，没有索引返回 null，不能联网；REFRESH 按需联网核对并返回确定结果，失败抛异常。
+     */
+    suspend fun containedTracks(collection: SourceCollection, tracks: List<SourceTrackDetails>, policy: SourceFetchPolicy): Set<String>?
 }
 
 interface SourceEntityFollowing {
@@ -2552,13 +2615,35 @@ data class SourcePlayerUiDeclaration(
     val opening: SourcePlayerOpening,
 )
 
+/**
+ * 开合编排。pageFade=false 时宿主不给整页加透明度，改为从迷你条表面按圆角展开、收起时收回，
+ * 收起期间 transition.progress 照常从 1 走到 0；sharedOnClose=true 时共享元素收起时飞回迷你条。
+ * sharedScale 未指定的元素：标题、歌手等比缩放，封面、播放键按两端包围盒拉伸。
+ * artworkCornerDp 是包页面封面的圆角，过渡中从迷你条封面圆角插值到它。
+ * glass=true（仅 pageFade=false 的竖屏与平板）时宿主在包页面下方画原生展开玻璃与背后压暗，
+ * 迷你条整体让位给玻璃；包页面在展开前段应保持背景透明，玻璃才能透出来。
+ * barCrossfade=true 时宿主为标题、歌手、播放键各画一份迷你条样式的副本，与包元素同轨飞行并交叉淡入淡出。
+ */
 data class SourcePlayerOpening(
     val durationMillis: Int,
     val barParticipates: Boolean,
     val sharedElements: Set<SourcePlayerSharedElement>,
-)
+    val pageFade: Boolean = true,
+    val sharedOnClose: Boolean = false,
+    val sharedScale: Map<SourcePlayerSharedElement, SourcePlayerSharedScale> = emptyMap(),
+    val artworkCornerDp: Float = 0f,
+    val glass: Boolean = false,
+    val barCrossfade: Boolean = false,
+) {
+    // 保留旧的三参数构造，已编译的旧包仍能链接。
+    constructor(durationMillis: Int, barParticipates: Boolean, sharedElements: Set<SourcePlayerSharedElement>) :
+        this(durationMillis, barParticipates, sharedElements, pageFade = true)
+}
 
 enum class SourcePlayerSharedElement { ARTWORK, TITLE, ARTIST, PLAY_PAUSE }
+
+/** STRETCH 宽高分别按两端包围盒缩放；UNIFORM 按高度比等比缩放并横向裁到两端宽度之间，文字不变形。 */
+enum class SourcePlayerSharedScale { STRETCH, UNIFORM }
 enum class SourcePlayerForm { PHONE_PORTRAIT, PHONE_LANDSCAPE, TABLET }
 
 /** 已转换到页面朝向的绝对安全边距；内容按四边避让，背景仍可铺满页面。 */
@@ -2577,6 +2662,8 @@ data class SourcePlayerSnapshot(
     val qualityChanging: Boolean,
     val errorMessage: String?,
     val favorite: Boolean = false,
+    /** 宿主封面 3×3 色场（ARGB，按行排列共 9 个）；封面取到色后更新，未取到时为 null。 */
+    val artworkColors: List<Int>? = null,
 )
 
 /** 位置携带歌曲与播放代际；无歌曲时 trackId 为空字符串。 */
@@ -2622,6 +2709,220 @@ interface SourcePlayerUiActions {
     fun toggleFavorite()
     fun retryLyrics()
 }
+
+/**
+ * 拖动进度时让宿主歌词跟手预览；由宿主的 actions 对象按需实现。
+ * 拖动中反复调用 previewSeek，松手调用 seekTo 提交；取消拖动传 null 结束预览。
+ */
+interface SourcePlayerSeekPreviewActions {
+    fun previewSeek(trackId: String, generation: Long, positionMs: Long?)
+}
+
+/**
+ * 跟手拉出播放队列。位移与速度均为页面坐标中朝打开方向的分量，单位 px 与 px/s；
+ * 打开或回弹由宿主按原生规则判定。
+ */
+interface SourcePlayerQueueGestureActions {
+    /** 返回 false 表示本轮不能拖动（队列已打开、菜单展开等），后续回调应停止。 */
+    fun queueDragStart(): Boolean
+    fun queueDrag(deltaPx: Float)
+    fun queueDragEnd(velocityPxPerSecond: Float)
+    fun queueDragCancel()
+}
+
+/**
+ * 打开当前歌曲关联菜单；锚点为以 Player 根布局左上角为原点的页面坐标区域（px）。
+ * lyricOffset=true 表示从歌词标题打开“调整歌词偏移”。返回 false 表示当前歌曲没有可用菜单。
+ */
+interface SourcePlayerTrackMenuActions {
+    fun openTrackMenu(left: Float, top: Float, right: Float, bottom: Float, lyricOffset: Boolean): Boolean
+}
+
+// 以下获取函数为内联：包内展开后不依赖宿主中的同名方法，旧宿主缺少接口类时返回 null 以便降级。
+@Suppress("NOTHING_TO_INLINE")
+inline fun SourcePlayerUiActions.seekPreviewOrNull(): SourcePlayerSeekPreviewActions? =
+    try { this as? SourcePlayerSeekPreviewActions } catch (_: LinkageError) { null }
+
+@Suppress("NOTHING_TO_INLINE")
+inline fun SourcePlayerUiActions.queueGestureOrNull(): SourcePlayerQueueGestureActions? =
+    try { this as? SourcePlayerQueueGestureActions } catch (_: LinkageError) { null }
+
+@Suppress("NOTHING_TO_INLINE")
+inline fun SourcePlayerUiActions.trackMenuOrNull(): SourcePlayerTrackMenuActions? =
+    try { this as? SourcePlayerTrackMenuActions } catch (_: LinkageError) { null }
+
+/** 下拉收起播放页。位移与速度取页面坐标中朝收起方向（竖屏页面向下）的分量，单位 px 与 px/s。 */
+interface SourcePlayerDismissGestureActions {
+    /** 返回 false 表示本轮不能拖动（菜单、队列或详情页打开等），后续回调应停止。 */
+    fun dismissDragStart(): Boolean
+    fun dismissDrag(deltaPx: Float)
+    fun dismissDragEnd(velocityPxPerSecond: Float)
+    fun dismissDragCancel()
+}
+
+/**
+ * 共享元素的源端：以 Player 根布局左上角为原点的页面坐标（px）、源端圆角（px）与当前开合进度。
+ * inkArgb 是迷你条该元素此刻的真实前景色（随背景自适应，封面为 null）；
+ * textSizeSp 是迷你条文字字号，markSizeDp 是迷你条图标边长，未知时为 0。
+ */
+data class SourcePlayerSharedSource(
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float,
+    val cornerPx: Float,
+    val progress: Float,
+    val inkArgb: Int? = null,
+    val textSizeSp: Float = 0f,
+    val markSizeDp: Float = 0f,
+)
+
+/** 由宿主的 context 对象按需实现；源端不可用（迷你条不在、未声明该元素）时返回 null。 */
+interface SourcePlayerSharedSourceAccess {
+    fun sharedSource(element: SourcePlayerSharedElement): SourcePlayerSharedSource?
+}
+
+/** STACKED 为竖屏编排（歌词与页眉两条弹簧、碰到页眉再带动）；SIDE 为横屏/双栏编排（单条弹簧，页眉直接到位）。 */
+enum class SourcePlayerLyricsStyle { STACKED, SIDE }
+
+/**
+ * 宿主歌词开合编排。opened 是目标状态，lyricsProgress / headerProgress 是实际进度（0 关闭，1 打开），
+ * 可在组合、布局、绘制阶段读取；包按 headerProgress 摆放自己的封面与歌曲信息。
+ * 拖动位移与速度取页面坐标中朝打开方向（竖屏页面向上）的分量。
+ */
+interface SourcePlayerLyricsMotion {
+    val opened: Boolean
+    val lyricsProgress: Float
+    val headerProgress: Float
+    val dragging: Boolean
+    fun setOpened(opened: Boolean)
+    /** 返回 false 表示本轮不能拖动，后续回调应停止。 */
+    fun dragStart(): Boolean
+    fun drag(deltaPx: Float)
+    fun dragEnd(velocityPxPerSecond: Float)
+    fun dragCancel()
+    /** 歌词展开后的区域；打开过程中歌词从页面底边升入，绘制会超出区域下边，控件请放在面板之后绘制。 */
+    @Composable fun LyricsPanel(style: SourcePlayerLyricsStyle, modifier: Modifier = Modifier)
+}
+
+/** 由宿主的 context 对象按需实现；同一次页面挂载内返回同一个对象。 */
+interface SourcePlayerLyricsMotionAccess {
+    val lyricsMotion: SourcePlayerLyricsMotion
+}
+
+@Suppress("NOTHING_TO_INLINE")
+inline fun SourcePlayerUiActions.dismissGestureOrNull(): SourcePlayerDismissGestureActions? =
+    try { this as? SourcePlayerDismissGestureActions } catch (_: LinkageError) { null }
+
+@Suppress("NOTHING_TO_INLINE")
+inline fun SourcePlayerUiContext.sharedSourceOrNull(element: SourcePlayerSharedElement): SourcePlayerSharedSource? =
+    try { (this as? SourcePlayerSharedSourceAccess)?.sharedSource(element) } catch (_: LinkageError) { null }
+
+@Suppress("NOTHING_TO_INLINE")
+inline fun SourcePlayerUiContext.lyricsMotionOrNull(): SourcePlayerLyricsMotion? =
+    try { (this as? SourcePlayerLyricsMotionAccess)?.lyricsMotion } catch (_: LinkageError) { null }
+```
+
+<a id="sdk-sourceplayerextras"></a>
+
+### SourcePlayerExtras.kt
+
+对应源码：[SourcePlayerExtras.kt](../source-sdk/src/main/java/com/musicone/source/sdk/SourcePlayerExtras.kt)
+
+```kotlin
+package com.musicone.source.sdk
+
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+
+/**
+ * 播放页可选读取的宿主数据：队列、歌词、音频规格与宿主背景。
+ * 都由宿主的 context 对象按需实现，可在组合、布局、绘制阶段读取，宿主状态变化时自动触发重读。
+ * 旧宿主没有对应接口时 xxxOrNull() 返回 null，包自行降级。
+ */
+
+/**
+ * 播放队列只读快照，顺序即实际播放顺序（随机播放时为打乱后的顺序）。
+ * currentIndex 是当前歌曲在完整队列中的位置，没有当前歌曲时为 -1；upcoming 从当前歌曲的下一首起，最多 50 首，不回绕。
+ */
+data class SourcePlayerQueueSnapshot(
+    val currentIndex: Int,
+    val size: Int,
+    val upcoming: List<SourceTrackDetails>,
+)
+
+interface SourcePlayerQueueAccess {
+    val queueSnapshot: SourcePlayerQueueSnapshot
+}
+
+enum class SourcePlayerLyricsState { LOADING, READY, RETRYABLE, UNAVAILABLE }
+
+data class SourcePlayerLyricWord(val startMs: Long, val endMs: Long, val text: String)
+
+/** transliteration 为逐词注音，格式见《歌词注音与翻译规范》。 */
+data class SourcePlayerLyricLine(
+    val timeMs: Long,
+    val text: String,
+    val translation: String? = null,
+    val words: List<SourcePlayerLyricWord> = emptyList(),
+    val transliteration: String? = null,
+)
+
+/**
+ * 当前歌曲的歌词。时间已包含用户整行与逐字偏移；lineLeadMs、wordLeadMs 是音源声明的显示提前量，
+ * 与宿主歌词一致的做法是用 timeline.positionMs 加上提前量后再找当前行与当前字。
+ */
+data class SourcePlayerLyrics(
+    val trackId: String,
+    val state: SourcePlayerLyricsState,
+    val lines: List<SourcePlayerLyricLine>,
+    val lineLeadMs: Long = 0,
+    val wordLeadMs: Long = 0,
+)
+
+interface SourcePlayerLyricsDataAccess {
+    val lyricsData: SourcePlayerLyrics
+}
+
+/**
+ * 正在播放的音频规格，来自解码器实际报告。codec 如 FLAC、MP3；数值未知时为 0。
+ * summary 是宿主音质菜单里的同款一行描述；output 是输出链路描述（如 UAC2 独占、系统输出规格），未知时为 null。
+ */
+data class SourcePlayerAudioInfo(
+    val codec: String?,
+    val sampleRate: Int,
+    val bitDepth: Int,
+    val bitrate: Int,
+    val summary: String,
+    val output: String?,
+)
+
+interface SourcePlayerAudioInfoAccess {
+    /** 尚未开始解码时为 null。 */
+    val audioInfo: SourcePlayerAudioInfo?
+}
+
+/** 宿主原生播放页的封面流动色场与压暗层，随当前歌曲切换；铺满 modifier 指定的区域。 */
+interface SourcePlayerBackdropAccess {
+    @Composable fun Backdrop(modifier: Modifier)
+}
+
+@Suppress("NOTHING_TO_INLINE")
+inline fun SourcePlayerUiContext.queueSnapshotOrNull(): SourcePlayerQueueSnapshot? =
+    try { (this as? SourcePlayerQueueAccess)?.queueSnapshot } catch (_: LinkageError) { null }
+
+@Suppress("NOTHING_TO_INLINE")
+inline fun SourcePlayerUiContext.lyricsDataOrNull(): SourcePlayerLyrics? =
+    try { (this as? SourcePlayerLyricsDataAccess)?.lyricsData } catch (_: LinkageError) { null }
+
+/** 外层 null 表示宿主不支持；支持但尚未解码时 audioInfo 本身为 null。 */
+@Suppress("NOTHING_TO_INLINE")
+inline fun SourcePlayerUiContext.audioInfoAccessOrNull(): SourcePlayerAudioInfoAccess? =
+    try { this as? SourcePlayerAudioInfoAccess } catch (_: LinkageError) { null }
+
+@Suppress("NOTHING_TO_INLINE")
+inline fun SourcePlayerUiContext.backdropOrNull(): SourcePlayerBackdropAccess? =
+    try { this as? SourcePlayerBackdropAccess } catch (_: LinkageError) { null }
 ```
 
 <a id="sdk-sourcequalitycatalog"></a>

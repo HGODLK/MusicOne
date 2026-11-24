@@ -14,6 +14,14 @@ internal val MusicSource.supportsSourceSettings get() =
     com.musicone.sourceintegration.SourcePackageController.current()?.running(id)?.entry?.settings != null
 internal val MusicSource.supportsLibraryEditing get() = this == MusicSource.LOCAL ||
     com.musicone.sourceintegration.SourcePackageController.current()?.running(id)?.entry?.descriptor?.permissions?.editTrackMetadata == true
+/** 本地和允许编辑资料的源默认走综合歌单；其余音源须声明收藏服务，且若提供资料库分区则包含“我喜欢”。 */
+internal val MusicSource.supportsRemoteFavorites get(): Boolean {
+    if (supportsLibraryEditing) return false
+    val entry = com.musicone.sourceintegration.SourcePackageController.current()?.running(id)?.entry ?: return false
+    if (entry.favorites == null) return false
+    val collections = entry.collections
+    return collections == null || com.musicone.source.sdk.SourceLibrarySection.FAVORITE_TRACKS in collections.librarySections
+}
 internal val MusicSource.supportsManualLyrics get() = this == MusicSource.LOCAL ||
     com.musicone.sourceintegration.SourcePackageController.current()?.running(id)?.entry?.descriptor?.permissions?.replaceManualLyrics == true
 internal val MusicSource.supportsLyricOffset get() = this == MusicSource.LOCAL ||

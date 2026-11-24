@@ -18,7 +18,7 @@ internal fun MusicLibraryStore.lyrics(track: MusicTrack): List<TimedLyric> {
         ?: defaultLyrics(track.id)?.let(::File)?.takeIf(File::isFile)
         ?: File(assets, "lyrics/${track.id}.default.lrc").takeIf(File::isFile)
         ?: return emptyList()
-    return parseLibraryLyrics(file.readText(), localLyricExtension(file.name)).map { line -> line.copy(
+    return parseLibraryLyrics(file).map { line -> line.copy(
         timeMs = line.timeMs + offset,
         words = line.words.map { it.copy(startMs = it.startMs + offset, endMs = it.endMs + offset) },
         libraryTimeline = true,

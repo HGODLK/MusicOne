@@ -107,8 +107,8 @@ android {
         buildConfigField("boolean", "MUSICONE_TRACE", musiconeTrace.toString())
         buildConfigField("boolean", "MUSICONE_LYRIC_RESOURCE_PREPARE", musiconeLyricResourcePrepare.toString())
         buildConfigField("boolean", "MUSICONE_RESIDENT_LYRIC_REFRESH", musiconeResidentLyricRefresh.toString())
-        versionCode = 5
-        versionName = "0.3.1-过桥米线"
+        versionCode = 6
+        versionName = "0.4.0-鲜花饼"
         manifestPlaceholders["musiconeTrace"] = musiconeTrace.toString()
         vectorDrawables.useSupportLibrary = true
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -194,7 +194,7 @@ listOf("debug", "sourceDebug", "debugRelease", "release").forEach { variant ->
     val taskSuffix = variant.replaceFirstChar(Char::uppercaseChar)
     val assetsDirectory = layout.buildDirectory.dir("generated/sourcePackAssets/$variant")
     val prepare = tasks.register<Sync>("prepare${taskSuffix}SourcePacks") {
-        listOf("qq", "kugou", "netease", "bilibili", "subsonic").forEach { source ->
+        listOf("qq", "kugou", "netease", "bilibili", "subsonic", "webdav").forEach { source ->
             dependsOn(":source-packs:$source:$packageTask")
             from(rootProject.layout.projectDirectory.dir("source-packs/$source/build/outputs/source-packs/$packageVariant")) {
                 include("*.mscm", "*.mscp")
@@ -236,6 +236,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.10.1")
     implementation("androidx.media3:media3-exoplayer-dash:1.10.1")
     implementation("androidx.media3:media3-session:1.10.1")
+    implementation("org.yaml:snakeyaml:2.5")
     // 非应用商店安装也能在首次运行后把内置 Profile 交给 ART。
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("com.google.zxing:core:3.5.3")

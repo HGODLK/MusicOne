@@ -10,12 +10,19 @@ internal data class PlaybackQueueRemovalPlan(
 )
 
 /** 仅移除播放队列项，不操作歌单、收藏或本地文件。 */
-internal fun playbackQueueRemovalPlan(state: MusicOneUiState, selected: MusicTrack): PlaybackQueueRemovalPlan? {
-    fun MusicTrack.matches(other: MusicTrack) = source == other.source && id == other.id
-    val index = state.queue.indexOfFirst { it.matches(selected) }
-    if (index < 0) return null
-    val remaining = state.queue.filterNot { it.matches(selected) }
-    val removedCurrent = state.currentTrack?.matches(selected) == true
+internal fun playbackQueueRemovalPlan(state: MusicOneUiState, selected: MusicTrack): PlaybackQueueRemovalPlan? =
+    playbackQueueRemovalPlan(state, listOf(selected))
+
+/**
+ * 一次算出批量移除后的队列：只更新一次状态、保存一次。
+ * 当前歌曲被移除时切到它原位置之后第一首保留的歌，后面没有就回到第一首。
+ */
+internal fun playbackQueueRemovalPlan(state: MusicOneUiState, selected: List<MusicTrack>): PlaybackQueueRemovalPlan? {
+    fun MusicTrack.key() = source to id
+    val keys = selected.mapTo(hashSetOf()) { it.key() }
+    if (state.queue.none { it.key() in keys }) return null
+    val remaining = state.queue.filterNot { it.key() in keys }
+    val removedCurrent = state.currentTrack?.let { it.key() in keys } == true
     if (remaining.isEmpty()) return PlaybackQueueRemovalPlan(state.copy(
         currentTrack = null, queue = emptyList(), queueOrder = PlaybackQueueOrder(),
         isPlaying = false, playerExpanded = false, activeQuality = null,
@@ -23,12 +30,16 @@ internal fun playbackQueueRemovalPlan(state: MusicOneUiState, selected: MusicTra
         qualityTarget = null, qualityError = null, lyricLoadState = LyricLoadState.UNAVAILABLE,
         radioActive = false, radioLoading = false, playbackMessage = null,
     ), removedCurrent, null)
+    val removedIds = selected.mapTo(hashSetOf()) { it.id }
     val order = state.queueOrder.reconcile(remaining).let {
-        if (selected.id == it.nextAfterId || selected.id == it.nextTrackId)
+        if (it.nextAfterId in removedIds || it.nextTrackId in removedIds)
             it.copy(nextAfterId = null, nextTrackId = null) else it
     }
-    return PlaybackQueueRemovalPlan(state.copy(queue = remaining, queueOrder = order), removedCurrent,
-        if (removedCurrent) remaining.getOrNull(index) ?: remaining.first() else null)
+    val next = if (!removedCurrent) null else {
+        val currentIndex = state.queue.indexOfFirst { it.key() == state.currentTrack?.key() }
+        state.queue.drop(currentIndex + 1).firstOrNull { it.key() !in keys } ?: remaining.first()
+    }
+    return PlaybackQueueRemovalPlan(state.copy(queue = remaining, queueOrder = order), removedCurrent, next)
 }
 
 /** 队列规则与播放器生命周期分离，切曲及清空交给已有会话执行。 */
@@ -38,8 +49,11 @@ internal class PlaybackQueueRemoval(
     private val clearPlayback: () -> Unit,
     private val save: () -> Unit,
 ) {
-    fun remove(track: MusicTrack) {
-        val plan = playbackQueueRemovalPlan(states.value, track) ?: return
+    fun remove(track: MusicTrack) = removeAll(listOf(track))
+
+    /** 批量移除一次完成：当前歌曲也在其中时直接切到后面第一首保留的歌，全部移除则清空播放。 */
+    fun removeAll(tracks: List<MusicTrack>) {
+        val plan = playbackQueueRemovalPlan(states.value, tracks) ?: return
         when {
             plan.state.queue.isEmpty() -> {
                 states.value = plan.state
@@ -51,13 +65,5 @@ internal class PlaybackQueueRemoval(
             }
             else -> { states.value = plan.state; save() }
         }
-    }
-
-    /** 批量移除：先移除非当前项，最后处理当前歌曲，避免切到同样要被移除的下一首。 */
-    fun removeAll(tracks: List<MusicTrack>) {
-        val current = states.value.currentTrack
-        val (playing, others) = tracks.partition { current != null && it.source == current.source && it.id == current.id }
-        others.forEach(::remove)
-        playing.firstOrNull()?.let(::remove)
     }
 }

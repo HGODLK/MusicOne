@@ -26,17 +26,27 @@ internal class QqApiClient {
     fun account(cookie: String): MusicAccount {
         val userId = normalizeUin(cookie)
         val musicKey = qqMusicKey(cookie)
-        if (userId.isBlank() || musicKey.isBlank()) throw PlatformApiException("QQ 音乐登录状态已失效", 301)
+        if (userId.isBlank() || musicKey.isBlank()) throw PlatformApiException("QQ 音乐登录状态已失效（登录凭据缺少账号或 musickey）", 301)
         val query = linkedMapOf(
             "g_tk" to hash33(musicKey, 5381).toString(),
             "format" to "json", "inCharset" to "utf-8", "outCharset" to "utf-8",
             "notice" to "0", "cid" to "205360838", "needNewCode" to "0",
             "loginUin" to userId, "hostUin" to "0", "userid" to userId, "reqfrom" to "1",
         ).entries.joinToString("&") { (key, value) -> "${key.urlEncoded()}=${value.urlEncoded()}" }
+        // 票据由安卓登录签发，有效性以安卓端登录态接口为准；网页资料接口只取昵称头像，它不可用时才参考其 1000。
+        val loginState = runCatchingCancellable { qqLoginStateCode(cookie) }.getOrNull()
+        if (loginState in QQ_LOGIN_STATE_EXPIRED_CODES) {
+            QqSessionLog.record("账号校验：登录态接口判定失效，业务码=$loginState")
+            throw PlatformApiException("QQ 音乐登录状态已失效（账号校验被拒：登录态接口返回 $loginState）", 301)
+        }
         val profile = runCatchingCancellable {
             JSONObject(PlatformHttp.get("$PROFILE_API?$query", cookie, qqHeaders("https://y.qq.com/")).text.qqJsonText())
         }.getOrNull()
-        if (profile?.optInt("code", 0) == 1000) throw PlatformApiException("QQ 音乐登录状态已失效", 301)
+        if (loginState == null && profile?.optInt("code", 0) == 1000) {
+            QqSessionLog.record("账号校验：登录态接口不可用，网页资料返回1000")
+            throw PlatformApiException("QQ 音乐登录状态已失效（账号校验被拒：登录态接口无响应，网页资料返回 1000）", 301)
+        }
+        if (loginState != 0) QqSessionLog.record("账号校验：登录态业务码=${loginState ?: "请求失败"}，网页资料业务码=${profile?.optInt("code", 0) ?: "请求失败"}")
         val membership = QqEntitlements.rememberMembership(cookie, QqMembershipClient().query(cookie))
         return qqAccountFromProfile(userId, cookie, profile, membership?.vip == true)
     }
@@ -692,6 +702,23 @@ internal fun qqPlaybackUrlCandidates(purls: List<String>, responseSips: List<Str
     }.distinct()
 }
 
+/** 安卓端（ct=11）请求共用的客户端版本与 UA，与登录、续票签发票据时的身份一致。 */
+internal const val QQ_ANDROID_CLIENT_VERSION = 14090008
+internal const val QQ_ANDROID_USER_AGENT = "QQMusic $QQ_ANDROID_CLIENT_VERSION(android 14)"
+internal val QQ_LOGIN_STATE_EXPIRED_CODES = setOf(1000, 104400, 104401)
+
+/** 安卓端登录态：返回业务码，0 表示票据有效；子请求码优先于顶层码。 */
+internal fun qqLoginStateCode(cookie: String): Int {
+    val body = JSONObject().put("comm", qqPlaybackComm(cookie)).put("req", JSONObject()
+        .put("module", "music.UserInfo.userInfoServer").put("method", "GetLoginUserInfo").put("param", JSONObject()))
+    val response = JSONObject(PlatformHttp.postJson("https://u.y.qq.com/cgi-bin/musicu.fcg", body.toString(), cookie,
+        mapOf("Referer" to "https://y.qq.com/", "User-Agent" to QQ_ANDROID_USER_AGENT),
+        connectTimeoutMs = 5_000, readTimeoutMs = 8_000).text)
+    val top = response.optInt("code", 0)
+    if (top != 0) return top
+    return response.optJSONObject("req")?.optInt("code", 0) ?: 0
+}
+
 internal fun qqPlaybackComm(cookie: String): JSONObject {
     val values = cookie.cookieValues()
     val musicId = qqCredentialAccountId(cookie)
@@ -699,7 +726,7 @@ internal fun qqPlaybackComm(cookie: String): JSONObject {
     val loginType = values["loginType"]?.toIntOrNull()
         ?: if (musicKey.startsWith("W_X")) 1 else 2
     return JSONObject()
-        .put("ct", 11).put("cv", 14090008).put("v", 14090008)
+        .put("ct", 11).put("cv", QQ_ANDROID_CLIENT_VERSION).put("v", QQ_ANDROID_CLIENT_VERSION)
         .put("chid", "10003505").put("qq", musicId).put("authst", musicKey)
         .put("tmeAppID", "qqmusic").put("tmeLoginType", loginType)
         .put("format", "json")

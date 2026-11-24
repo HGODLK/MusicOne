@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -47,6 +48,8 @@ internal fun DeveloperCredits() {
             trailingContent = {
                 Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
             },
+            // 放在设置卡片里，透出卡片底色。
+            colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
             modifier = Modifier.clickable(
                 onClickLabel = "打开 ${developer.name} 的 GitHub 主页",
                 role = Role.Button,

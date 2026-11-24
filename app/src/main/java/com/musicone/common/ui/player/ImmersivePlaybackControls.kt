@@ -167,6 +167,8 @@ internal fun PlayerProgressTimeline(viewModel: MusicPlaybackRuntime, motion: Pag
     var userDragged by remember(timeline.trackId) { mutableStateOf(false) }
     var tapSeekJob by remember(timeline.trackId) { mutableStateOf<Job?>(null) }
     PlayerHighFrameRateWhile { tapSeekJob?.isActive == true || progressMotion.interacting || (entrance?.value ?: 1f) < 1f }
+    // 跟手拖动进度条时向系统明确要高刷，避免被智能刷新率压低。
+    HighRefreshRateWhile(dragging)
     DisposableEffect(timeline.trackId) { onDispose { tapSeekJob?.cancel(); viewModel.seekPreview.clear() } }
     val progress = seeking ?: if (switching) 0f else playerProgressFraction(position, timeline.durationMs)
     Column(modifier) {

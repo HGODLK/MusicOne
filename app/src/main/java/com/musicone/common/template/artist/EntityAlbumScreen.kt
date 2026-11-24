@@ -41,7 +41,7 @@ internal fun EntityAlbumScreen(initial: MusicPlaylist, state: MusicOneUiState, b
     var bounds by remember { mutableStateOf(Rect.Zero) }
     val favorites = LocalMusicFavorites.current
     val motion = LocalPlaylistMotion.current
-    val activation = motion?.let { rememberPlaylistContentActivation(initial.id, it) }
+    val activation = motion?.let { rememberPlaylistContentActivation(initial.id, it, EntityContentEarlyProgress) }
     val tracksEntrance = rememberEntityDataEntrance(album.tracks.isNotEmpty())
     MainSourcePlaylistSongMenuHost(album, created, bottomInset, {}, onChanged, favorites.toggle) {
         val frame = LocalEntityFrame.current

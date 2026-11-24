@@ -409,8 +409,13 @@ class MusicPlaybackRuntime(private val application: Application) {
         startTrack(track, queue)
     }
 
-    fun playRecommendationTrack(track: MusicTrack) {
+    fun playRecommendationTrack(track: MusicTrack) = playRecommendationTracks(listOf(track), 0)
+
+    /** 首页货架点歌：开启或已在猜你喜欢时，本页从点击处起依次入队；保持队列时只插入点击的一首。 */
+    fun playRecommendationTracks(tracks: List<MusicTrack>, index: Int) {
+        val track = tracks.getOrNull(index) ?: return
         if (rejectUnavailableQueueTrack(track)) return
+        val batch = homeRecommendationBatch(tracks, index, ::queueTrackSourceAvailable)
         PlaybackOptions.initialize(application)
         val snapshot = _state.value
         when (homeRecommendationAction(
@@ -421,15 +426,29 @@ class MusicPlaybackRuntime(private val application: Application) {
             keepQueue = PlaybackOptions.keepQueueOnHomeRecommendation,
             radioAvailable = radioRepository.available(track.source),
         )) {
-            HomeRecommendationAction.JOIN_RADIO -> joinRadioWithTrack(track, snapshot)
+            HomeRecommendationAction.JOIN_RADIO ->
+                if (batch.size > 1) joinRadioWithTracks(batch, snapshot) else joinRadioWithTrack(track, snapshot)
             HomeRecommendationAction.INSERT_IN_QUEUE -> playTrackNext(track)
             HomeRecommendationAction.START_RADIO -> {
                 radioSource = track.source
                 stopRadio()
                 playbackHistory.clear()
-                radioController.startWithSeed(track)
+                radioController.startWithSeeds(batch)
             }
         }
+    }
+
+    private fun joinRadioWithTracks(batch: List<MusicTrack>, snapshot: MusicOneUiState) {
+        val current = snapshot.currentTrack
+        val first = batch.first()
+        if (current != null && current.source == first.source && current.id == first.id) {
+            togglePlay()
+            return
+        }
+        val queue = radioController.insertAll(snapshot.queue, current?.takeIf { it.source == radioSource }, batch)
+        playbackHistory.remember(current?.id, first.id)
+        startTrack(first, queue, preserveRadio = true)
+        prefetchRadioIfNeeded()
     }
 
     private fun joinRadioWithTrack(track: MusicTrack, snapshot: MusicOneUiState) {

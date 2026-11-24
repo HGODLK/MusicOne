@@ -64,12 +64,7 @@ internal fun PlatformHomeLayout(
     androidx.compose.runtime.CompositionLocalProvider(
         LocalPlaylistCardViewport provides PlaylistCardViewport(
             (with(density) { gridBounds.height.toDp() } - bottomInset - 18.dp).coerceAtLeast(0.dp),
-        ) { cardBounds ->
-            gridState.stopScroll()
-            val visible = gridBounds.copy(bottom = gridBounds.bottom - with(density) { (bottomInset + 18.dp).toPx() })
-            val distance = playlistScrollDistance(cardBounds(), visible)
-            if (distance != 0f) gridState.animateScrollBy(distance, animationSpec = musicMotion(360))
-        },
+        ),
     ) {
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 340.dp),

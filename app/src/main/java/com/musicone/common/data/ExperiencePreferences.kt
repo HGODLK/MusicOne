@@ -23,6 +23,13 @@ internal data class ExperienceOptions(
     // 仅作用于公共模板“我的”页：手机改为左右并排，隐藏对手机和平板都生效。
     val phoneSideBySideLibraryCards: Boolean = false,
     val hideUnifiedPlaylist: Boolean = false,
+    // 底栏默认播放条与导航胶囊并排；经典为上下两层。反转在并排时整行互换，经典时只镜像播放条。
+    val classicBottomBar: Boolean = false,
+    val reverseBottomBar: Boolean = false,
+    // 隐藏底栏的首页／我的切换胶囊，两种底栏布局都生效；页面左右滑动切换不受影响。
+    val hideNavigationCapsule: Boolean = false,
+    // 红心按钮写入目标；仅对之后点击生效，未声明我喜欢能力的音源始终默认进综合歌单。
+    val favoriteButtonBehavior: FavoriteButtonBehavior = FavoriteButtonBehavior.SOURCE_ONLY,
 )
 
 /** 显示偏好独立保存，渲染层读取同一份可观察状态。 */
@@ -52,6 +59,10 @@ internal object ExperiencePreferences {
             compactPlayerControls = store.getBoolean("compact_player_controls", false),
             phoneSideBySideLibraryCards = store.getBoolean("phone_side_by_side_library_cards", false),
             hideUnifiedPlaylist = store.getBoolean("hide_unified_playlist", false),
+            classicBottomBar = store.getBoolean("classic_bottom_bar", false),
+            reverseBottomBar = store.getBoolean("reverse_bottom_bar", false),
+            hideNavigationCapsule = store.getBoolean("hide_navigation_capsule", false),
+            favoriteButtonBehavior = FavoriteButtonBehavior.fromStored(store.getString("favorite_button_behavior", null)),
         )
     }
 
@@ -71,6 +82,10 @@ internal object ExperiencePreferences {
             ?.putString("lyric_font_size", value.lyricFontSize.storedValue)
             ?.putBoolean("compact_player_controls", value.compactPlayerControls)
             ?.putBoolean("phone_side_by_side_library_cards", value.phoneSideBySideLibraryCards)
-            ?.putBoolean("hide_unified_playlist", value.hideUnifiedPlaylist)?.apply()
+            ?.putBoolean("hide_unified_playlist", value.hideUnifiedPlaylist)
+            ?.putBoolean("classic_bottom_bar", value.classicBottomBar)
+            ?.putBoolean("reverse_bottom_bar", value.reverseBottomBar)
+            ?.putBoolean("hide_navigation_capsule", value.hideNavigationCapsule)
+            ?.putString("favorite_button_behavior", value.favoriteButtonBehavior.storedValue)?.apply()
     }
 }

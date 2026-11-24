@@ -43,6 +43,62 @@ class UsbAudioPcmDescriptorsTest {
         assertNull(descriptors.clockSource(descriptors.formats.single()) { _, _ -> 3 })
     }
 
+    @Test fun onlyFeatureUnitsFedByThePlaybackTerminalAreSelected() {
+        val playbackUnit = bytes(18, 0x24, 6, 2, 1, 0x0f, 0, 0, 0, 0x0c, 0, 0, 0, 0x0c, 0, 0, 0, 0)
+        val output = bytes(12, 0x24, 3, 3, 1, 3, 0, 2, 7, 0, 0, 0)
+        val recordInput = bytes(17, 0x24, 2, 4, 1, 2, 0, 7, 2, 3, 0, 0, 0, 0, 0, 0, 0)
+        val recordUnit = bytes(14, 0x24, 6, 5, 4, 0x0f, 0, 0, 0, 0x0c, 0, 0, 0, 0)
+        val descriptors = UsbAudioPcmDescriptors(control + playbackUnit + output + recordInput + recordUnit + format(1))
+        val units = descriptors.playbackFeatureUnits(descriptors.formats.single())
+        assertEquals(listOf(2), units.map { it.unitId })
+        assertEquals(listOf(0x0f, 0x0c, 0x0c), units.single().channelControls)
+    }
+
+    @Test fun volumeRangeMaximumIsSignedAcrossSubRanges() {
+        val buffer = ByteBuffer.allocate(2 + 2 * 6).order(ByteOrder.LITTLE_ENDIAN)
+        buffer.putShort(2)
+        buffer.putShort((-127 * 256).toShort()).putShort((-20 * 256).toShort()).putShort(256)
+        buffer.putShort((-20 * 256).toShort()).putShort(0).putShort(128)
+        assertEquals(0, usbVolumeRangeMaximum(buffer.array()))
+        assertNull(usbVolumeRangeMaximum(buffer.array().copyOf(10)))
+        assertEquals(UsbVolumeRange(-127 * 256, 0, 256), usbVolumeRange(buffer.array()))
+    }
+
+    @Test fun volumeRangeSupportsMuteFloorAndSkipsLeadingSilencePoint() {
+        // 单段下限为 0x8000（负无穷静音）时不应误判为不支持。
+        val singleMuteFloor = ByteBuffer.allocate(2 + 6).order(ByteOrder.LITTLE_ENDIAN)
+            .putShort(1)
+            .putShort(Short.MIN_VALUE).putShort(0).putShort(256)
+            .array()
+        assertEquals(UsbVolumeRange(-127 * 256, 0, 256), usbVolumeRange(singleMuteFloor))
+
+        // 首段为纯静音点（res=0）时，步长与范围应取后续有效段。
+        val leadingSilence = ByteBuffer.allocate(2 + 2 * 6).order(ByteOrder.LITTLE_ENDIAN)
+            .putShort(2)
+            .putShort(Short.MIN_VALUE).putShort(Short.MIN_VALUE).putShort(0)
+            .putShort((-60 * 256).toShort()).putShort(0).putShort(128)
+            .array()
+        assertEquals(UsbVolumeRange(-60 * 256, 0, 128), usbVolumeRange(leadingSilence))
+
+        // 仅含静音点时无可用范围。
+        val onlySilence = ByteBuffer.allocate(2 + 6).order(ByteOrder.LITTLE_ENDIAN)
+            .putShort(1)
+            .putShort(Short.MIN_VALUE).putShort(Short.MIN_VALUE).putShort(0)
+            .array()
+        assertNull(usbVolumeRange(onlySilence))
+    }
+
+    @Test fun attenuationFollowsDecibelsAlignedToStepsWithinRange() {
+        val range = UsbVolumeRange(-60 * 256, 0, 256)
+        assertEquals(0, usbAttenuationValue(1f, range))
+        // 0.5 ≈ -6.02dB，对齐 1dB 步长后为 -6dB。
+        assertEquals(-6 * 256, usbAttenuationValue(.5f, range))
+        // 超出设备下限时停在最低档，由软件补足剩余衰减。
+        assertEquals(-60 * 256, usbAttenuationValue(.0001f, range))
+        assertEquals(.501f, usbAttenuationGain(-6 * 256, range), .001f)
+        assertEquals(1f, usbAttenuationGain(0, range), 1e-6f)
+    }
+
     @Test fun truncatedDescriptorDoesNotInventAProfile() {
         val raw = control + format(1)
         assertTrue(UsbAudioPcmDescriptors(raw.copyOf(raw.size - 1)).formats.isEmpty())

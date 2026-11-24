@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 class KugouSourceEntry : SourceEntry, SourceMembershipProvider {
-    override val descriptor = SourceDescriptor(KUGOU_SOURCE_ID, "酷狗音乐", SourceKind.MAIN, 2, "1.1",
+    override val descriptor = SourceDescriptor(KUGOU_SOURCE_ID, "酷狗音乐", SourceKind.MAIN, 3, "1.2",
         setOf(SourceCapability.PLAYBACK, SourceCapability.HOME, SourceCapability.SEARCH, SourceCapability.ACCOUNT,
             SourceCapability.PLAYLIST, SourceCapability.ARTIST, SourceCapability.ALBUM, SourceCapability.RADIO,
             SourceCapability.LYRICS),

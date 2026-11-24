@@ -43,7 +43,7 @@ internal fun aiLyricsToLrc(lines: List<TimedLyric>, includeWords: Boolean): Stri
 internal fun aiLyricDraft(raw: String, durationMs: Long): AiLyricDraft {
     if (raw.toByteArray().size > AI_LYRIC_MAX_BYTES) throw AiToolInputFailure("lyrics_too_long", "歌词过长，请只提交这一首歌的歌词")
     if (aiLyricWordStamp.containsMatchIn(raw)) throw AiToolInputFailure("word_timing_not_allowed", "逐字时间只能来自音源，提交的歌词不能带<mm:ss>逐字标记")
-    val rows = raw.lineSequence().map { it.trim().removePrefix("﻿") }
+    val rows = raw.lineSequence().map { it.trim().removePrefix("\uFEFF") }
         .filter { it.isNotEmpty() && !aiLyricMetadata.matches(it) }.toList()
     if (rows.isEmpty()) throw AiToolInputFailure("empty_lyrics", "歌词为空")
     if (rows.size > AI_LYRIC_MAX_LINES) throw AiToolInputFailure("lyrics_too_long", "歌词超过${AI_LYRIC_MAX_LINES}行")

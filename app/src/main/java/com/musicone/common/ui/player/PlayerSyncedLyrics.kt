@@ -165,10 +165,7 @@ internal fun PlayerSyncedLyricsContent(
                 return@collectLatest
             }
             if (pending == null && !held.active && !preparing && current?.let { motion.settledAt(it.slot) } == true) {
-                current?.refreshPlaybackRound(target, progress)?.let { refreshed ->
-                    current = refreshed
-                    return@collectLatest
-                }
+                if (current?.refreshPlaybackRound(target, progress) == true) return@collectLatest
             }
             // 本次渐变锁定到完成；外层停稳不会把同一首再补播一次滑动。
             if (lyricTrackUsesFade(latestMoving, latestHeldTrackChange, held.active, latestDisplayed)) {
@@ -260,6 +257,19 @@ internal fun PlayerSyncedLyricsContent(
                 outgoing.clear()
                 held.clearSlides()
             }
+        }
+    }
+    // 回到前台兜底：歌词本应显示却停在不可见状态时直接摆回当前位置（见 LyricResumeRepair）。
+    val resumeSignal = rememberLyricResumeSignal()
+    LaunchedEffect(resumeSignal) {
+        if (resumeSignal == 0) return@LaunchedEffect
+        kotlinx.coroutines.delay(LyricResumeRepairDelayMs)
+        if (!latestDisplayed || rapid != null) return@LaunchedEffect
+        repairLyricWindowAfterResume(requested, current, preparing, outgoing.toList(), motion, held, heldScope,
+            drawEpoch, travelPx, viewModel.playbackProgress.value, viewModel.seekPreview.position.value) { window ->
+            current = window
+            preparing = false
+            outgoing.clear()
         }
     }
     // 播放跟随可以先停，歌词仍在开合或转向时必须继续提交实际绘制帧。

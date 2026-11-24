@@ -39,7 +39,7 @@ internal class QqPlaylistSongRepository {
             qqFavoriteRequestBody(session.credential, qqFavoriteMutation(resolved, add))
                 .getJSONObject("req_0").getJSONObject("param").getJSONArray("v_songInfo"))
         val response = PlatformHttp.postJson("https://u.y.qq.com/cgi-bin/musicu.fcg", body.toString(), session.credential,
-            mapOf("Referer" to "https://y.qq.com/", "User-Agent" to "QQMusic 2005000982(android 14)"),
+            mapOf("Referer" to "https://y.qq.com/", "User-Agent" to QQ_ANDROID_USER_AGENT),
             connectTimeoutMs = 8_000, readTimeoutMs = 12_000)
         requireQqFavoriteMutationSuccess(JSONObject(response.text))
         return target
@@ -54,7 +54,7 @@ internal class QqPlaylistSongRepository {
             "https://u.y.qq.com/cgi-bin/musicu.fcg",
             qqPlaylistSongRequest(session.credential, target, resolved, add).toString(),
             session.credential,
-            mapOf("Referer" to "https://y.qq.com/", "User-Agent" to "QQMusic 2005000982(android 14)"),
+            mapOf("Referer" to "https://y.qq.com/", "User-Agent" to QQ_ANDROID_USER_AGENT),
             connectTimeoutMs = 8_000,
             readTimeoutMs = 12_000,
         )

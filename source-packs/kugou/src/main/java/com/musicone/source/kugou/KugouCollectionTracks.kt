@@ -34,6 +34,14 @@ internal class KugouCollectionTracks(
         policy: SourceFetchPolicy, load: suspend () -> List<JSONObject>): KugouCollectionTrackSnapshot =
         readStream(userId, revision, target, check, policy) { accept -> load().forEach(accept) }
 
+    /** 只读本地快照：版本与目录对得上才返回，否则 null；不联网。 */
+    suspend fun peek(userId: String, revision: Long, target: KugouManagedCollection, check: () -> Unit): KugouCollectionTrackSnapshot? {
+        validateIdentity(userId, target.listId)
+        val context = currentCoroutineContext()
+        val guard = { context.ensureActive(); check() }
+        return cached(userId, revision, target, target.trackSnapshotVersion(), guard)
+    }
+
     suspend fun readStream(userId: String, revision: Long, target: KugouManagedCollection, check: () -> Unit,
         policy: SourceFetchPolicy, load: suspend ((JSONObject) -> Unit) -> Unit): KugouCollectionTrackSnapshot {
         validateIdentity(userId, target.listId)

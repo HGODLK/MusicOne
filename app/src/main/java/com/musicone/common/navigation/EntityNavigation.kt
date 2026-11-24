@@ -3,9 +3,12 @@ package com.musicone
 import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Rect
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.unit.dp
 
 internal sealed interface EntityTarget {
     data class Artist(val singer: MainSourceArtist) : EntityTarget
@@ -67,12 +70,20 @@ internal class EntityNavigation(private val scope: CoroutineScope) {
         preparing = true
         preparation = scope.launch {
             try {
-                // 菜单真实头像位于录制树外，快照只包含玻璃、文字与占位。
-                frame.menuImage = sourceMenu?.surfaceLayer?.let {
-                    try { it.toImageBitmap() }
-                    catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-                    catch (_: Exception) { null }
+                // 菜单快照与头像终点的布局等待互不依赖，并行进行：页面加入 pages 后已在组合，不必等截图结束再开始等布局。
+                val image = sourceMenu?.surfaceLayer?.let { layer ->
+                    async {
+                        // 菜单真实头像位于录制树外，快照只包含玻璃、文字与占位。
+                        try { layer.toImageBitmap() }
+                        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                        catch (_: Exception) { null }
+                    }
                 }
+                // 终点在这里已经稳定时转场不再从头等一遍；没等到就交回转场原有的等待和淡入回退。
+                if (image != null && frame.motion.waitForTarget && awaitEntityTargetAnchor(frame.motion)) {
+                    frame.motion.waitForTarget = false
+                }
+                frame.menuImage = image?.await()
                 frame.motion.request(true)
             } finally { preparing = false }
         }
@@ -95,6 +106,22 @@ internal class EntityNavigation(private val scope: CoroutineScope) {
     }
     fun clear() { preparation?.cancel(); preparing = false; pages.forEach { it.motion.onHidden = {}; it.motion.request(false) }; pages.clear(); rootMenu = null }
 }
+
+/** 与转场自身的布局等待同一口径：终点锚点连续两帧不变视为稳定，最多等 160ms。 */
+private suspend fun awaitEntityTargetAnchor(motion: PageMotion): Boolean = withTimeoutOrNull(160L) {
+    var last: Rect? = null
+    var matches = 0
+    while (matches < 2) {
+        withFrameNanos { }
+        val bounds = motion.targets[motion.coverKey]?.bounds
+        matches = if (bounds != null && bounds == last) matches + 1 else 0
+        last = bounds
+    }
+    true
+} == true
+
+/** 歌手、专辑页展开时来源菜单原地淡出、返回时原地淡入，不再上下漂移；菜单快照、返回菜单和保留头像共用这个位移。 */
+internal val EntitySourceDrift = 0.dp
 
 internal val LocalEntityNavigation = staticCompositionLocalOf<EntityNavigation?> { null }
 internal val LocalEntityFrame = staticCompositionLocalOf<EntityFrame?> { null }

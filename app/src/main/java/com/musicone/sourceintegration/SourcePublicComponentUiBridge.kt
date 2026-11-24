@@ -30,7 +30,12 @@ internal class SourcePublicComponentAccess(val context: Context, val sourceId: S
         return Triple(state?.status, state?.account?.id, state?.revision)
     }
     fun check() = guard()
-    fun check(track: SourceTrackDetails) { check(); require(track.track.identity.sourceId == sourceId) { "不能显示其他音源的歌曲" } }
+    fun check(track: SourceTrackDetails) {
+        check()
+        val identity = track.track.identity
+        // 播放页交给包的歌曲可能来自其他音源，仅这些歌曲放行。
+        require(identity.sourceId == sourceId || SourcePlayerDisplayedTracks.allows(sourceId, identity)) { "不能显示其他音源的歌曲" }
+    }
     fun check(collection: SourceCollection) { check(); require(collection.identity.sourceId == sourceId) { "不能显示其他音源的歌单" } }
     fun check(identity: TrackIdentity) { check(); require(identity.sourceId == sourceId) { "内容不属于当前音源" } }
     fun check(tracks: List<SourceTrackDetails>) { check(); tracks.forEach(::check) }

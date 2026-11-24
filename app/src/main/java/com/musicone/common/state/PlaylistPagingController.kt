@@ -16,6 +16,9 @@ internal class PlaylistPagingEntry(playlist: MusicPlaylist) {
         PlaylistTrackPage(playlist) else null)
         internal set
     var loading by mutableStateOf(false); internal set
+    /** 进入时从本地读到的完整列表；后台核对期间继续显示它，核对完才换成最新结果，避免逐页到达时列表反复变化。 */
+    var cached by mutableStateOf<MusicPlaylist?>(null)
+    val displayed: MusicPlaylist? get() = page?.takeIf { cached == null || it.next == null }?.playlist ?: cached
     var error by mutableStateOf<String?>(null); internal set
     internal val mutex = Mutex()
 
@@ -23,6 +26,15 @@ internal class PlaylistPagingEntry(playlist: MusicPlaylist) {
         page = page?.let { it.copy(playlist = it.playlist.copy(
             tracks = it.playlist.tracks.filterNot { track -> track.id == trackId },
             count = (it.playlist.count - 1).coerceAtLeast(0))) }
+        cached = cached?.let { it.copy(tracks = it.tracks.filterNot { track -> track.id == trackId },
+            count = (it.count - 1).coerceAtLeast(0)) }
+    }
+
+    /** 第一页确认缓存仍然有效：沿用缓存的歌曲，只更新歌单资料，不再拉取后续分页。 */
+    fun adoptCached() {
+        val current = page ?: return
+        val saved = cached ?: return
+        page = PlaylistTrackPage(current.playlist.copy(tracks = saved.tracks), null)
     }
 }
 

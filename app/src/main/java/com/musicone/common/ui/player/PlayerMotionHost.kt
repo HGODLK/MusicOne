@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.first
 
 @Composable
 internal fun PlayerMotionHost(
@@ -31,11 +32,23 @@ internal fun PlayerMotionHost(
     val presentation = LocalPhonePlayerPresentation.current
     val flight = presentation?.flight?.takeIf { phone && sourcePlayer == null }
     val latestDismiss by rememberUpdatedState(onDismiss)
+    val queueState = LocalPlayerQueueState.current
+    // 队列被全部移出时声音已停，画面仍定格最后一首直到播放页滑出屏幕。
+    var lastWithTrack by remember { mutableStateOf<MusicOneUiState?>(null) }
+    SideEffect { if (state.currentTrack != null) lastWithTrack = state }
+    val emptied = state.currentTrack == null && state.queue.isEmpty()
+    val shownState = if (emptied && motion.mounted) lastWithTrack?.copy(isPlaying = false) ?: state else state
     DisposableEffect(motion) {
         motion.onPreparationAborted = { latestDismiss() }
         onDispose { motion.onPreparationAborted = {} }
     }
     LaunchedEffect(state.playerExpanded) {
+        // 迷你条已随队列清空离开，没有落点可飞回：先等队列抽屉收起，再整页滑出屏幕。
+        if (!state.playerExpanded && emptied && motion.mounted && lastWithTrack != null && sourcePlayer == null) {
+            snapshotFlow { queueState.visible }.first { !it }
+            motion.slideOutAndHide(PlayerReturnAnimation)
+            return@LaunchedEffect
+        }
         if (motion.wantsOpen != state.playerExpanded) motion.request(state.playerExpanded,
             settle = if (!state.playerExpanded && flight != null) ({ flight.settle() }) else null)
     }
@@ -54,24 +67,36 @@ internal fun PlayerMotionHost(
     }
     BackHandler(enabled = motion.mounted, onBack = dismiss)
     if (sourcePlayer != null) {
-        if (motion.mounted) com.musicone.sourceintegration.SourcePlayerMotionHost(motion, sourcePlayer, dismiss)
+        if (motion.mounted) com.musicone.sourceintegration.SourcePlayerMotionHost(motion, sourcePlayer, viewModel, dismiss,
+            transitionBackdrop)
         return
     }
     if (!retention.shouldMount(motion.mounted)) return
     val prewarming = launchCovering && retention.allowed && !motion.mounted
     // 隐藏时只同步歌曲和歌词变更以准备本地布局，不跟随播放进度持续刷新。
-    var retainedState by remember { mutableStateOf(state) }
-    val displayed = if (motion.mounted || prewarming) state else retainedState
+    var retainedState by remember { mutableStateOf(shownState) }
+    val displayed = if (motion.mounted || prewarming) shownState else retainedState
     SideEffect {
-        if (motion.mounted || prewarming || retainedState.currentTrack != state.currentTrack ||
-            retainedState.lyricLoadState != state.lyricLoadState) retainedState = state
+        if (motion.mounted || prewarming || retainedState.currentTrack != shownState.currentTrack ||
+            retainedState.lyricLoadState != shownState.lyricLoadState) retainedState = shownState
     }
     RetainedPlayerContent(motion.mounted, prewarming, retention) {
         RetainedPlayerLayout(motion, presentation.takeIf { phone }, retention) {
             CompositionLocalProvider(LocalPlayerTransitionBackdrop provides transitionBackdrop,
                 LocalPhonePlayerFlightRotation provides flight) {
                 PhonePlayerPreparedTurnHost(presentation?.preparation?.takeIf { phone }) {
-                    PlayerMotionContent(motion, displayed, viewModel, controlHandoff, dismiss)
+                    // 色场的色团画出页面边界，滑出时按页面裁剪，推一个页高就能完全离开屏幕；静止时不裁剪。
+                    Box(Modifier.fillMaxSize().graphicsLayer {
+                        val slide = motion.slideOut.value
+                        translationY = slide * size.height
+                        clip = slide > 0f
+                    }) {
+                        PlayerMotionContent(motion, displayed, viewModel, controlHandoff, dismiss)
+                        // 滑出途中歌曲已不在队列里，挡住所有点击与手势。
+                        if (emptied) Box(Modifier.fillMaxSize().pointerInput(Unit) {
+                            awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
+                        })
+                    }
                 }
             }
         }

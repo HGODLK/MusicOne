@@ -71,6 +71,12 @@ internal class SourceRadioQueueWindow(
         return center(insertTrackAfterCurrent(queue, current, selected), selected.id)
     }
 
+    /** 首页货架一次点入多首：整批接在当前歌曲后，从第一首开始播。 */
+    fun insertAll(queue: List<MusicTrack>, current: MusicTrack?, selected: List<MusicTrack>): List<MusicTrack> {
+        remember(selected)
+        return center(insertTracksAfterCurrent(queue, current, selected), selected.first().id)
+    }
+
     fun restore(queue: List<MusicTrack>, currentTrackId: String?): List<MusicTrack> {
         reset()
         remember(queue)

@@ -162,7 +162,7 @@ class RootCompositionPerformanceTest {
     @Test fun unrelatedRootUpdatesKeepFavoritesStableWithoutKeepingOldCallbacks() = withComposition {
         var revision by mutableIntStateOf(0)
         var remoteState by mutableStateOf(MusicFavoriteUiState(ids = setOf("qq-one")))
-        var localIds by mutableStateOf(setOf("local-one"))
+        var unifiedTracks by mutableStateOf(listOf(PlayerWarmupTrack.copy(id = "local-one", source = MusicSource.LOCAL)))
         val calls = mutableListOf<String>()
         var actions: MusicFavoriteActions? = null
         composition.setContent {
@@ -171,8 +171,16 @@ class RootCompositionPerformanceTest {
                 toggle = { calls += "remote-$version" },
                 toggleDeferredRemoval = { calls += "deferred-$version" },
                 flushDeferredRemovals = { complete -> calls += "flush-$version"; complete() },
-                currentState = { remoteState })
-            val combined = rememberLibraryFavoriteActions(remote, localIds) { calls += "local-$version" }
+                currentState = { remoteState },
+                setFavorite = { _, _ -> calls += "remote-$version" })
+            val combined = rememberLibraryFavoriteActions(
+                remote = remote,
+                unifiedTracks = unifiedTracks,
+                behavior = FavoriteButtonBehavior.SOURCE_ONLY,
+                sourceRevision = 0,
+                supportsRemote = { it == MusicSource.QQ },
+                currentUnifiedTracks = { unifiedTracks },
+            ) { _, _ -> calls += "local-$version" }
             SideEffect { actions = combined }
         }
         frames()
@@ -190,17 +198,17 @@ class RootCompositionPerformanceTest {
         assertEquals(listOf("remote-1", "local-1", "deferred-1", "local-1", "flush-1", "complete"), calls)
 
         remoteState = remoteState.copy(ids = setOf("qq-two"), deferredRemovalIds = setOf("qq-one"))
-        localIds = setOf("bilibili-two")
+        unifiedTracks = listOf(PlayerWarmupTrack.copy(id = "bilibili-two", source = MusicSource.BILIBILI))
         frames()
         val updated = checkNotNull(actions)
         assertEquals(setOf("qq-two", "bilibili-two"), updated.state.ids)
         assertEquals(setOf("qq-one"), updated.state.deferredRemovalIds)
         assertSame(first.toggle, updated.toggle)
         assertSame(first.toggleDeferredRemoval, updated.toggleDeferredRemoval)
-        assertSame(remoteState, first.currentState())
-        localIds = emptySet()
+        unifiedTracks = emptyList()
         frames()
         assertSame(remoteState, checkNotNull(actions).state)
+        assertSame(remoteState, first.currentState())
     }
 
     private fun withComposition(block: suspend RuntimeComposition.() -> Unit) = runBlocking {

@@ -33,7 +33,7 @@ internal fun KugouHomePage(
     onRecent: () -> Unit,
     onRefreshRecommendations: () -> Unit,
     onOpenCollection: (SourceCollection) -> Unit, onPlayCollection: (SourceCollection) -> Unit,
-    onPlayTrack: (SourceTrackDetails) -> Unit,
+    onPlayTrack: (page: List<SourceTrackDetails>, index: Int) -> Unit,
 ) {
     val list = rememberLazyListState()
     if (reportScroll) rootUi.ReportScroll("home") {
@@ -68,8 +68,12 @@ internal fun KugouHomePage(
             recommendations.forEach { section ->
                 item(section.id) {
                     Box(Modifier.fillMaxWidth()) {
-                        shelves.SongShelf(section.id, section.title, section.tracks.chunked(3),
-                            player, showFavorites = true, edgeInsetDp = gutter.value, onClick = onPlayTrack)
+                        val pages = section.tracks.chunked(3)
+                        shelves.SongShelf(section.id, section.title, pages,
+                            player, showFavorites = true, edgeInsetDp = gutter.value, onClick = { track ->
+                                // 公共货架只回传点击的一首，这里找回它所在的那一页。
+                                kugouShelfPageOf(pages, track)?.let { (page, index) -> onPlayTrack(page, index) }
+                            })
                         KugouHomeRefresh(state.loadingHome, "刷新推荐", onRefreshRecommendations,
                             Modifier.align(Alignment.TopEnd).offset(y = (-10).dp))
                     }
@@ -134,4 +138,13 @@ internal fun KugouHomeRefresh(loading: Boolean, label: String, onRefresh: () -> 
         if (loading) CircularProgressIndicator(Modifier.size(18.dp), color = color, strokeWidth = 2.dp)
         else Icon(Icons.Rounded.Refresh, label, modifier = Modifier.size(20.dp))
     }
+}
+
+/** 找到歌曲所在的货架页及页内位置；同一首歌在多页出现时取第一次。 */
+internal fun kugouShelfPageOf(pages: List<List<SourceTrackDetails>>, track: SourceTrackDetails): Pair<List<SourceTrackDetails>, Int>? {
+    pages.forEach { page ->
+        val index = page.indexOfFirst { it.stableId == track.stableId }
+        if (index >= 0) return page to index
+    }
+    return null
 }

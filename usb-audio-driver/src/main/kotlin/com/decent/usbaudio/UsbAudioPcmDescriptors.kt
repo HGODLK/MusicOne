@@ -6,6 +6,9 @@ internal data class UsbPcmDescriptor(
 )
 
 internal data class UsbClockDescriptor(val controls: Int)
+
+/** UAC2 Feature Unit；channelControls[0] 为主声道，其余为逻辑声道。 */
+internal data class UsbFeatureUnit(val controlInterface: Int, val unitId: Int, val channelControls: List<Int>)
 internal data class UsbRateRange(val min: Int, val max: Int, val step: Int) {
     fun contains(rate: Int): Boolean = rate in min..max &&
         (if (step == 0) rate == min else (rate.toLong() - min) % step == 0L)
@@ -17,6 +20,9 @@ internal class UsbAudioPcmDescriptors(raw: ByteArray) {
     val clocks = mutableMapOf<Pair<Int, Int>, UsbClockDescriptor>()
     private val terminals = mutableMapOf<Pair<Int, Int>, Int>()
     private val selectors = mutableMapOf<Pair<Int, Int>, List<Int>>()
+    private val featureUnits = mutableMapOf<Pair<Int, Int>, UsbFeatureUnit>()
+    // 音频实体（终端与单元）的上游来源，用于确认 Feature Unit 位于本路播放链路上。
+    private val sources = mutableMapOf<Pair<Int, Int>, List<Int>>()
 
     init {
         var control = -1
@@ -40,7 +46,21 @@ internal class UsbAudioPcmDescriptors(raw: ByteArray) {
                 when (subclass) {
                     1 -> when (u(2)) {
                         2 -> if (size >= 17) terminals[control to u(3)] = u(7)
-                        3 -> if (size >= 12) terminals[control to u(3)] = u(8)
+                        3 -> if (size >= 12) {
+                            terminals[control to u(3)] = u(8)
+                            sources[control to u(3)] = listOf(u(7))
+                        }
+                        4, 5 -> if (size >= 5 && size >= 5 + u(4))
+                            sources[control to u(3)] = (0 until u(4)).map { u(5 + it) }
+                        6 -> if (size >= 10 && (size - 6) % 4 == 0) {
+                            sources[control to u(3)] = listOf(u(4))
+                            featureUnits[control to u(3)] = UsbFeatureUnit(control, u(3), (0 until (size - 6) / 4).map {
+                                u(5 + it * 4) or (u(6 + it * 4) shl 8) or (u(7 + it * 4) shl 16) or (u(8 + it * 4) shl 24)
+                            })
+                        }
+                        7 -> if (size >= 7) sources[control to u(3)] = listOf(u(6))
+                        8, 9 -> if (size >= 7 && size >= 7 + u(6))
+                            sources[control to u(3)] = (0 until u(6)).map { u(7 + it) }
                         0x0a -> if (size >= 8) clocks[control to u(3)] = UsbClockDescriptor(u(5))
                         0x0b -> if (size >= 7 && size >= 7 + u(4))
                             selectors[control to u(3)] = (0 until u(4)).map { u(5 + it) }
@@ -60,6 +80,18 @@ internal class UsbAudioPcmDescriptors(raw: ByteArray) {
             }
             offset += size
         }
+    }
+
+    /** 只返回上游能追溯到该格式 USB 流输入终端的 Feature Unit，不碰录音等其他链路。 */
+    fun playbackFeatureUnits(format: UsbPcmDescriptor): List<UsbFeatureUnit> =
+        featureUnits.values.filter { unit ->
+            unit.controlInterface == format.controlInterface &&
+                reachesTerminal(format.controlInterface, unit.unitId, format.terminal, hashSetOf())
+        }
+
+    private fun reachesTerminal(control: Int, id: Int, terminal: Int, visited: MutableSet<Int>): Boolean {
+        if (!visited.add(id)) return false
+        return sources[control to id].orEmpty().any { it == terminal || reachesTerminal(control, it, terminal, visited) }
     }
 
     fun clockSource(format: UsbPcmDescriptor, selectedPin: (Int, Int) -> Int): Int? {

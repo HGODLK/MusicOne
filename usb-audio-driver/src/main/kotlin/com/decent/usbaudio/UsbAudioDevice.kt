@@ -147,6 +147,8 @@ class UsbAudioDevice private constructor(private val context: Context) {
      */
     /** Cached device info from the last successful openDevice() call. */
     private var cachedDeviceInfo: UsbAudioDeviceInfo? = null
+    private var hardwareVolume: UsbAudioHardwareVolume? = null
+    private var hidVolumeMonitor: UsbAudioHidVolumeMonitor? = null
 
     fun openDevice(device: UsbDevice): UsbAudioDeviceInfo? {
         // Return cached info if already open with valid connection
@@ -272,6 +274,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
         // Auto-detect Clock Source ID and best alt setting from USB descriptors
         val capabilities = UsbAudioPcmCapabilities(conn, device, interfaceId)
         pcmCapabilities = capabilities
+        hardwareVolume = UsbAudioHardwareVolume(conn)
         val best = capabilities.descriptors.formats.filter { it.interfaceId == interfaceId }.maxByOrNull { it.bits }
         val clockSourceId = capabilities.descriptors.clocks.keys.firstOrNull()?.second ?: -1
         val bestAlt = best?.altSetting ?: 1
@@ -344,6 +347,9 @@ class UsbAudioDevice private constructor(private val context: Context) {
      * Close the USB device and release all resources.
      */
     fun closeDevice() {
+        stopHidVolumeMonitor()
+        runCatching { hardwareVolume?.restore() }
+        hardwareVolume = null
         cachedDeviceInfo = null
         pcmCapabilities = null
         connection?.let { releaseInterfaces(it, claimedInterfaces) }
@@ -361,6 +367,45 @@ class UsbAudioDevice private constructor(private val context: Context) {
             Log.i(TAG, "Released USB interface ${iface.id}: $released")
         }
     }
+
+    /** 独占流启动前把播放链路的硬件音量推满并解除静音，原值在关闭设备时恢复。 */
+    fun maximizeHardwareVolume(profile: UsbAudioStreamProfile) {
+        val units = pcmCapabilities?.playbackFeatureUnits(profile).orEmpty()
+        runCatching { hardwareVolume?.maximize(units) }
+            .onFailure { Log.w(TAG, "硬件音量设置失败", it) }
+    }
+
+    /** 硬件音量模式：选定可调音量的功能单元并直接写入初始增益，其余单元推满；不支持时返回 null。 */
+    fun prepareHardwareGain(profile: UsbAudioStreamProfile, initialGain: Float = 1f): Float? {
+        val units = pcmCapabilities?.playbackFeatureUnits(profile).orEmpty()
+        return runCatching { hardwareVolume?.prepareAttenuation(units, initialGain) }
+            .onFailure { Log.w(TAG, "硬件音量准备失败", it) }.getOrNull()
+    }
+
+    /** 启动小尾巴机身 HID 音量键监听；无音量键 HID 接口时静默忽略。 */
+    @Synchronized fun startHidVolumeMonitor(onVolumeKey: (Int) -> Unit): Boolean {
+        stopHidVolumeMonitor()
+        val conn = connection ?: return false
+        val device = currentDevice ?: return false
+        val monitor = runCatching { UsbAudioHidVolumeMonitor.open(conn, device, onVolumeKey) }
+            .onFailure { Log.w(TAG, "启动 USB HID 音量键监听失败", it) }
+            .getOrNull() ?: return false
+        hidVolumeMonitor = monitor
+        monitor.start()
+        return true
+    }
+
+    /** 停止小尾巴 HID 音量键监听并归还 HID 接口给系统。 */
+    @Synchronized fun stopHidVolumeMonitor() {
+        hidVolumeMonitor?.let { monitor ->
+            hidVolumeMonitor = null
+            runCatching { monitor.stop() }
+        }
+    }
+
+    /** 按线性增益写入硬件音量（1 为推满，0 为静音），返回实际生效的增益；不支持或已关闭时返回 null。 */
+    fun setHardwareGain(gain: Float): Float? =
+        runCatching { hardwareVolume?.attenuate(gain) }.onFailure { Log.w(TAG, "硬件音量写入失败", it) }.getOrNull()
 
     fun setSampleRate(sampleRateHz: Int, profile: UsbAudioStreamProfile): Boolean =
         pcmCapabilities?.setRate(profile, sampleRateHz) == true

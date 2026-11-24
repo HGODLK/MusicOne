@@ -16,7 +16,7 @@ internal fun AnimationFrameRateSettings() {
 @Composable
 private fun AnimationFrameRateSelector(title: String, selected: AnimationFrameRate,
                                       onSelect: (AnimationFrameRate) -> Unit) {
-    PlaybackSettingsMenuButton("$title · ${selected.label}", title,
+    SettingsMenuRow(title, selected.label,
         AnimationFrameRate.entries.map { rate ->
             PlaybackSettingsMenuOption(rate.label, rate == selected) { onSelect(rate) }
         })

@@ -41,6 +41,23 @@ class KugouCollectionTracksTest {
         .put("hash", "hash-$index").put("hq_hash", "high-$index").put("filename", "歌手 - 歌曲$index")
         .put("album_audio_id", index).put("album_id", 8).put("duration", 180) }
 
+    @Test fun peekReadsOnlyMatchingVersionAndInvalidatingOneListKeepsOthers() = runBlocking {
+        val cache = Storage().cache()
+        val first = target(id = "3")
+        val second = target(id = "4")
+        assertNull(cache.peek("42", 1, first) {})
+        cache.read("42", 1, first, {}, { rows() })
+        cache.read("42", 1, second, {}, { rows() })
+        cache.clearMemory()
+        assertEquals(3, cache.peek("42", 1, first) {}?.count)
+        // 目录版本变化后旧快照不能当作当前内容。
+        assertNull(cache.peek("42", 1, target(version = 6, id = "3")) {})
+        cache.invalidate("42", "3")
+        assertNull(cache.peek("42", 1, first) {})
+        assertEquals(3, cache.peek("42", 1, second) {}?.count)
+        assertTrue(cache.peek("42", 1, second) {}!!.favoriteTrackIds().contains("kugou-hash-1"))
+    }
+
     @Test fun cachedFavoritesRemainReadableWhileCloudRefreshIsWaiting() = runBlocking {
         for (coldMemory in listOf(false, true)) {
             val cache = Storage().cache()

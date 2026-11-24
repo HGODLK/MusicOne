@@ -89,6 +89,9 @@ interface SourceHost {
     fun enqueueDetailed(tracks: List<SourceTrackDetails>, playNext: Boolean = false) { error("宿主未提供队列操作") }
     // 首页推荐歌曲点击：由宿主按用户设置决定开电台或插入当前队列。调用方须声明 minHostVersionCode ≥ 5。
     fun playRecommendation(track: SourceTrackDetails) { playDetailed(listOf(track)) }
+    // 首页货架点歌（带上同一页的歌曲）：开启或已在猜你喜欢时从 startIndex 起按顺序入队，上面的不入队；
+    // 用户开着“保持队列”时只插入点击的一首。调用方须声明 minHostVersionCode ≥ 6。
+    fun playRecommendations(tracks: List<SourceTrackDetails>, startIndex: Int) { playRecommendation(tracks[startIndex]) }
     fun prepareSourceStorage(sourceId: String, context: Context) {}
     // 包启动的独立任务须登记取消回调；移除后不能继续提交账号、分页或资料结果。
     fun registerTask(cancel: () -> Unit): AutoCloseable = AutoCloseable { }

@@ -75,7 +75,7 @@ internal fun QueueRow(index: Int, track: MusicTrack, current: Boolean, playing: 
                 exit = androidx.compose.animation.fadeOut(musicMotion(180)) + androidx.compose.animation.shrinkHorizontally(musicMotion(220))) {
                 QueuePlayingIndicator(playing && current, sourceColor)
             }
-            if (menu != null) {
+            if (menu != null) QueueRowTrailing(track, interactive) {
                 if (interactive) androidx.compose.material3.IconButton(
                     onClick = { menu.open(track, anchor.value) },
                     modifier = Modifier.size(48.dp)) {

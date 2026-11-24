@@ -21,9 +21,12 @@ internal fun MiniPlayerBackdropScene(
     onBoundsChanged: (Rect) -> Unit,
     content: @Composable BoxScope.() -> Unit,
 ) {
+    val refresh = rememberLayerRefreshKey()
     Box(Modifier.fillMaxSize()
         .onGloballyPositioned { onBoundsChanged(it.boundsInRoot()) }
         .drawWithContent {
+            // 设置等覆盖页打开时整个场景经录制层绘制，回到前台必须重录，否则息屏久了会空白。
+            refresh.value
             if (capture) {
                 layer.record { this@drawWithContent.drawContent() }
                 drawLayer(layer)

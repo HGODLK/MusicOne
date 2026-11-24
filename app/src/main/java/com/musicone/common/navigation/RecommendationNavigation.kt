@@ -91,7 +91,7 @@ internal fun RecommendationDestination(
     ObserveLibraryPlaylist(navigation)
     navigation.playlist?.let { original ->
         val paging = catalog.playlists.entry(original)
-        val playlist = paging.page?.playlist ?: original
+        val playlist = paging.displayed ?: original
         val visuals = com.musicone.sourceintegration.SourcePackageController.get(context).running(playlist.source.id)?.entry?.visuals
         val visualRoute = com.musicone.source.sdk.SourceRoute("playlist", mapOf("id" to playlist.id, "owned" to playlist.isOwned.toString()))
         val visualFlow = remember(visuals, visualRoute) { visuals?.observe(visualRoute) }
@@ -105,7 +105,10 @@ internal fun RecommendationDestination(
         val pageActions = rememberPlaylistPageActions(catalog.playlists, paging, playlist, sort.value, viewModel) {
             navigation.cards.preparePlayback(navigation.motion.coverKey)
         }
-        androidx.compose.runtime.LaunchedEffect(pageActions) { pageActions.first() }
+        val detailCache = rememberPlaylistDetailCache(
+            playlistDetailCacheable(original, mainLibrary.createdPlaylists, mainLibrary.collectedPlaylists))
+        androidx.compose.runtime.LaunchedEffect(pageActions) { pageActions.firstWithCache(detailCache, original, accountId) }
+        PlaylistDetailCacheSaveEffect(paging, detailCache, accountId)
         androidx.compose.runtime.LaunchedEffect(paging.page) { paging.page?.playlist?.let(navigation::update) }
         androidx.compose.runtime.DisposableEffect(paging) {
             onDispose { catalog.playlists.release(playlist.id, paging) }
@@ -166,7 +169,8 @@ internal fun RecommendationDestination(
                     playlist = sorted,
                     state = state,
                     bottomInset = bottomInset,
-                    loading = paging.loading || loadingPlaylistId == playlist.id,
+                    // 已经在显示缓存时后台核对不算加载中。
+                    loading = (paging.loading && paging.cached == null) || loadingPlaylistId == playlist.id,
                     loadMessage = paging.error ?: loadMessage,
                     onBack = closePlaylist,
                     saved = if (supportsCollections) mainLibrary.collectedPlaylists.any { sameSourceCollection(it, playlist, sourceFavorites, accountId) } else playlist.id in savedPlaylistIds,
@@ -196,13 +200,15 @@ internal fun RecommendationDestination(
                 }
             }
             if (playlistVisual == null) {
-                val cover = sorted.tracks.firstOrNull()
+                // 占位的颜色和字只用歌单自己的，并与卡片、歌单页封面一样居中绘制：
+                // 借第一首歌的会随排序和加载变化，偏离中心则起飞和落地各跳一下。
                 FlyingPlaylistArtwork(
                     motion = navigation.motion,
                     imageUrl = sorted.artworkUrl,
-                    start = cover?.artworkStart ?: sorted.artworkStart,
-                    end = cover?.artworkEnd ?: sorted.artworkEnd,
-                    mark = cover?.artworkMark ?: sorted.artworkMark,
+                    start = sorted.artworkStart,
+                    end = sorted.artworkEnd,
+                    mark = sorted.artworkMark,
+                    centeredMark = true,
                 )
             }
             }

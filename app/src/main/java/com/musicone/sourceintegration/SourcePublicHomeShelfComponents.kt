@@ -20,7 +20,7 @@ internal class SourcePublicHomeShelfComponents(private val access: SourcePublicC
                     page.map { MainSourceHomeCard.Song(it.toMusicTrack(), "") }
                 }),
                 player.stableTrackId, player.isPlaying,
-                access.valueEvent { song: MusicTrack -> byId[song.id]?.let(onClick) }, showFavorites,
+                access.valueEvent { song: MusicTrack -> byId[song.id]?.let(onClick) }.asHomeTrackPageClick(), showFavorites,
                 modifier.mainSourceRecommendationEdgeLayout(edgeInset), edgeInset,
             )
         }

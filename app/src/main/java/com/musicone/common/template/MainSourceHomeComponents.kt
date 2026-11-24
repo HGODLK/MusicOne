@@ -108,21 +108,17 @@ internal fun MainSourceDailyCard(
     val shape = RoundedCornerShape(24.dp)
     val motion = LocalPlaylistMotion.current
     val transition = LocalPlaylistCardTransition.current
-    val requester = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
     val artwork by rememberArtworkBitmap(playlist.artworkUrl)
     var visualArtwork by remember { mutableStateOf<Bitmap?>(null) }
     val effectiveArtwork = visualArtwork ?: artwork
     Surface(
-        modifier = modifier.fillMaxHeight().bringIntoViewRequester(requester).clip(shape).clickable(
+        modifier = modifier.fillMaxHeight().clip(shape).clickable(
             enabled = transition?.busy != true && motion?.mounted != true,
             onClickLabel = "打开每日推荐",
         ) {
             if (transition == null || playlist.tracks.isEmpty()) onClick()
-            else transition.open(playlist.id, effectiveArtwork, {
-                // 与下方歌单一致：先把来源卡完整露出，再开始共享元素动画。
-                requester.bringIntoView()
-                repeat(2) { androidx.compose.runtime.withFrameNanos { } }
-            }, onClick)
+            // 被挡住一部分也直接起飞，飞行按可见块裁剪，不再先滚动露出。
+            else transition.open(playlist.id, effectiveArtwork, {}, onClick)
         },
         shape = shape,
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -138,6 +134,7 @@ internal fun MainSourceDailyCard(
                     motion,
                     playlist.id,
                     false,
+                    partial = true,
                     corner = 24f,
                     markSize = 62f,
                     markX = 0f,
@@ -215,13 +212,14 @@ internal fun MainSourcePlaylistCard(
     reorderState: PlaylistCardReorderState? = null,
     showPlay: Boolean = true,
     openEnabled: Boolean = true,
+    // 播放按钮的额外可见度：歌单多选时随之淡出，按钮仍占位，标题不重新换行。
+    playVisibility: (() -> Float)? = null,
 ) {
     val shape = RoundedCornerShape(20.dp)
     var cardBounds by remember { mutableStateOf(Rect.Zero) }
     val displayedArtwork = remember { arrayOfNulls<List<ArtworkBlendSnapshot>>(1) }
     val motion = LocalPlaylistMotion.current
     val transition = LocalPlaylistCardTransition.current
-    val requester = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
     val requestedArtwork by rememberArtworkBitmap(
         playlist.artworkUrl,
         artworkVersion?.takeIf { it > 0L },
@@ -230,7 +228,7 @@ internal fun MainSourcePlaylistCard(
     // 直接观察加载状态，封面从磁盘或网络完成后无需依赖点击触发再次组合。
     val artwork = requestedArtwork ?: ArtworkRepository.peek(playlist.artworkUrl, artworkMaxSide)
     BoxWithConstraints(
-        modifier.widthIn(max = width).aspectRatio(1f).bringIntoViewRequester(requester).clip(shape)
+        modifier.widthIn(max = width).aspectRatio(1f).clip(shape)
             .onGloballyPositioned {
                 // 被顶部裁掉的卡片仍保留完整原点，退回时由原视口恢复遮挡。
                 cardBounds = Rect(it.positionInRoot(), Size(it.size.width.toFloat(), it.size.height.toFloat()))
@@ -246,10 +244,7 @@ internal fun MainSourcePlaylistCard(
             } },
             onClick = {
             if (transition == null || !sharedTransition) onClick()
-            else transition.open(sourceKey, artwork, {
-                requester.bringIntoView()
-                repeat(2) { androidx.compose.runtime.withFrameNanos { } }
-            }, onClick)
+            else transition.open(sourceKey, artwork, {}, onClick)
         }),
     ) {
         PlaylistSyncedArtwork(
@@ -262,6 +257,7 @@ internal fun MainSourcePlaylistCard(
                 motion,
                 sourceKey,
                 false,
+                partial = true,
                 corner = 20f,
                 markSize = 48f,
                 markX = 0f,
@@ -311,7 +307,7 @@ internal fun MainSourcePlaylistCard(
         if (showPlay) Surface(
             onClick = { if (sharedTransition) transition?.preparePlayback(sourceKey); onPlay() },
             modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).size(42.dp).graphicsLayer {
-                alpha = transition?.alphaFor(sourceKey) ?: 1f
+                alpha = (transition?.alphaFor(sourceKey) ?: 1f) * (playVisibility?.invoke()?.coerceIn(0f, 1f) ?: 1f)
             },
             shape = CircleShape,
             color = Color.White.copy(alpha = .94f),

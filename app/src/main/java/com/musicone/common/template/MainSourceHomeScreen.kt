@@ -159,7 +159,7 @@ internal fun MainSourceHomeScreen(
                     edgeInset = if (maxWidth < 600.dp) gutter else 0.dp,
                     currentTrackId = state.currentTrack?.id,
                     playing = state.isPlaying,
-                    onTrackClick = viewModel::playRecommendationTrack,
+                    onTrackClick = viewModel::playRecommendationTracks,
                     onRefresh = {
                         today = homeRefreshDay()
                         homeRefresh.refresh(true)
@@ -238,7 +238,7 @@ internal fun MainSourceHomeScreen(
                 }
             }
             */
-            mainSourceHomeItems(feed, state.currentTrack?.id, state.isPlaying, viewModel::playRecommendationTrack,
+            mainSourceHomeItems(feed, state.currentTrack?.id, state.isPlaying, viewModel::playRecommendationTracks,
                 actions, feedViewModel::retry, feedExitProgress,
                 footerBottomInset = bottomInset, artworkSizes = artworkSizes,
                 edgeInset = if (maxWidth < 600.dp) gutter else 0.dp)

@@ -15,7 +15,7 @@ internal class KugouCollectionService(
     private val catalog: KugouSourceCatalog,
     private val client: KugouCollectionClient = KugouCollectionClient(),
     private val publicCollections: KugouPublicCollectionClient = KugouPublicCollectionClient(),
-) : SourceCollections, SourceFavorites, SourceCollectionEditing, SourceCollectionCachePolicy, SourceCollectionReturnBehavior, SourceCollectionFavoritePolicy, SourceLibraryChanges {
+) : SourceCollections, SourceFavorites, SourceCollectionEditing, SourceCollectionMembership, SourceCollectionCachePolicy, SourceCollectionReturnBehavior, SourceCollectionFavoritePolicy, SourceLibraryChanges {
     private val changes = kotlinx.coroutines.flow.MutableSharedFlow<SourceLibraryChange>(extraBufferCapacity = 1,
         onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST)
     override val libraryChanges = changes as kotlinx.coroutines.flow.Flow<SourceLibraryChange>
@@ -112,14 +112,47 @@ internal class KugouCollectionService(
             } else catalog.tracks(collection, request).withKugouAlbumCollectionMetadata(collection)
         }
 
+    // 宿主“添加到歌单”的刷新会紧接着为每个歌单核对归属，目录确认结果在这段时间内共用，不重复请求。
     override suspend fun writableCollections(): List<SourceCollection> = state().request { captured ->
-        accountDirectory(captured).filter { it.writable }.map { mapped(it, captured) }
+        verifiedDirectory(captured).filter { it.writable }.map { mapped(it, captured) }
+    }
+
+    override suspend fun cachedWritableCollections(): List<SourceCollection>? = state().request { captured ->
+        directory.peek(captured.cookie.requiredKugouSession().userId, captured.generation, beforeWrite(captured))
+            ?.filter { it.writable }?.map { mapped(it, captured) }
+    }
+
+    /** 归属用快照里的歌曲 hash 判断：CACHE_FIRST 只读本地目录与版本一致的快照；REFRESH 先确认目录，只重拉 list_ver 变了的歌单。 */
+    override suspend fun containedTracks(collection: SourceCollection, tracks: List<SourceTrackDetails>,
+        policy: SourceFetchPolicy): Set<String>? = state().request { captured ->
+        requireAccount(collection, captured.cookie)
+        val owner = captured.cookie.requiredKugouSession().userId
+        val guard = beforeWrite(captured)
+        val snapshot = if (policy == SourceFetchPolicy.CACHE_FIRST) {
+            val target = directory.peek(owner, captured.generation, guard)?.firstOrNull { it.playlist.id == collection.stableId }
+                ?: return@request null
+            collectionTracks.peek(owner, captured.generation, target, guard) ?: return@request null
+        } else {
+            val target = verifiedDirectory(captured).firstOrNull { it.playlist.id == collection.stableId }
+                ?: error("此云歌单已不存在，请刷新资料库")
+            trackSnapshot(captured, target)
+        }
+        val ids = snapshot.favoriteTrackIds(guard)
+        state().check(captured)
+        tracks.filter { it.track.identity.sourceId == KUGOU_SOURCE_ID && kugouTrackIdentities(it).any(ids::contains) }
+            .mapTo(hashSetOf()) { it.stableId }
+    }
+
+    private suspend fun verifiedDirectory(captured: KugouAccountRequest): List<KugouManagedCollection> {
+        val guard = beforeWrite(captured)
+        return directory.refreshed(captured.cookie.requiredKugouSession().userId, captured.generation,
+            DIRECTORY_VERIFY_WINDOW_MS, guard) { client.library(captured.cookie, guard) }
     }
 
     override suspend fun create(edit: SourceCollectionEdit): SourceCollection = state().request { captured ->
         validateEdit(edit)
         val beforeIds = freshDirectory(captured).mapTo(mutableSetOf()) { it.listId }
-        val id = writing(captured) { beforeWrite -> client.create(captured.cookie, edit.title.trim(), beforeWrite) }
+        val id = writing(captured, emptySet()) { beforeWrite -> client.create(captured.cookie, edit.title.trim(), beforeWrite) }
         state().check(captured)
         var target = confirmKugouCreatedCollection {
             kugouCreatedCollection(beforeIds, freshDirectory(captured), edit.title.trim(), id)
@@ -127,7 +160,7 @@ internal class KugouCollectionService(
         if (edit.description.isNotBlank()) {
             currentCoroutineContext().ensureActive()
             state().check(captured)
-            writing(captured) { beforeWrite -> client.edit(captured.cookie, target, edit.title.trim(), edit.description, beforeWrite) }
+            writing(captured, setOf(target.listId)) { beforeWrite -> client.edit(captured.cookie, target, edit.title.trim(), edit.description, beforeWrite) }
             target = target.copy(playlist = target.playlist.copy(description = edit.description))
         }
         mapped(target, captured)
@@ -138,7 +171,7 @@ internal class KugouCollectionService(
             validateEdit(edit)
             val target = writable(captured, collection)
             state().check(captured)
-            writing(captured) { beforeWrite -> client.edit(captured.cookie, target, edit.title.trim(), edit.description, beforeWrite) }
+            writing(captured, setOf(target.listId)) { beforeWrite -> client.edit(captured.cookie, target, edit.title.trim(), edit.description, beforeWrite) }
             mapped(target.copy(playlist = target.playlist.copy(title = edit.title.trim(),
                 description = edit.description.ifBlank { target.playlist.description })), captured)
         }
@@ -146,7 +179,7 @@ internal class KugouCollectionService(
     override suspend fun delete(collection: SourceCollection): Unit = state().request { captured ->
         val target = writable(captured, collection)
         state().check(captured)
-        writing(captured) { beforeWrite -> client.delete(captured.cookie, target, beforeWrite) }
+        writing(captured, setOf(target.listId)) { beforeWrite -> client.delete(captured.cookie, target, beforeWrite) }
     }
 
     override suspend fun changeTracks(collection: SourceCollection, tracks: List<SourceTrackDetails>, add: Boolean): Unit =
@@ -154,13 +187,13 @@ internal class KugouCollectionService(
             val target = writable(captured, collection)
             val values = tracks.map(KugouSourceMapping::track)
             state().check(captured)
-            writing(captured) { beforeWrite -> client.changeTracks(captured.cookie, target, values, add, beforeWrite) }
+            writing(captured, setOf(target.listId)) { beforeWrite -> client.changeTracks(captured.cookie, target, values, add, beforeWrite) }
         }
 
     override suspend fun reorder(collection: SourceCollection, orderedTrackIds: List<String>): Unit = state().request { captured ->
         val target = writable(captured, collection)
         state().check(captured)
-        writing(captured) { beforeWrite -> client.reorder(captured.cookie, target, orderedTrackIds, beforeWrite) }
+        writing(captured, setOf(target.listId)) { beforeWrite -> client.reorder(captured.cookie, target, orderedTrackIds, beforeWrite) }
     }
 
     override suspend fun favoriteTrackIds(): Set<String> = state().request { captured ->
@@ -174,8 +207,7 @@ internal class KugouCollectionService(
     }
     override suspend fun isTrackFavorite(track: SourceTrackDetails): Boolean {
         require(track.track.identity.sourceId == KUGOU_SOURCE_ID) { "此操作只接受酷狗歌曲" }
-        val hashes = (KugouSourceMapping.track(track).qualityIds.values + track.track.identity.remoteId)
-            .map { "kugou-${it.removePrefix("kugou-").lowercase()}" }.toSet()
+        val hashes = kugouTrackIdentities(track)
         return favoriteTrackIds().any { it in hashes }
     }
     override suspend fun setTrackFavorite(track: SourceTrackDetails, favorite: Boolean): Unit =
@@ -184,7 +216,7 @@ internal class KugouCollectionService(
         val values = tracks.map(KugouSourceMapping::track)
         val target = favorites(captured, fresh = true)
         state().check(captured)
-        writing(captured) { beforeWrite -> client.changeTracks(captured.cookie, target, values, favorite, beforeWrite) }
+        writing(captured, setOf(target.listId)) { beforeWrite -> client.changeTracks(captured.cookie, target, values, favorite, beforeWrite) }
     }
 
     override suspend fun setCollectionFavorite(collection: SourceCollection, favorite: Boolean): Unit = state().request { captured ->
@@ -206,12 +238,12 @@ internal class KugouCollectionService(
                 val origin = if ((creator.isBlank() || creatorList.isBlank()) && gid.isNotBlank())
                     client.origin(captured.cookie, gid) else metadata
                 state().check(captured)
-                writing(captured) { beforeWrite -> client.collect(captured.cookie, collection.title, origin.optString("list_create_userid"),
+                writing(captured, emptySet()) { beforeWrite -> client.collect(captured.cookie, collection.title, origin.optString("list_create_userid"),
                     origin.optString("list_create_listid"), gid, beforeWrite) }
             }
         } else if (existing != null) {
             require(existing.savedPlaylist) { "此歌单不是收藏副本" }
-            writing(captured) { beforeWrite -> client.delete(captured.cookie, existing, beforeWrite) }
+            writing(captured, setOf(existing.listId)) { beforeWrite -> client.delete(captured.cookie, existing, beforeWrite) }
         } else {
             require(gid.isNotBlank() || (creator.isNotBlank() && creatorList.isNotBlank())) { "缺少收藏来源编号，请刷新后重试" }
         }
@@ -283,13 +315,20 @@ internal class KugouCollectionService(
         }
     }
 
-    internal suspend fun <T> writing(captured: KugouAccountRequest, operation: (beforeWrite: () -> Unit) -> T): T {
+    /**
+     * 写入后目录一律失效（各歌单 list_ver 随之更新）；歌曲快照只删 [affected] 中的歌单，其余歌单靠 list_ver 校验继续复用，
+     * 避免加一首歌就让所有歌单整单重拉。[affected] 为 null 表示无法确定，按旧行为全部失效。
+     */
+    internal suspend fun <T> writing(captured: KugouAccountRequest, affected: Set<String>? = null,
+        operation: (beforeWrite: () -> Unit) -> T): T {
         val guard = beforeWrite(captured)
         return try { operation(guard) }
         finally { withContext(NonCancellable) {
+            val owner = captured.cookie.requiredKugouSession().userId
             artworkPreparation.clear()
-            directory.invalidate(captured.cookie.requiredKugouSession().userId, captured.generation)
-            collectionTracks.invalidate(captured.cookie.requiredKugouSession().userId)
+            directory.invalidate(owner, captured.generation)
+            if (affected == null) collectionTracks.invalidate(owner)
+            else affected.forEach { collectionTracks.invalidate(owner, it) }
             artwork.invalidate(captured.cookie.requiredKugouSession().userId)
             changed(captured.cookie.requiredKugouSession().userId)
         } }
@@ -328,3 +367,10 @@ internal fun kugouCreatedCollection(beforeIds: Set<String>, after: List<KugouMan
     return (if (responseId != null) candidates.singleOrNull { it.listId == responseId } else candidates.singleOrNull())
         ?: throw kugouCreateUnconfirmed()
 }
+
+/** 一首歌的全部档位 hash 与远端编号，与快照里 `kugouFavoriteHash()` 的口径一致。 */
+internal fun kugouTrackIdentities(track: SourceTrackDetails): Set<String> =
+    (KugouSourceMapping.track(track).qualityIds.values + track.track.identity.remoteId)
+        .map { "kugou-${it.removePrefix("kugou-").lowercase()}" }.toSet()
+
+private const val DIRECTORY_VERIFY_WINDOW_MS = 30_000L

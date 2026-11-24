@@ -36,4 +36,11 @@ class MainSourceAccessPresentationTest {
         val vip = TrackAccessInfo(TrackAccessBadge.MEMBERSHIP)
         assertEquals("vip", mainSourceAccessPresentation(MusicSource.QQ, vip, null)!!.text)
     }
+
+    @Test fun lastKnownMemberHidesVipUntilVerifiedButKeepsPurchase() {
+        val vip = TrackAccessInfo(TrackAccessBadge.MEMBERSHIP)
+        assertNull(mainSourceAccessPresentation(MusicSource.QQ, vip, null, assumeMember = true))
+        val purchase = TrackAccessInfo(TrackAccessBadge.PURCHASE)
+        assertEquals("付费", mainSourceAccessPresentation(MusicSource.QQ, purchase, null, assumeMember = true)!!.text)
+    }
 }

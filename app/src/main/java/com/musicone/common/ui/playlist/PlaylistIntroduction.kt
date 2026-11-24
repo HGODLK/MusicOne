@@ -51,9 +51,10 @@ internal fun PlaylistCover(
                 PlaylistSyncedArtwork(
                     artwork,
                     imageUrl?.isNotBlank() == true && artwork == null,
-                    track?.artworkStart ?: playlist.artworkStart,
-                    track?.artworkEnd ?: playlist.artworkEnd,
-                    track?.artworkMark ?: playlist.artworkMark,
+                    // 第一首歌只借封面图片；占位的颜色和字固定用歌单自己的，各处保持一致。
+                    playlist.artworkStart,
+                    playlist.artworkEnd,
+                    playlist.artworkMark,
                     Modifier.fillMaxSize(),
                     markSize,
                     RectangleShape,

@@ -9,7 +9,7 @@ import com.musicone.source.subsonic.internal.*
  * 页面全部使用宿主公共主模板，包内只提供资料、播放和服务器管理页。
  */
 class SubsonicSourceEntry : SourceEntry {
-    override val descriptor = SourceDescriptor(SUBSONIC_SOURCE_ID, "Subsonic", SourceKind.MAIN, 1, "0.1",
+    override val descriptor = SourceDescriptor(SUBSONIC_SOURCE_ID, "Subsonic", SourceKind.MAIN, 2, "0.2",
         setOf(SourceCapability.HOME, SourceCapability.SEARCH, SourceCapability.ACCOUNT, SourceCapability.PLAYBACK,
             SourceCapability.PLAYLIST, SourceCapability.ARTIST, SourceCapability.ALBUM, SourceCapability.RADIO,
             SourceCapability.LYRICS), useCustomPages = false, requiresLogin = true,
@@ -51,7 +51,8 @@ class SubsonicSourceEntry : SourceEntry {
         val home = SubsonicHomeFeed(client, urls)
         catalogService = SubsonicCatalogService(requests, client, urls, home, SubsonicDailyStore(environment.context))
         entityService = SubsonicEntityService(requests, client, urls)
-        library = SubsonicLibraryService(requests, client, urls)
+        library = SubsonicLibraryService(requests, client, urls,
+            SubsonicPlaylistMembership(java.io.File(environment.dataDirectory, "playlist-membership")))
         playbackService = SubsonicPlaybackService(requests, client, urls, home)
         lyricService = SubsonicLyricService(requests, client)
         page = SubsonicLoginPage(auth) { host.contentUi?.components?.forSource(SUBSONIC_SOURCE_ID) }

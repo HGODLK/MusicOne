@@ -16,7 +16,7 @@ internal fun setQqPlaylistCollected(cookie: String, playlist: MusicPlaylist, col
         mapOf(
             "Referer" to "https://y.qq.com/",
             "Origin" to "https://y.qq.com",
-            "User-Agent" to "QQMusic 2005000982(android 14)",
+            "User-Agent" to QQ_ANDROID_USER_AGENT,
         ),
     )
     requireQqPlaylistCollectionSuccess(JSONObject(response.text), id)

@@ -87,5 +87,44 @@ class PlaybackQueueRemovalTest {
         assertNull(playbackQueueRemovalPlan(before, tracks[0].copy(source = MusicSource.LOCAL)))
     }
 
+    @Test fun batchRemovalUpdatesOnceAndSkipsToFirstKeptSuccessor() {
+        val queue = (1..6).map { track("qq-$it") }
+        val states = MutableStateFlow(MusicOneUiState(currentTrack = queue[1], queue = queue, isPlaying = true))
+        var started: MusicTrack? = null
+        var updates = 0
+        PlaybackQueueRemoval(states, { next, remaining -> started = next; updates++; states.value = remaining },
+            { fail("队列未空") }, { fail("切曲自行保存") }).removeAll(listOf(queue[1], queue[2], queue[3]))
+        assertEquals(queue[4], started)
+        assertEquals(1, updates)
+        assertEquals(listOf(queue[0], queue[4], queue[5]), states.value.queue)
+    }
+
+    @Test fun batchRemovalOfTailWrapsToFirstAndOthersSaveOnce() {
+        val states = MutableStateFlow(MusicOneUiState(currentTrack = tracks[3], queue = tracks))
+        var started: MusicTrack? = null
+        PlaybackQueueRemoval(states, { next, remaining -> started = next; states.value = remaining },
+            { fail("队列未空") }, { fail("切曲自行保存") }).removeAll(listOf(tracks[2], tracks[3]))
+        assertEquals(tracks[0], started)
+        var saves = 0
+        val others = MutableStateFlow(MusicOneUiState(currentTrack = tracks[0], queue = tracks))
+        PlaybackQueueRemoval(others, { _, _ -> fail("不能切歌") }, { fail("不能停止播放") }, { saves++ })
+            .removeAll(listOf(tracks[1], tracks[2], tracks[3]))
+        assertEquals(1, saves)
+        assertEquals(listOf(tracks[0]), others.value.queue)
+    }
+
+    @Test fun removingEverythingClearsPlaybackOnceAndCollapsesPlayer() {
+        val states = MutableStateFlow(MusicOneUiState(currentTrack = tracks[0], queue = tracks, isPlaying = true,
+            playerExpanded = true))
+        var clears = 0
+        PlaybackQueueRemoval(states, { _, _ -> fail("不能切歌") }, { clears++ }, { fail("清空不单独保存") })
+            .removeAll(tracks)
+        assertEquals(1, clears)
+        assertNull(states.value.currentTrack)
+        assertTrue(states.value.queue.isEmpty())
+        assertFalse(states.value.playerExpanded)
+        assertFalse(states.value.isPlaying)
+    }
+
     private fun track(id: String) = MusicTrack(id, MusicSource.QQ, "歌曲", "歌手", "", 240_000, 0, 0, "", "")
 }

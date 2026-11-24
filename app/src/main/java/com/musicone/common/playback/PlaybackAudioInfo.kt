@@ -3,6 +3,9 @@ package com.musicone
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+internal data class PlaybackAudioSnapshot(val codec: String?, val sampleRate: Int, val bitDepth: Int,
+    val bitrate: Int, val summary: String)
+
 /** 已解析的格式先显示，解码器参数到达后补齐；迟到结果只更新自己的缓存。 */
 internal object PlaybackAudioInfo {
     private data class Details(val header: String? = null, val mergeDecoded: Boolean = false,
@@ -16,11 +19,15 @@ internal object PlaybackAudioInfo {
     val validation = validated.asStateFlow()
     private val mutable = MutableStateFlow<Pair<String, String>?>(null)
     val current = mutable.asStateFlow()
+    private val mutableSnapshot = MutableStateFlow<PlaybackAudioSnapshot?>(null)
+    /** 与 current 同步的结构化参数，供音源播放页读取。 */
+    val snapshot = mutableSnapshot.asStateFlow()
 
     @Synchronized fun activate(url: String?) {
         activeUrl = url
         validated.value = null
         mutable.value = url?.let { value -> details[value]?.let { value to describe(it) } }
+        mutableSnapshot.value = url?.let { details[it] }?.let(::snapshotOf)
     }
 
     @Synchronized fun verify(url: String, full: Boolean) {
@@ -46,8 +53,14 @@ internal object PlaybackAudioInfo {
     }
 
     private fun refresh(url: String) {
-        if (activeUrl == url) details[url]?.let { mutable.value = url to describe(it) }
+        if (activeUrl == url) details[url]?.let {
+            mutable.value = url to describe(it)
+            mutableSnapshot.value = snapshotOf(it)
+        }
     }
+
+    private fun snapshotOf(info: Details) = PlaybackAudioSnapshot(info.codec ?: info.header,
+        info.sampleRate, info.bitDepth, info.bitrate.takeIf { it > 0 } ?: info.hintedBitrate, describe(info))
 
     private fun describe(info: Details): String {
         if (!info.mergeDecoded && info.header != null) return info.header

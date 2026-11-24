@@ -1,5 +1,6 @@
 package com.musicone
 
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
@@ -51,7 +52,11 @@ private fun PlaylistRecommendationsContent(playlists: List<MusicPlaylist>, edgeI
     BoxWithConstraints(Modifier.mainSourceRecommendationEdgeLayout(edgeInset).fillMaxWidth()) {
         val gap = 14.dp
         val layout = recommendationShelfCardLayout(maxWidth.value, edgeInset.value)
+        val rowState = rememberLazyListState()
         LazyRow(
+            // 滑到尽头后继续朝外滑交给根页面切页。
+            modifier = Modifier.rootPageEdgeSwipe(rowState),
+            state = rowState,
             horizontalArrangement = Arrangement.spacedBy(gap),
             contentPadding = contentPadding,
             userScrollEnabled = LocalPlaylistMotion.current?.mounted != true && LocalPlaylistCardTransition.current?.busy != true,

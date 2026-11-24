@@ -50,6 +50,7 @@ private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
     val mainSearchState by mainSearchViewModel.state.collectAsStateWithLifecycle()
     val backdropLayer = rememberGraphicsLayer()
     val entitySceneLayer = rememberGraphicsLayer()
+    val layerRefresh = rememberLayerRefreshKey()
     val miniBackdropUpdates = rememberMiniPlayerBackdropUpdates()
     val mainSearchMotion = rememberMainSourceSearchMotion(mainSearchState, backdropLayer)
     val mainSearchMounted by rememberMainSourceSearchMounted(mainSearchMotion)
@@ -77,6 +78,7 @@ private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
     val settingsNavigation = rememberSettingsNavigation()
     val entityNavigation = rememberEntityNavigation()
     val pageInteraction = remember { PageInteractionActivity() }
+    val rootSwipeLocks = remember { RootPageSwipeLocks() }
     val settingsMotion = rememberPageMotion(false, enterAnimation = PlayerEnterAnimation, exitAnimation = PlayerReturnAnimation)
     LaunchedEffect(platformState.selectedSource, platformState.account?.userId) { entityNavigation.clear() }
     val barMeasurements = remember { BottomBarMeasurements() }
@@ -150,11 +152,16 @@ private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
 
     val queueState = rememberPlayerQueueState()
     val phonePresentation = rememberPhonePlayerPresentation(navigation.playerExpanded, playerMotion, queueState)
-    val sourcePlayer = com.musicone.sourceintegration.rememberSourcePlayerMotion(viewModel, playerMotion, phonePresentation)
+    val sourcePlayer = com.musicone.sourceintegration.rememberSourcePlayerMotion(viewModel, playerMotion, phonePresentation,
+        platformState.selectedSource)
     PhonePlayerSystemBars(phonePresentation.rotationDegrees != 0 && !phonePresentation.relatedPages && playerMotion.mounted)
+    DesktopLyricsPresenceEffect(playerMotion.mounted)
     PlaybackNoticePlacementEffect(playerMotion.mounted, phonePresentation.rotationDegrees, rootVisible, barMeasurements)
 
     com.musicone.sourceintegration.SourcePublicPageSessionHost {
+    // 根页面左右滑动的启用条件；页面内横向货架滑到尽头时交接给根页面也用同一条件。
+    val rootSwipeEnabled = rootVisible && !publicRootSearch.mounted && (!sourcePages.isCustom || sourcePages.atRoot)
+    val rootEdgeHandoff = rememberRootPageEdgeHandoff(rootNavigation, rootSwipeEnabled, rootSwipeLocks)
     androidx.compose.runtime.CompositionLocalProvider(
         LocalPhonePlayerRotation provides phonePresentation.rotationDegrees,
         LocalPhonePlayerPresentation provides phonePresentation,
@@ -170,6 +177,8 @@ private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
         LocalEntityNavigation provides entityNavigation,
         LocalUnifiedBack provides true,
         LocalPageInteraction provides pageInteraction,
+        LocalRootPageSwipeLocks provides rootSwipeLocks,
+        LocalRootPageEdgeHandoff provides rootEdgeHandoff,
         LocalEntityActive provides entityNavigation.pages.isEmpty(),
         LocalRecommendationVisible provides (settingsNavigation.destination == SettingsDestination.CLOSED &&
             !mainSearchMounted && !recommendationNavigation.motion.mounted && entityNavigation.pages.isEmpty()),
@@ -187,6 +196,7 @@ private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
             favoriteViewModel::toggleDeferredRemoval,
             favoriteViewModel::flushDeferredRemovals,
             currentState = { favoriteViewModel.state.value },
+            setFavorite = favoriteViewModel::setFavorite,
         )),
     ) {
         PlatformMusicTheme(
@@ -217,6 +227,7 @@ private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
                     .playerStableStatusBarsPadding()
                     .onGloballyPositioned { backdropBounds = it.boundsInRoot() }
                     .drawWithContent {
+                        layerRefresh.value
                         if (refreshPlayerBackdrop.value) {
                             backdropLayer.record {
                                 drawRect(if (immersiveSourceSurface) Color.Transparent else pageBackground)
@@ -238,7 +249,9 @@ private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
                             }
                         } else HorizontalPager(
                             state = rootNavigation.pagerState,
-                            modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds(),
+                            // 分页器自身不接收拖动，空白处的左右滑动由 rootPageSwipe 接管，子组件的横向操作优先。
+                            modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds()
+                                .rootPageSwipe(rootNavigation, rootSwipeEnabled),
                             beyondViewportPageCount = 1,
                             userScrollEnabled = false,
                             key = { MusicOnePage.entries[it] },
@@ -372,7 +385,7 @@ private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
                         motionVisibility = {
                             primaryHeaderMotionVisibility(
                                 publicScene?.playlists?.motion?.value ?: recommendationNavigation.motion.value,
-                                playerMotion.value,
+                                playerMotion.coverage,
                             )
                         },
                         modifier = Modifier.playerStableStatusBarsPadding().align(Alignment.TopCenter),

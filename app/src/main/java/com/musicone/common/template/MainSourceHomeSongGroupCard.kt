@@ -27,7 +27,7 @@ internal fun MainSourceHomeSongGroupCard(
     card: MainSourceHomeCard.SongGroup,
     currentTrackId: String?,
     playing: Boolean,
-    onTrackClick: (MusicTrack) -> Unit,
+    onTrackClick: HomeTrackPageClick,
     modifier: Modifier = Modifier,
 ) {
     val tracks = card.tracks.take(3)
@@ -49,12 +49,12 @@ internal fun MainSourceHomeSongGroupCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            tracks.forEach { track ->
+            tracks.forEachIndexed { index, track ->
                 MainSourceHomeSongGroupRow(
                     track = track,
                     current = track.id == currentTrackId,
                     playing = playing && track.id == currentTrackId,
-                    onClick = { onTrackClick(track) },
+                    onClick = { onTrackClick(tracks, index) },
                 )
             }
         }

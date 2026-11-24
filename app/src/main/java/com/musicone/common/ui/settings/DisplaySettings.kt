@@ -1,84 +1,107 @@
 package com.musicone
 
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
+/** 一级分组“显示”：歌词、播放页、外观与动效、页面与底栏四个二级分组。 */
 @Composable
 internal fun DisplaySettings() {
     val options = ExperiencePreferences.options
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("显示与动态", style = MaterialTheme.typography.headlineSmall)
-        AppFontSettings()
-        LyricDisplayContentSettings()
-        LyricFontSizeSettings()
-        AnimationFrameRateSettings()
-        DisplaySetting("关闭横屏播放页", "开启后内置手机播放页固定竖屏，不影响平板和音源自定义播放页",
-            PhonePlayerPreferences.disableLandscapePlayer) {
-            PhonePlayerPreferences.updateDisableLandscapePlayer(it)
+    SettingsSection("显示") {
+        SettingsGroup("歌词") {
+            LyricDisplayContentSettings()
+            LyricFontSizeSettings()
+            DisplaySetting("关闭未播放歌词模糊", "歌词保持清晰，不虚化未播放行", options.disableLyricBlur) {
+                ExperiencePreferences.update(options.copy(disableLyricBlur = it))
+            }
+            DisplaySetting("关闭逐字歌词渐亮", "改为整行同步高亮", !options.verbatimLyricAnimation) {
+                ExperiencePreferences.update(options.copy(verbatimLyricAnimation = !it))
+            }
+            DesktopLyricsSettings()
         }
-        DisplaySetting("锁定竖屏时仍允许横屏播放", "仅手机播放页生效，关闭后跟随系统自动旋转开关",
-            PhonePlayerPreferences.allowLandscapeWhenRotationLocked) {
-            PhonePlayerPreferences.updateAllowLandscapeWhenRotationLocked(it)
+        SettingsGroup("播放页") {
+            DisplaySetting("关闭横屏播放页", "手机播放页固定竖屏，不随横屏切换",
+                PhonePlayerPreferences.disableLandscapePlayer) {
+                PhonePlayerPreferences.updateDisableLandscapePlayer(it)
+            }
+            DisplaySetting("锁定竖屏时仍允许横屏播放", "忽略系统方向锁定，横拿手机仍可切换横屏播放页",
+                PhonePlayerPreferences.allowLandscapeWhenRotationLocked) {
+                PhonePlayerPreferences.updateAllowLandscapeWhenRotationLocked(it)
+            }
+            DisplaySetting("交换歌词和播放列表按钮", "仅内置播放页生效",
+                PhonePlayerPreferences.swapBottomActions) {
+                PhonePlayerPreferences.updateSwapBottomActions(it)
+            }
+            DisplaySetting("播放页紧凑模式", "缩小底部控件，给封面和歌词留出更多空间",
+                options.compactPlayerControls) {
+                ExperiencePreferences.update(options.copy(compactPlayerControls = it))
+            }
+            ScreenOnSetting()
         }
-        DisplaySetting("交换歌词和播放列表按钮", "第三方音源自定义的播放页不生效",
-            PhonePlayerPreferences.swapBottomActions) {
-            PhonePlayerPreferences.updateSwapBottomActions(it)
+        SettingsGroup("外观与动效") {
+            AppFontSettings()
+            AnimationFrameRateSettings()
+            DisplaySetting("始终使用深色模式", "开启后固定深色，关闭则跟随系统", options.alwaysDark) {
+                ExperiencePreferences.update(options.copy(alwaysDark = it))
+            }
+            DisplaySetting("关闭模糊效果", "改用纯色背景，减少性能消耗", options.disableBlur) {
+                ExperiencePreferences.update(options.copy(disableBlur = it))
+            }
+            DisplaySetting("关闭播放控件及顶部模糊", "播放控件与顶栏改用纯色渐隐，不影响歌词模糊", options.disablePlayerControlsBlur) {
+                ExperiencePreferences.update(options.copy(disablePlayerControlsBlur = it))
+            }
+            DisplaySetting("减弱动态效果", "减少界面位移和背景流动动画", options.reduceMotion) {
+                ExperiencePreferences.update(options.copy(reduceMotion = it))
+            }
         }
-        DisplaySetting("播放页紧凑模式", "缩小底部播放控件，给封面和歌词留出更多空间，第三方音源自定义的播放页不生效",
-            options.compactPlayerControls) {
-            ExperiencePreferences.update(options.copy(compactPlayerControls = it))
-        }
-        DisplaySetting("始终使用深色模式", "打开后始终为深色，关闭后跟随系统", options.alwaysDark) {
-            ExperiencePreferences.update(options.copy(alwaysDark = it))
-        }
-        DisplaySetting("关闭模糊效果", "使用清晰底色，降低图形负担", options.disableBlur) {
-            ExperiencePreferences.update(options.copy(disableBlur = it))
-        }
-        DisplaySetting("关闭播放控件及顶部模糊", "保留渐隐过渡，不影响未播放歌词模糊", options.disablePlayerControlsBlur) {
-            ExperiencePreferences.update(options.copy(disablePlayerControlsBlur = it))
-        }
-        DisplaySetting("关闭未播放歌词模糊", "仅影响未播放歌词，不影响播放控件模糊", options.disableLyricBlur) {
-            ExperiencePreferences.update(options.copy(disableLyricBlur = it))
-        }
-        DisplaySetting("关闭逐字歌词明暗动态", "打开后关闭逐字明暗动态，歌词整行高亮", !options.verbatimLyricAnimation) {
-            ExperiencePreferences.update(options.copy(verbatimLyricAnimation = !it))
-        }
-        DisplaySetting("减弱动态效果", "减少页面位移和持续流动效果", options.reduceMotion) {
-            ExperiencePreferences.update(options.copy(reduceMotion = it))
-        }
-        DisplaySetting("关闭推荐页音乐卡片彩色效果", "保留封面，卡片背景使用中性色", options.disableCardColors) {
-            ExperiencePreferences.update(options.copy(disableCardColors = it))
-        }
-        DisplaySetting("“我喜欢”卡片改为左右并排", "仅手机生效，使用公共模板的音源可用，平板和音源自定义页面不生效",
-            options.phoneSideBySideLibraryCards) {
-            ExperiencePreferences.update(options.copy(phoneSideBySideLibraryCards = it))
-        }
-        DisplaySetting("隐藏综合歌单", "“我的”页不再显示综合歌单卡片，仍可在本地音乐页进入；音源不支持我喜欢时仍会显示", options.hideUnifiedPlaylist) {
-            ExperiencePreferences.update(options.copy(hideUnifiedPlaylist = it))
+        SettingsGroup("页面与底栏") {
+            DisplaySetting("关闭推荐卡片取色", "保留封面，卡片背景改用素色", options.disableCardColors) {
+                ExperiencePreferences.update(options.copy(disableCardColors = it))
+            }
+            DisplaySetting("“我喜欢”卡片改为左右并排", "手机端“我喜欢”与歌单卡片并排显示",
+                options.phoneSideBySideLibraryCards) {
+                ExperiencePreferences.update(options.copy(phoneSideBySideLibraryCards = it))
+            }
+            DisplaySetting("隐藏综合歌单", "不在“我的”页显示综合歌单，仍可从本地音乐进入", options.hideUnifiedPlaylist) {
+                ExperiencePreferences.update(options.copy(hideUnifiedPlaylist = it))
+            }
+            // 关闭胶囊后经典布局没有意义，“经典底栏”收起（保存的选择不改）；反转始终可用，经典或无胶囊时只镜像播放条。
+            DisplaySetting("隐藏底部导航栏", "隐藏后可在页面空白处左右滑动切换",
+                options.hideNavigationCapsule) {
+                ExperiencePreferences.update(options.copy(hideNavigationCapsule = it))
+            }
+            SettingsReveal(!options.hideNavigationCapsule) {
+                DisplaySetting("经典底栏", "播放条在上、导航栏在下的双层布局", options.classicBottomBar) {
+                    ExperiencePreferences.update(options.copy(classicBottomBar = it))
+                }
+            }
+            val mirrorOnlyMini = options.hideNavigationCapsule || bottomBarStyleFor(options).classic
+            DisplaySetting("反转底栏",
+                if (mirrorOnlyMini) "播放条左右镜像显示"
+                else "导航栏与播放条左右互换", options.reverseBottomBar) {
+                ExperiencePreferences.update(options.copy(reverseBottomBar = it))
+            }
         }
     }
 }
 
+/** 随上级开关出现的设置项：高度展开、淡入并略微下滑；收起时反过来，下方设置项平滑上移。 */
 @Composable
-private fun DisplaySetting(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().toggleable(checked, role = Role.Switch, onValueChange = onChange)
-        .padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        MusicOneSettingsSwitch(checked)
+internal fun SettingsReveal(visible: Boolean, content: @Composable () -> Unit) {
+    AnimatedVisibility(visible,
+        enter = expandVertically(musicMotion(300)) + fadeIn(musicMotion(240)) + slideInVertically(musicMotion(300)) { -it / 5 },
+        exit = shrinkVertically(musicMotion(260)) + fadeOut(musicMotion(180)) + slideOutVertically(musicMotion(260)) { -it / 5 }) {
+        Column { content() }
     }
 }
+
+@Composable
+private fun DisplaySetting(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) =
+    SettingsSwitchRow(title, subtitle, checked, onChange)

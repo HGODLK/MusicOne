@@ -24,12 +24,13 @@ internal class PlaylistSearchState {
     }
 }
 
+/**
+ * 搜索的展开与输入只在页面存活期间保留，不随页面状态保存：
+ * 滑动手势直接退出时不经过“先收起搜索”的返回逻辑，保存后重新进入会恢复成输入状态。
+ */
 @Composable
 internal fun rememberPlaylistSearchState(playlistId: String): PlaylistSearchState =
-    androidx.compose.runtime.saveable.rememberSaveable(playlistId, saver = androidx.compose.runtime.saveable.listSaver<PlaylistSearchState, Any>(
-        save = { listOf(it.expanded, it.query) },
-        restore = { values -> PlaylistSearchState().apply { expanded = values[0] as Boolean; query = values[1] as String } },
-    )) { PlaylistSearchState() }
+    remember(playlistId) { PlaylistSearchState() }
 
 internal fun List<MusicTrack>.matchingPlaylistQuery(query: String): List<MusicTrack> {
     val keyword = query.trim()

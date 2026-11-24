@@ -12,8 +12,9 @@ internal class SubsonicLibraryService(
     private val requests: SubsonicRequests,
     private val client: SubsonicClient,
     private val urls: SubsonicArtworkUrls,
+    private val membership: SubsonicPlaylistMembership,
 ) : SourceCollections, SourceFavorites, SourceCollectionFavoritePolicy, SourceCollectionEditing,
-    SourceCollectionDetailsEditing, SourceCollectionRemoteOrder {
+    SourceCollectionDetailsEditing, SourceCollectionRemoteOrder, SourceCollectionMembership {
 
     override val librarySections = setOf(SourceLibrarySection.FAVORITE_TRACKS, SourceLibrarySection.CREATED_COLLECTIONS,
         SourceLibrarySection.SAVED_COLLECTIONS)
@@ -130,7 +131,31 @@ internal class SubsonicLibraryService(
     // ---- 歌单编辑 ----
 
     override suspend fun writableCollections(): List<SourceCollection> = requests.current { server ->
-        playlists(server).filter { (it.owner.isBlank() || it.owner == server.username) && !it.readonly }.map { it.collection(server, urls) }
+        val all = playlists(server)
+        val writable = all.filter { (it.owner.isBlank() || it.owner == server.username) && !it.readonly }
+        membership.saveTargets(server.key, writable, all)
+        writable.map { it.collection(server, urls) }
+    }
+
+    override suspend fun cachedWritableCollections(): List<SourceCollection>? = requests.current { server ->
+        membership.targets(server.key)?.map { it.collection(server, urls) }
+    }
+
+    /** CACHE_FIRST 只读本地索引；REFRESH 按 changed:songCount 只重拉变过的歌单。 */
+    override suspend fun containedTracks(collection: SourceCollection, tracks: List<SourceTrackDetails>,
+        policy: SourceFetchPolicy): Set<String>? {
+        val ref = collection.ownedPlaylist()
+        val wanted = tracks.mapNotNull { track ->
+            runCatching { track.subsonicRef() }.getOrNull()
+                ?.takeIf { it.serverKey == null || it.serverKey == ref.serverKey }?.let { it.id to track.stableId }
+        }
+        return requests.forServer(ref.serverKey) { server ->
+            val ids = if (policy == SourceFetchPolicy.CACHE_FIRST) membership.cached(server.key, ref.id) ?: return@forServer null
+            else membership.refresh(server.key, ref.id, { playlists(server) }) {
+                playlistDetail(server, ref.id).second.mapTo(hashSetOf()) { it.id }
+            }
+            wanted.filter { it.first in ids }.mapTo(hashSetOf()) { it.second }
+        }
     }
 
     override suspend fun create(edit: SourceCollectionEdit): SourceCollection =
@@ -169,6 +194,7 @@ internal class SubsonicLibraryService(
                 edit.description?.let { add("comment" to it.trim()) }
             }
             client.get(server, "updatePlaylist", parameters)
+            membership.applyWrite(server.key, ref.id, emptySet(), add = null)
             playlist.copy(name = title, comment = edit.description?.trim() ?: playlist.comment).collection(server, urls)
         }
     }
@@ -178,6 +204,7 @@ internal class SubsonicLibraryService(
         requests.forServer(ref.serverKey) { server ->
             requireOwned(server, playlistDetail(server, ref.id).first)
             client.get(server, "deletePlaylist", listOf("id" to ref.id))
+            membership.invalidate(server.key, ref.id)
             snapshots.remove("${server.key}|${ref.kind}|${ref.id}"); Unit
         }
     }
@@ -200,6 +227,8 @@ internal class SubsonicLibraryService(
                 if (indexes.isNotEmpty()) client.post(server, "updatePlaylist",
                     listOf("playlistId" to ref.id) + indexes.map { "songIndexToRemove" to it.toString() })
             }
+            // 删除按编号移除全部重复项，所以索引里直接整体增减。
+            membership.applyWrite(server.key, ref.id, ids.toSet(), add)
             snapshots.remove("${server.key}|${ref.kind}|${ref.id}"); Unit
         }
     }
@@ -232,6 +261,7 @@ internal class SubsonicLibraryService(
             val byStableId = songs.associateBy { trackStableId(server.key, it.id) }
             val ordered = orderedTrackIds.map { byStableId.getValue(it).id }
             client.post(server, "createPlaylist", listOf("playlistId" to ref.id) + ordered.map { "songId" to it })
+            membership.applyWrite(server.key, ref.id, emptySet(), add = null)
             snapshots.remove("${server.key}|${ref.kind}|${ref.id}"); snapshots.remove("order|${server.key}|${ref.id}"); Unit
         }
     }

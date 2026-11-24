@@ -74,13 +74,6 @@ internal class PlaylistCardTransition(
 
 internal data class PlaylistCardViewport(
     val height: Dp = 0.dp,
-    val reveal: suspend (() -> androidx.compose.ui.geometry.Rect) -> Unit = {},
 )
-
-internal fun playlistScrollDistance(card: androidx.compose.ui.geometry.Rect, viewport: androidx.compose.ui.geometry.Rect): Float = when {
-    card.top < viewport.top -> card.top - viewport.top
-    card.bottom > viewport.bottom -> card.bottom - viewport.bottom
-    else -> 0f
-}
 internal val LocalPlaylistCardTransition = staticCompositionLocalOf<PlaylistCardTransition?> { null }
 internal val LocalPlaylistCardViewport = compositionLocalOf { PlaylistCardViewport() }

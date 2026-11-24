@@ -1,7 +1,11 @@
 package com.musicone
 
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.foundation.gestures.horizontalDrag
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -83,20 +87,32 @@ private fun StackedLibraryCards(first: MusicPlaylist, second: MusicPlaylist, onO
                     cancelled || transition?.blocksCardSwipe == true, selected)
                 swipe.select(target, -speed / size.width.coerceAtLeast(1))
             }
-            detectHorizontalDragGestures(
-                onDragStart = {
-                    distance = 0f; velocity.resetTracking()
-                    accepted = transition?.blocksCardSwipe != true
-                    if (accepted) swipe.begin()
-                },
-                onDragEnd = { settle(false) }, onDragCancel = { settle(true) },
-            ) { change, delta ->
-                if (accepted && transition?.blocksCardSwipe != true) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                var overSlop = 0f
+                // 已在第一张时右滑、已在第二张时左滑没有可去的卡片，不消费，交给根页面切到首页。
+                val start = awaitHorizontalTouchSlopOrCancellation(down.id) { change, over ->
+                    val towardsSecond = over < 0f
+                    val possible = swipe.moving || (if (towardsSecond) swipe.value < .999f else swipe.value > .001f)
+                    if (possible && transition?.blocksCardSwipe != true) { change.consume(); overSlop = over }
+                } ?: return@awaitEachGesture
+                // 与原先一样只计越过触摸阈值之后的位移，起手不跳。
+                distance = overSlop; velocity.resetTracking()
+                velocity.addPosition(start.uptimeMillis, start.position)
+                accepted = transition?.blocksCardSwipe != true
+                if (!accepted) return@awaitEachGesture
+                swipe.begin()
+                swipe.move(distance, size.width.toFloat())
+                val completed = horizontalDrag(start.id) { change ->
+                    if (transition?.blocksCardSwipe == true) return@horizontalDrag
+                    // 必须先读位移再消费，消费后 positionChange 恒为零，卡片会卡在起手位置。
+                    val delta = change.positionChange().x
                     change.consume()
                     velocity.addPosition(change.uptimeMillis, change.position)
                     distance += delta
                     swipe.move(distance, size.width.toFloat())
                 }
+                settle(!completed)
             }
         }) {
             listOf(first, second).forEachIndexed { index, playlist ->

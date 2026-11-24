@@ -25,12 +25,14 @@ internal fun MusicLibrarySettingsScreen(onBack: () -> Unit, bottomInset: Dp) {
                     Column(Modifier.weight(1.1f), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                         LibraryFileImportSettings(ui)
                         LibraryDirectorySettings(ui)
+                        LibraryOrganizeSettings(ui)
                     }
                     Box(Modifier.weight(1f)) { LibraryArchiveSettings(ui) }
                 }
             } else {
                 item { LibraryFileImportSettings(ui) }
                 item { LibraryDirectorySettings(ui) }
+                item { LibraryOrganizeSettings(ui) }
                 item { LibraryArchiveSettings(ui) }
             }
             if (ui.busy) item {
@@ -39,7 +41,7 @@ internal fun MusicLibrarySettingsScreen(onBack: () -> Unit, bottomInset: Dp) {
                     LibraryActionButton("取消当前任务", ui::cancel, primary = false)
                 }
             }
-            ui.message?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
+            if (ui.message != null) item { LibraryTransientMessage(ui) }
         }
     }
 }

@@ -35,7 +35,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlin { jvmToolchain(17) }
+    kotlin {
+        // 工具链用 JDK 25，字节码仍按 Java 17 输出，与 compileOptions 保持一致。
+        jvmToolchain(25)
+        compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
+    }
 }
 
 dependencies {

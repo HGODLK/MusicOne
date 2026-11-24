@@ -1,0 +1,10 @@
+-keep class com.musicone.source.webdav.WebDavSourceEntry { *; }
+-repackageclasses com.musicone.source.webdav.privateimpl
+-dontwarn androidx.**
+-dontwarn kotlinx.coroutines.**
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn org.conscrypt.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.openjsse.**
+-dontwarn java.lang.invoke.**

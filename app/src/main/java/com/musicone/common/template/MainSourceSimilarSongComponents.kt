@@ -113,15 +113,16 @@ internal fun MainSourceSimilarSongGrid(
     favoriteIds: Set<String>,
     currentTrackId: String?,
     playing: Boolean,
-    onTrackClick: (MusicTrack) -> Unit,
+    onTrackClick: HomeTrackPageClick,
     onFavorite: (MusicTrack) -> Unit,
     favoriteMotion: PageTitleMotion,
     favoritesEnabled: Boolean,
 ) {
     Column(Modifier.fillMaxWidth().clipToBounds(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        songs.chunked(columns).forEach { rowSongs ->
+        val pageTracks = songs.map { it.track }
+        songs.chunked(columns).forEachIndexed { row, rowSongs ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                rowSongs.forEach { song ->
+                rowSongs.forEachIndexed { column, song ->
                     MainSourceSimilarSongRow(
                         song = song,
                         favorite = song.track.isMainSourceFavorite(favoriteIds),
@@ -129,7 +130,7 @@ internal fun MainSourceSimilarSongGrid(
                         favoriteEnabled = favoritesEnabled,
                         current = song.track.id == currentTrackId,
                         playing = playing && song.track.id == currentTrackId,
-                        onClick = { onTrackClick(song.track) },
+                        onClick = { onTrackClick(pageTracks, row * columns + column) },
                         onFavorite = { onFavorite(song.track) },
                         modifier = Modifier.weight(1f),
                     )

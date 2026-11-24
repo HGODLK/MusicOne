@@ -50,10 +50,11 @@ internal fun PlaylistFloatingTools(
     inlinePlacement: Boolean = false,
     searchLabel: String = "搜索歌单歌曲",
 ) {
-    val locateAlpha = animateFloatAsState(if (canLocate) 1f else .38f, musicMotion(220), label = "定位可用状态")
+    // 当前播放的歌曲不在本列表时整枚隐藏，开始播放列表内歌曲后再淡入；槽位保留，搜索按钮不动。
+    val locateAlpha = animateFloatAsState(if (canLocate) 1f else 0f, musicMotion(220), label = "定位可用状态")
     val locateVisibility = animateFloatAsState(if (state.expanded) 0f else 1f,
         musicMotion(if (state.expanded) 140 else 180), label = "定位按钮淡入淡出")
-    val locateInteractive = showLocate && !state.expanded && locateVisibility.value >= .999f
+    val locateInteractive = showLocate && canLocate && !state.expanded && locateVisibility.value >= .999f
     val searchExpansion = remember { Animatable(if (state.expanded) 1f else 0f) }
     val fieldWidth = motionLerp(52f, 236f, searchExpansion.value).dp
     val focusRequester = remember { FocusRequester() }
@@ -93,7 +94,7 @@ internal fun PlaylistFloatingTools(
         if (showLocate) {
             // 保留定位槽位，只改变透明度；按钮消失后搜索与整组工具的锚点不变。
             Box(Modifier.size(52.dp)) {
-                if (locateVisibility.value > 0f) MusicOneBackdropGlass(
+                if (locateVisibility.value > 0f && locateAlpha.value > 0f) MusicOneBackdropGlass(
                     backdropLayer = backdropLayer,
                     backdropBounds = backdropBounds,
                     modifier = Modifier.size(52.dp)

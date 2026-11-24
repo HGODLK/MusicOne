@@ -87,11 +87,16 @@ internal fun MusicLibraryHost(playback: MusicPlaybackRuntime, content: @Composab
         ui.removeFromQueue = playback::removeTracksFromQueue
     }
     val playbackActions = remember(playback) { LibraryPlaybackActions(playback::playTrack, { playback.playPlaylist(it) }) }
-    CompositionLocalProvider(LocalMusicLibraryUi provides ui, LocalLibraryPlaybackActions provides playbackActions) {
+    val selectionBar = remember { PlaylistSelectionBarHost() }
+    CompositionLocalProvider(LocalMusicLibraryUi provides ui, LocalLibraryPlaybackActions provides playbackActions,
+        LocalPlaylistSelectionBarHost provides selectionBar) {
         PlaybackSettingsMenuHost {
             Box(Modifier.fillMaxSize().onGloballyPositioned { bounds = it.boundsInRoot() }) {
-                Box(Modifier.fillMaxSize().playerQualityBackdropSnapshot(backdrop, ui.form != null || cropUri != null || ui.preview != null)) { content() }
+                Box(Modifier.fillMaxSize().playerQualityBackdropSnapshot(backdrop, ui.form != null || cropUri != null ||
+                    ui.preview != null || selectionBar.confirm != null)) { content() }
                 LibraryFormsOverlay(ui, backdrop, bounds)
+                // 歌单卡片批量操作的确认框，与上面的编辑弹窗共用同一张背景快照。
+                PlaylistBatchConfirmOverlay(selectionBar, backdrop, bounds)
                 cropUri?.let { uri ->
                     LibraryArtworkCrop(uri, backdrop, bounds, onDismiss = { cropUri = null; coverTarget = null }) { bitmap, selection ->
                         val target = coverTarget

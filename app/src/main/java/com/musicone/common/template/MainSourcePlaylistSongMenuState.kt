@@ -17,7 +17,10 @@ internal class MainSourcePlaylistSongMenuState(
     private val onlineRepository = PlatformPlaylistSongRepository(preferences.applicationContext)
     var removals = PlaylistRemovalActions()
     var writingTarget by mutableStateOf<String?>(null); private set
-    val additions = PlaylistAddMembership(PlaylistMembershipRepository(preferences)::members)
+    private val membership = PlaylistMembershipRepository(preferences)
+    val additions = PlaylistAddMembership(membership::cached, membership::members)
+    private val targetLoader = PlaylistAdditionTargetLoader(scope, preferences, onlineRepository)
+    val loadingTargets: Boolean get() = targetLoader.loading
     var track by mutableStateOf<MusicTrack?>(null)
         private set
     var anchor by mutableStateOf(Rect.Zero)
@@ -54,6 +57,7 @@ internal class MainSourcePlaylistSongMenuState(
     /** 长按收藏直达选择页，不先请求歌手资料，也不闪现一级菜单。 */
     fun openAddition(song: MusicTrack, bounds: Rect): Boolean {
         if (busy) return false
+        targetSources = null
         directAddition = true
         fromLyricsTitle = false
         track = song
@@ -70,14 +74,26 @@ internal class MainSourcePlaylistSongMenuState(
         return true
     }
 
+    // 为空时目标按所选歌曲的音源列出；播放列表多选只列本地歌单与当前主音源歌单。
+    private var targetSources: List<MusicSource>? = null
+
+    /** 播放列表多选：目标只列本地歌单与当前主音源歌单，其他音源的歌只能加入本地歌单。 */
+    fun openQueueBatch(songs: List<MusicTrack>, bounds: Rect) {
+        if (busy || songs.isEmpty()) return
+        openBatch(songs, bounds, chooseTargets = false)
+        targetSources = listOf(preferences.selectedSource())
+        choose()
+    }
+
     fun openBatch(songs: List<MusicTrack>, bounds: Rect, chooseTargets: Boolean = true) {
         if (busy || songs.isEmpty()) return
+        targetSources = null
         directAddition = false
         fromLyricsTitle = false
         track = songs.first(); batchTracks = songs.distinctBy { it.id }; anchor = bounds
         additions.reset(batchTracks)
         editing = false; choosingArtist = false; expanded = true; choosing = false; message = null
-        if (chooseTargets) choose()
+        if (chooseTargets) choose() else targetLoader.cancel()
     }
 
     fun openEditor() {
@@ -101,6 +117,7 @@ internal class MainSourcePlaylistSongMenuState(
 
     fun open(song: MusicTrack, bounds: Rect, fromLyricsTitle: Boolean = false) {
         if (busy) return
+        targetSources = null
         directAddition = false
         this.fromLyricsTitle = fromLyricsTitle
         track = song
@@ -112,6 +129,7 @@ internal class MainSourcePlaylistSongMenuState(
         message = null
         choosing = false
         choosingArtist = false
+        targetLoader.cancel()
         expanded = true
         if (!fromLyricsTitle && song.source != MusicSource.LOCAL && (song.artistRefs.isEmpty() || song.albumId.isBlank())) launchRequest {
             val entry = SourcePackageController.get(preferences.applicationContext).running(song.source.id)?.entry
@@ -123,26 +141,14 @@ internal class MainSourcePlaylistSongMenuState(
     fun dismiss() { if (!busy) expanded = false }
     fun back() { if (!busy) { if (editing) { editing = false; editForm = null } else if (choosingArtist) choosingArtist = false else if (choosing && batchTracks.isEmpty() && !directAddition) choosing = false else dismiss() } }
 
+    /** 先显示本地与音源缓存的歌单，再后台刷新替换；刷新不占用 busy，不锁住已显示的歌单。 */
     fun choose() {
         choosing = true
-        launchRequest {
-            val local = library?.state?.value?.manualAdditionTargets().orEmpty()
-            targets = local
-            val sources = (batchTracks.ifEmpty { listOfNotNull(track) }).map { it.source }.distinct()
-            val remote = buildList {
-                for (source in sources.filter { it != MusicSource.LOCAL }) {
-                    try {
-                        addAll(withContext(Dispatchers.IO) {
-                            val session = preferences.readSession(source)
-                            onlineRepository.targets(session)
-                        })
-                    } catch (cancelled: CancellationException) { throw cancelled }
-                    catch (_: Exception) { message = "部分平台歌单读取失败，仍可选择已加载的歌单" }
-                }
-            }
-            targets = (local + remote).distinctBy { it.id }
-            if (targets.isEmpty()) message = "暂无可添加的自建歌单"
-        }
+        message = null
+        val local = library?.state?.value?.manualAdditionTargets().orEmpty()
+        val sources = targetSources ?: (batchTracks.ifEmpty { listOfNotNull(track) }).map { it.source }.distinct()
+        targets = local
+        targetLoader.load(local, sources, onTargets = { targets = it }, onMessage = { message = it })
     }
 
     fun toggleTarget(target: MusicPlaylist, onChanged: (MusicPlaylist) -> Unit) {
@@ -156,7 +162,12 @@ internal class MainSourcePlaylistSongMenuState(
             return
         }
         val selected = if (add) songs.filterNot { it.id in present } else songs.filter { it.id in present }
-        if (selected.isEmpty()) return
+        // 在线歌单只收同音源的歌，多选里其他音源的歌直接跳过并说明。
+        val skipped = if (add && !live.isManagedLibrary) additions.selected.size - songs.size else 0
+        if (selected.isEmpty()) {
+            if (skipped > 0) message = "所选歌曲都不属于${target.source.label}，只能加入本地歌单"
+            return
+        }
         val writer = PlaylistSongWriter(preferences, requireNotNull(library))
         val session = preferences.readSession(target.source)
         writingTarget = target.id
@@ -167,6 +178,7 @@ internal class MainSourcePlaylistSongMenuState(
                     writer.changeAll(live, selected, add, session)
                     additions.confirm(target.id, selected, add)
                     completed = selected.size
+                    if (skipped > 0) message = "$skipped 首不属于${target.source.label}，已跳过"
                 } else {
                     for (song in selected) {
                         writer.change(live, song, add, session)

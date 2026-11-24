@@ -133,6 +133,22 @@ class QqSessionRenewalTest {
     }
 
     @Test
+    fun 强制续出的新票又被拒时冷却期内不再换票也不标记失效() = runBlocking {
+        var next = 0
+        val fixture = Fixture(stable, refresh = { "musicid=123456; musickey=new${++next}" })
+        val first = PlatformSession(MusicSource.QQ, stable, "device", account)
+        val renewed = requireNotNull(fixture.renewal.renewRejected(first))
+        assertTrue(fixture.renewal.recentlyForced(renewed.credential))
+        assertNull(fixture.renewal.renewRejected(renewed))
+        assertEquals(1, fixture.refreshes.get())
+        assertFalse(fixture.expired)
+        fixture.now += 10 * 60_000L
+        assertFalse(fixture.renewal.recentlyForced(renewed.credential))
+        assertEquals("musicid=123456; musickey=new2", fixture.renewal.renewRejected(renewed)?.credential)
+        assertEquals(2, fixture.refreshes.get())
+    }
+
+    @Test
     fun 只有登录票据错误算作被拒() {
         for (code in listOf(301, 401, 1000, 104400, 104401)) assertTrue(PlatformApiException("拒绝", code).rejectsQqCredential())
         assertTrue(QqCredentialExpiredException(104401, "测试").rejectsQqCredential())

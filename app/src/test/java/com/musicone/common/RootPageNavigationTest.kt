@@ -54,6 +54,19 @@ class RootPageNavigationTest {
     }
 
     @Test
+    fun rootSwipeSettlesByFlingDirectionOrNearestPage() {
+        // 慢速松手就近落位。
+        assertEquals(MusicOnePage.HOME, rootPageSwipeTarget(.3f, 0f, 600f))
+        assertEquals(MusicOnePage.MY, rootPageSwipeTarget(.7f, 0f, 600f))
+        // 快速甩动按方向翻页，哪怕只拖过一点。
+        assertEquals(MusicOnePage.MY, rootPageSwipeTarget(.1f, -900f, 600f))
+        assertEquals(MusicOnePage.HOME, rootPageSwipeTarget(.9f, 900f, 600f))
+        // 已在边界时不会越界。
+        assertEquals(MusicOnePage.MY, rootPageSwipeTarget(1f, -900f, 600f))
+        assertEquals(MusicOnePage.HOME, rootPageSwipeTarget(0f, 900f, 600f))
+    }
+
+    @Test
     fun primaryHeaderDispatchesHomeReselectionToTheVisibleFeed() {
         val state = PrimaryPageHeaderState()
         var requests = 0

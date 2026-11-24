@@ -37,6 +37,7 @@ internal fun BottomCapsule(
     navigationDragBlocked: () -> Boolean,
     queueState: PlayerQueueState,
     immersiveVisual: SourceBackdropVisual? = null,
+    capsuleMetrics: NavigationCapsuleMetrics? = null,
 ) {
     val primaryHeaderState = LocalPrimaryPageHeaderState.current
     val currentNavigationContact by rememberUpdatedState(onNavigationContact)
@@ -57,7 +58,10 @@ internal fun BottomCapsule(
             dragPosition = null
         }
     }
-    val metrics = navigationCapsuleMetrics(
+    // 并排底栏传入自己的尺寸，描边和模糊半径与迷你播放条取同一套；经典布局保持原样。
+    val rowStyle = capsuleMetrics != null
+    val lightTint = if (rowStyle) LocalBottomBarStyle.current.lightTint else .55f
+    val metrics = capsuleMetrics ?: navigationCapsuleMetrics(
         PhonePlayerOrientationPolicy.isPhone(LocalConfiguration.current.smallestScreenWidthDp),
     )
     Box(Modifier.fillMaxWidth().padding(top = metrics.topGap, bottom = metrics.bottomGap), contentAlignment = Alignment.Center) {
@@ -73,14 +77,18 @@ internal fun BottomCapsule(
             backdropBounds = backdropBounds,
             modifier = Modifier.width(metrics.width),
             shape = RoundedCornerShape(metrics.outerRadius),
-            blurRadius = 20.dp,
+            blurRadius = if (rowStyle) 18.dp else 20.dp,
             containerColor = immersiveVisual?.panelColor
-                ?: if (dark) Color(0xFF242526).copy(alpha = .82f) else Color.White.copy(alpha = .55f),
+                ?: if (dark) Color(0xFF242526).copy(alpha = .82f) else Color.White.copy(alpha = lightTint),
             fallbackColor = immersiveVisual?.panelColor
                 ?: if (dark) Color(0xFF242526) else Color(0xFFF3F4F6),
             border = androidx.compose.foundation.BorderStroke(
-                .8.dp,
-                immersiveVisual?.panelBorder ?: Color.White.copy(alpha = if (dark) .16f else .72f),
+                if (rowStyle) 1.dp else .8.dp,
+                immersiveVisual?.panelBorder ?: when {
+                    dark -> Color.White.copy(alpha = .16f)
+                    rowStyle -> Color(0xFFE0E2E6)
+                    else -> Color.White.copy(alpha = .72f)
+                },
             ),
         ) {
             Box(

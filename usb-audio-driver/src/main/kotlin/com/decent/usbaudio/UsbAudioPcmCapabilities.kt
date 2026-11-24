@@ -83,5 +83,9 @@ internal class UsbAudioPcmCapabilities(private val connection: UsbDeviceConnecti
         return connection.controlTransfer(0xa1, 1, 0x0200, index(profile), data, 1, 100) == 1 && (data[0].toInt() and 1) == 1
     }
 
+    fun playbackFeatureUnits(profile: UsbAudioStreamProfile): List<UsbFeatureUnit> =
+        descriptors.formats.firstOrNull { it.interfaceId == profile.interfaceId && it.altSetting == profile.altSetting }
+            ?.let(descriptors::playbackFeatureUnits).orEmpty()
+
     private fun index(profile: UsbAudioStreamProfile) = profile.controlInterfaceId or (profile.clockSourceId shl 8)
 }

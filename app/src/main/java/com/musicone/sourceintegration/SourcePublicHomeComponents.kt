@@ -17,7 +17,8 @@ internal class SourcePublicHomeComponents(private val access: SourcePublicCompon
         access.Host {
             MainSourceSimilarRecommendationSection(MainSourceSimilarRecommendationUiState(baseTrack?.toMusicTrack(),
                 pages.map { MainSourceSimilarRecommendation(it.baseTrack.toMusicTrack(), it.title, it.tracks.map { song -> MainSourceSimilarSong(song.toMusicTrack()) }) }, loading),
-                player.stableTrackId, player.isPlaying, { byId[it.id]?.let(click) }, access.event(onRefresh), modifier)
+                player.stableTrackId, player.isPlaying, { tracks, index -> tracks.getOrNull(index)?.let { byId[it.id] }?.let(click) },
+                access.event(onRefresh), modifier)
         }
     }
     private fun song(track: SourceTrackDetails, title: String = ""): MainSourceHomeCard.Song {
@@ -37,7 +38,7 @@ internal class SourcePublicHomeComponents(private val access: SourcePublicCompon
         val byId = tracks.associateBy { it.toMusicTrack().id }
         access.Host {
             MainSourceHomeSongGroup(MainSourceHomeCard.SongGroup(title, tracks.map { it.toMusicTrack() }),
-                player.stableTrackId, player.isPlaying, access.valueEvent { song: MusicTrack -> byId[song.id]?.let(onClick) }, modifier)
+                player.stableTrackId, player.isPlaying, access.valueEvent { song: MusicTrack -> byId[song.id]?.let(onClick) }.asHomeTrackPageClick(), modifier)
         }
     }
 
@@ -47,7 +48,8 @@ internal class SourcePublicHomeComponents(private val access: SourcePublicCompon
         val byId = pages.flatten().associateBy { it.toMusicTrack().id }
         access.Host {
             MainSourceHomeSongShelf(MainSourceHomeCard.SongShelf(id, title, pages.map { page -> page.map { song(it) } }),
-                player.stableTrackId, player.isPlaying, access.valueEvent { song: MusicTrack -> byId[song.id]?.let(onClick) }, showFavorites, modifier)
+                player.stableTrackId, player.isPlaying, access.valueEvent { song: MusicTrack -> byId[song.id]?.let(onClick) }.asHomeTrackPageClick(),
+                showFavorites, modifier)
         }
     }
 

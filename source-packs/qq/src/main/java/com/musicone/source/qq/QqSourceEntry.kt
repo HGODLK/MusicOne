@@ -3,12 +3,13 @@ package com.musicone.source.qq
 import androidx.compose.runtime.Composable
 import com.musicone.source.sdk.*
 import com.musicone.source.qq.internal.QqSessionRequestCoordinator
+import com.musicone.source.qq.internal.qqNetworkAvailability
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.filterNotNull
 
 /** QQ 协议与会话只在独立包内初始化，宿主使用公共模板展示资料。 */
 class QqSourceEntry : SourceEntry, SourceMembershipProvider {
-    override val descriptor = SourceDescriptor(QQ_SOURCE_ID, "QQ音乐", SourceKind.MAIN, 3, "1.2",
+    override val descriptor = SourceDescriptor(QQ_SOURCE_ID, "QQ音乐", SourceKind.MAIN, 4, "1.3",
         setOf(SourceCapability.HOME, SourceCapability.SEARCH, SourceCapability.ACCOUNT, SourceCapability.PLAYBACK,
             SourceCapability.PLAYLIST, SourceCapability.ARTIST, SourceCapability.ALBUM, SourceCapability.RADIO,
             SourceCapability.LYRICS), false, true,
@@ -38,7 +39,8 @@ class QqSourceEntry : SourceEntry, SourceMembershipProvider {
     override val lyricProvider: SourceLyricProvider get() = services
     override val trackTheme: SourceTrackTheme get() = services
     override fun initialize(environment: SourceEnvironment) {
-        auth = QqAuthentication(environment.context, environment.host::exitSource) { environment.host.reduceMotion }
+        auth = QqAuthentication(environment.context, environment.host::exitSource, { environment.host.reduceMotion },
+            onExpired = { reason -> environment.host.reportError("QQ 音乐登录失效：$reason") })
         services = QqServices(environment.context, auth)
         pages = QqPackagePages(auth)
         val jobs = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -52,6 +54,16 @@ class QqSourceEntry : SourceEntry, SourceMembershipProvider {
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) { }
             }
+        }
+        if (!environment.validationOnly) jobs.launch {
+            // 失效后的自动复核：只读本地状态判断是否到点，未失效时不联网。
+            val network = qqNetworkAvailability(environment.context) { auth.networkAvailable() }
+            try {
+                while (true) {
+                    delay(QQ_RECOVERY_TICK_MS)
+                    auth.recoverIfDue()
+                }
+            } finally { network?.close() }
         }
         jobs.launch {
             QqSessionRequestCoordinator.verification.filterNotNull().collect {
@@ -73,3 +85,4 @@ class QqSourceEntry : SourceEntry, SourceMembershipProvider {
 }
 
 private const val QQ_TICKET_CHECK_INTERVAL_MS = 5 * 60 * 1000L
+private const val QQ_RECOVERY_TICK_MS = 10_000L

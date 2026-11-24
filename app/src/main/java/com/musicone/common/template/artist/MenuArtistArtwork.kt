@@ -124,7 +124,7 @@ internal fun RetainedMenuArtistArtworkOverlay(state: MenuArtistArtworkState, fra
                     val progress = frame.motion.value
                     val excluded = frame.sourceKey.takeIf { frame.motion.hasSharedCover }
                     val offset = menuArtistHandoffOffset(bounds, frame.motion.hostBounds,
-                        with(density) { -20.dp.toPx() * progress })
+                        with(density) { -EntitySourceDrift.toPx() * progress })
                     translationX = offset.x.toFloat()
                     translationY = offset.y.toFloat()
                     alpha = if (frame.retainsMenuArtwork(state) &&

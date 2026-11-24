@@ -55,6 +55,8 @@ internal data class SubsonicPlaylist(
     val songCount: Int?,
     val coverArt: String,
     val readonly: Boolean,
+    // 服务器最后修改时间，用作歌单归属索引的版本；旧服务器可能不返回。
+    val changed: String = "",
 )
 
 /** 旧版服务器在只有一项时可能返回对象而不是数组，两种写法都接受。 */
@@ -104,8 +106,13 @@ internal fun JSONObject.artist(): SubsonicArtist? {
 internal fun JSONObject.playlist(): SubsonicPlaylist? {
     val id = text("id").ifBlank { return null }
     return SubsonicPlaylist(id, text("name"), text("comment"), text("owner"), optBoolean("public"),
-        count("songCount"), text("coverArt"), optBoolean("readonly"))
+        count("songCount"), text("coverArt"), optBoolean("readonly"), text("changed"))
 }
+
+/** 与 [playlist] 解析口径一致，供本地索引保存可写歌单。 */
+internal fun SubsonicPlaylist.toJson(): JSONObject = JSONObject().put("id", id).put("name", name).put("comment", comment)
+    .put("owner", owner).put("public", public).put("songCount", songCount ?: JSONObject.NULL).put("coverArt", coverArt)
+    .put("readonly", readonly).put("changed", changed)
 
 /** 专辑内按碟号、曲序排列；缺少曲序的保持服务器顺序。 */
 internal fun List<SubsonicSong>.inAlbumOrder(): List<SubsonicSong> =

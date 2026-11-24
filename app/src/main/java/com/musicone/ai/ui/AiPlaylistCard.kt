@@ -32,7 +32,7 @@ internal fun AiPlaylistCard(playlist: MusicPlaylist, onOpenPlaylist: (MusicPlayl
                 PlaylistSyncedArtwork(artwork, playlist.artworkUrl?.isNotBlank() == true && artwork == null,
                     playlist.artworkStart, playlist.artworkEnd, playlist.artworkMark,
                     Modifier.size(64.dp)
-                        .motionAnchor(motion, playlist.id, false, corner = 12f, markSize = 22f, markX = 0f, markY = 0f), 22.sp, RoundedCornerShape(12.dp), Alignment.Center,
+                        .motionAnchor(motion, playlist.id, false, partial = true, corner = 12f, markSize = 22f, markX = 0f, markY = 0f), 22.sp, RoundedCornerShape(12.dp), Alignment.Center,
                     sourceKey = playlist.id, imageUrl = playlist.artworkUrl)
                 Column(Modifier.weight(1f).padding(start = 12.dp).graphicsLayer {
                     alpha = transition?.alphaFor(playlist.id) ?: 1f

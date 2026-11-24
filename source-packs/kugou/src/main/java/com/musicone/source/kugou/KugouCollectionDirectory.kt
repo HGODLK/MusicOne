@@ -24,6 +24,7 @@ internal class KugouCollectionDirectory(private val directory: File, private val
     private var epoch = 0L
     private var snapshot: List<KugouManagedCollection>? = null
     private var validated = false
+    private var validatedAtMs = 0L
     private var backgroundStarted = false
     private var flight: Flight? = null
 
@@ -64,6 +65,25 @@ internal class KugouCollectionDirectory(private val directory: File, private val
         }
         return cached ?: fetch(userId, revision, selectedEpoch, check, load,
             reuseValidated = policy == SourceFetchPolicy.CACHE_FIRST)
+    }
+
+    /** 只读本地：本会话快照或磁盘快照，不联网；没有返回 null。 */
+    suspend fun peek(userId: String, revision: Long, check: () -> Unit): List<KugouManagedCollection>? = mutex.withLock {
+        currentCoroutineContext().ensureActive(); check(); select(userId, revision)
+        snapshot
+    }
+
+    /** 核对用：本会话 [maxAgeMs] 内联网确认过就复用，否则重新拉目录；并发调用合并为一次请求。 */
+    suspend fun refreshed(userId: String, revision: Long, maxAgeMs: Long, check: () -> Unit,
+        load: suspend () -> List<KugouManagedCollection>): List<KugouManagedCollection> {
+        val selected = mutex.withLock {
+            currentCoroutineContext().ensureActive(); check(); select(userId, revision)
+            if (validated && System.currentTimeMillis() - validatedAtMs < maxAgeMs) snapshot?.let { return it }
+            // 过期的确认不再复用，让 fetch 发起新请求；正在进行的请求仍会被合并。
+            validated = false
+            epoch
+        }
+        return fetch(userId, revision, selected, check, load, reuseValidated = true)
     }
 
     suspend fun current(userId: String, revision: Long, check: () -> Unit,
@@ -114,6 +134,7 @@ internal class KugouCollectionDirectory(private val directory: File, private val
                     store(userId, result)
                     snapshot = result
                     validated = true
+                    validatedAtMs = System.currentTimeMillis()
                     flight = null
                     active.result.complete(result)
                 }

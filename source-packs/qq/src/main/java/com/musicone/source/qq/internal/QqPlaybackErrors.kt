@@ -41,6 +41,13 @@ internal fun Throwable.stopsPlaybackFallback(): Boolean =
         this is QqSessionRequestException ||
         (this is PlatformApiException && apiCode in setOf(301, 401, 403, 429))
 
+/** 新票已通过账号校验仍被某接口拒绝：转成可重试的接口错误，不带登录失效码，避免被当成掉登录。 */
+internal fun Throwable.asQqEndpointRejection(reason: String): QqSessionRequestException {
+    val code = (this as? PlatformApiException)?.apiCode
+    QqSessionLog.record("接口拒绝（不判失效）：$reason，业务码=${code ?: "无"}")
+    return QqSessionRequestException("QQ 音乐暂时拒绝了这次请求，请稍后重试", null, "$reason，业务码=${code ?: "无"}")
+}
+
 /** 服务端明确拒绝登录票据；网络故障和风控不算。 */
 internal fun Throwable.rejectsQqCredential(): Boolean =
     this is PlatformApiException && (apiCode == 301 || apiCode == 401 || apiCode in QQ_CREDENTIAL_EXPIRED_CODES)
@@ -85,6 +92,7 @@ internal fun JSONObject.throwIfQqPlaybackItemsFailed(
     val codes = failed.map { it.second }.distinct().joinToString(",")
     val diagnostic = "来源=${origin.diagnosticName}，层级=midurlinfo，业务码=$codes，有地址=${qqHasPlaybackUrl(infos)}"
     qqDiagnostic(diagnostic)
+    QqSessionLog.record("业务失败：$diagnostic")
     if (qqHasPlaybackUrl(infos)) return
     throw QqPlaybackItemUnavailableException("QQ 音乐未返回当前歌曲或音质的播放地址", failed.first().second, diagnostic)
 }
@@ -105,6 +113,7 @@ private fun JSONObject.qqBusinessFailure(
     val invalidContext = rawMessage.substringAfterLast(';').trim().equals("invalid", ignoreCase = true)
     val diagnostic = "来源=${origin.diagnosticName}，层级=$level，业务码=$code，验证字段=${verificationField?.first ?: "无"}，提示invalid=$invalidContext"
     qqDiagnostic(diagnostic)
+    QqSessionLog.record("业务失败：$diagnostic")
     // 错误码与对应的可信入口必须同时存在；解析错误本身不改变播放会话。
     if (trustedUrl.isNotBlank()) {
         val challenge = PlatformSecurityChallenge(

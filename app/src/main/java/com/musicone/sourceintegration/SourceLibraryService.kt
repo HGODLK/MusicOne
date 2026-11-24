@@ -47,7 +47,7 @@ internal class SourceLibraryService(private val context: Context) : SourceLibrar
             try {
                 file.parentFile?.mkdirs()
                 context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyTo(it) } } ?: error("无法读取歌词文件")
-                require(parseLibraryLyrics(file.readText(), extension).isNotEmpty()) { "未找到有效歌词时间轴" }
+                require(parseLibraryLyrics(file).isNotEmpty()) { "未找到有效歌词时间轴" }
                 store.setLyrics(track.storageId, file.absolutePath) { committed = true }
             } finally { if (!committed) file.delete() }
         }

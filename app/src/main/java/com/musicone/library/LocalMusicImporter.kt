@@ -165,7 +165,7 @@ internal class LocalMusicImporter(private val context: Context, private val stor
                         if (sidecar != null) context.contentResolver.openInputStream(sidecar.uri)?.use { input -> destination.outputStream().use { input.copyTo(it) } }
                             ?: error("无法读取同名歌词")
                         else destination.writeText(embedded.orEmpty())
-                        require(parseLibraryLyrics(destination.readText(), extension).isNotEmpty()) { "未找到有效歌词时间轴" }
+                        require(parseLibraryLyrics(destination).isNotEmpty()) { "未找到有效歌词时间轴" }
                         store.setDefaultLyrics(id, destination.absolutePath, onCommitted = { lyricFile = null })
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }

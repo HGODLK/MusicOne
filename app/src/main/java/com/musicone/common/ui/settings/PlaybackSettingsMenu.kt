@@ -220,8 +220,11 @@ private fun PlaybackSettingsMenuRow(option: PlaybackSettingsMenuOption, onClick:
     ) {
         Column(Modifier.align(Alignment.CenterStart).padding(end = 36.dp)) {
             val color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (option.enabled) 1f else .38f)
-            Text(option.label, fontSize = 14.sp, color = color)
-            option.description?.let { Text(it, fontSize = 11.sp, color = color) }
+            // 行高跟随各自字号，避免沿用外层正文行高导致说明换行时行距过大。
+            Text(option.label, fontSize = 14.sp, lineHeight = 19.sp, color = color)
+            option.description?.let {
+                Text(it, fontSize = 11.sp, lineHeight = 15.sp, color = color, modifier = Modifier.padding(top = 2.dp))
+            }
         }
         if (option.selected) {
             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.align(Alignment.CenterEnd))

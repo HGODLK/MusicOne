@@ -72,6 +72,7 @@ internal fun RowScope.MiniPlayerInformation(track: MusicTrack, favorite: Boolean
         }
     }
     IconButton(onFavorite, enabled = !swipe.active, modifier = Modifier
+        .miniAccessoryReveal(LocalMiniAccessoryReveal.current)
         .motionAnchor(motion, "miniFavorite", false, hideDuringMotion = false)
         .graphicsLayer { alpha = if (barMotionEnabled) miniPlayerAccessoryAlpha(motion?.value ?: 0f) else 1f }) {
         Box(Modifier.graphicsLayer { alpha = if (swipe.active) 0f else 1f }) {

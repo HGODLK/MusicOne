@@ -11,8 +11,13 @@ import com.musicone.source.sdk.membershipDetectorOrNull
 internal fun sourceAccessMembership(entry: SourceEntry?, source: MusicSource): Boolean? =
     if (source == MusicSource.KUGOU) entry?.membershipDetectorOrNull()?.currentMembership else entry?.currentMembership()
 
-/** 酷狗先确认没有音乐会员才展示会员提示；未知状态不沿用旧快照里的 VIP 字样。 */
-internal fun mainSourceAccessPresentation(source: MusicSource, access: TrackAccessInfo, membership: Boolean?): SourceTrackBadge? {
+/**
+ * 酷狗先确认没有音乐会员才展示会员提示；未知状态不沿用旧快照里的 VIP 字样。
+ * assumeMember：本次还没在线核对、但上次核对是会员，先不显示会员提示，避免冷启动先闪再消失。
+ */
+internal fun mainSourceAccessPresentation(source: MusicSource, access: TrackAccessInfo, membership: Boolean?,
+    assumeMember: Boolean = false): SourceTrackBadge? {
     if (source == MusicSource.KUGOU && access.badge == TrackAccessBadge.MEMBERSHIP && membership != false) return null
+    if (assumeMember && access.badge == TrackAccessBadge.MEMBERSHIP) return null
     return resolvedSongAccessBadge(access)
 }

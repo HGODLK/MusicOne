@@ -24,6 +24,9 @@ internal fun mainSourceDisplayedAccessBadge(track: MusicTrack): SourceTrackBadge
             null -> null
         }, track.trialAvailable, track.playable, track.unavailableReason, track.displayBadge))
     }
+    // 本次是否已在线核对过；核对前按上次的会员结论推测，核对后以音源返回为准。
+    var verified by remember(entry, revision, track.source.id, track.id) { mutableStateOf(false) }
+    val memberHint = remember(entry, revision, track.source) { SourceMembershipHint.read(context, entry, track.source) }
     LaunchedEffect(track, revision, offline.online, entry) {
         membership = sourceAccessMembership(entry, track.source)
         if (!offline.online) return@LaunchedEffect
@@ -31,9 +34,12 @@ internal fun mainSourceDisplayedAccessBadge(track: MusicTrack): SourceTrackBadge
             entry?.let { refreshedSourceTrackAccess(it, track.toSourceTrack()) }?.let {
                 access = it
                 membership = sourceAccessMembership(entry, track.source)
+                verified = true
+                SourceMembershipHint.record(context, entry, track.source, membership == true)
             }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { /* 网络失败保留已知资料，不推断新的会员或购买权益。 */ }
     }
-    return mainSourceAccessPresentation(track.source, access, membership)
+    return mainSourceAccessPresentation(track.source, access, membership,
+        assumeMember = !verified && (membership == true || memberHint == true))
 }

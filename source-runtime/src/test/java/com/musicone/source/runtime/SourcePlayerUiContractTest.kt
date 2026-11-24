@@ -100,6 +100,53 @@ class SourcePlayerUiContractTest {
         assertEquals(1, newCalls)
     }
 
+    @Test fun optionalPlayerActionsAreExposedAndDegradeWhenHostActionsLackThem() {
+        val original = Context()
+        val lease = SourcePlayerUiContextLease(original, "org.example.player", SourceOperationLease {})
+        val actions = lease.actions
+        // 宿主动作对象未实现新能力时，包装层可调用但不生效，拖动起手返回 false。
+        assertEquals(false, actions.queueGestureOrNull()!!.queueDragStart())
+        assertEquals(false, actions.trackMenuOrNull()!!.openTrackMenu(0f, 0f, 1f, 1f, false))
+        actions.seekPreviewOrNull()!!.previewSeek("track", 2, 10)
+        assertEquals(0, original.calls)
+        var previews = 0
+        val oldOriginal = original.actions
+        original.actions = object : SourcePlayerUiActions by oldOriginal, SourcePlayerSeekPreviewActions {
+            override fun previewSeek(trackId: String, generation: Long, positionMs: Long?) { previews++ }
+        }
+        lease.actions.seekPreviewOrNull()!!.previewSeek("track", 2, null)
+        assertEquals(1, previews)
+    }
+
+    @Test fun hostDataIsForwardedThroughLeaseAndDegradesWhenHostLacksIt() {
+        val queue = SourcePlayerQueueSnapshot(3, 10, emptyList())
+        val lyrics = SourcePlayerLyrics("track", SourcePlayerLyricsState.READY,
+            listOf(SourcePlayerLyricLine(1000, "第一行")), lineLeadMs = 120)
+        val audio = SourcePlayerAudioInfo("FLAC", 96000, 24, 0, "FLAC 24bit/96kHz", null)
+        val host = object : SourcePlayerUiContext by Context(), SourcePlayerQueueAccess, SourcePlayerLyricsDataAccess,
+            SourcePlayerAudioInfoAccess {
+            override val queueSnapshot = queue
+            override val lyricsData = lyrics
+            override val audioInfo = audio
+        }
+        // 包拿到的是包装层，新能力必须穿过它，不能因为包装层没实现而全部退化为 null。
+        val lease = SourcePlayerUiContextLease(host, "org.example.player", SourceOperationLease {})
+        assertEquals(queue, lease.queueSnapshotOrNull())
+        assertEquals(lyrics, lease.lyricsDataOrNull())
+        assertEquals(audio, lease.audioInfoAccessOrNull()?.audioInfo)
+        assertNotNull(lease.backdropOrNull())
+        // 宿主未实现时给空数据，不抛异常。
+        val bare = SourcePlayerUiContextLease(Context(), "org.example.player", SourceOperationLease {})
+        assertEquals(0, bare.queueSnapshotOrNull()!!.size)
+        assertEquals(SourcePlayerLyricsState.UNAVAILABLE, bare.lyricsDataOrNull()!!.state)
+        assertNull(bare.audioInfoAccessOrNull()!!.audioInfo)
+        // 卸载后与其他读取一样被拒绝。
+        lease.close()
+        assertThrows(IllegalStateException::class.java) { lease.queueSnapshot }
+        assertThrows(IllegalStateException::class.java) { lease.lyricsData }
+        assertThrows(IllegalStateException::class.java) { lease.audioInfo }
+    }
+
     @Test fun safeDrawingInsetsFollowTheCurrentOrientationWithinTheSameLease() {
         val original = Context()
         val lease = SourcePlayerUiContextLease(original, "org.example.player", SourceOperationLease {})

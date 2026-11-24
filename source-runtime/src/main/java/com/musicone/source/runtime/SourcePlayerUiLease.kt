@@ -12,7 +12,8 @@ internal class SourcePlayerUiContextLease(
     private val original: SourcePlayerUiContext,
     private val sourceId: String,
     private val operations: SourceOperationLease,
-) : SourcePlayerUiContext, AutoCloseable {
+) : SourcePlayerUiContext, SourcePlayerSharedSourceAccess, SourcePlayerLyricsMotionAccess, SourcePlayerQueueAccess,
+    SourcePlayerLyricsDataAccess, SourcePlayerAudioInfoAccess, SourcePlayerBackdropAccess, AutoCloseable {
     private val mounted = AtomicBoolean(true)
     private val checkAccount = operations.deferredCheck()
     private fun checkCurrent() {
@@ -27,15 +28,20 @@ internal class SourcePlayerUiContextLease(
         checkCurrent()
         operations.dispatch(sourceId) { checkCurrent(); action() }
     }
+    private fun <T> dispatchResult(action: () -> T): T {
+        checkCurrent()
+        return operations.dispatch(sourceId) { checkCurrent(); action() }
+    }
     override val snapshot get() = read { original.snapshot }
     override val timeline get() = read { original.timeline }
     override val form get() = read { original.form }
     override val safeDrawingInsets get() = read { original.safeDrawingInsets }
     override val transition get() = read { original.transition }
-    override val actions get() = read {
+    override val actions: SourcePlayerUiActions get() = read {
         // 取出时绑定本次曲目动作，迟到回调不能悄悄切换到新歌曲的操作对象。
         val captured = original.actions
-        object : SourcePlayerUiActions {
+        object : SourcePlayerUiActions, SourcePlayerSeekPreviewActions, SourcePlayerQueueGestureActions,
+            SourcePlayerTrackMenuActions, SourcePlayerDismissGestureActions {
             override fun togglePlay() = dispatch { captured.togglePlay() }
             override fun next() = dispatch { captured.next() }
             override fun previous() = dispatch { captured.previous() }
@@ -48,7 +54,57 @@ internal class SourcePlayerUiContextLease(
             override fun openQueue() = dispatch { captured.openQueue() }
             override fun toggleFavorite() = dispatch { captured.toggleFavorite() }
             override fun retryLyrics() = dispatch { captured.retryLyrics() }
+            // 新增能力由宿主动作对象实现；同一宿主内运行时与桥接同版本发布，缺失时按不可用处理。
+            override fun previewSeek(trackId: String, generation: Long, positionMs: Long?) = dispatch {
+                (captured as? SourcePlayerSeekPreviewActions)?.previewSeek(trackId, generation, positionMs)
+            }
+            override fun queueDragStart(): Boolean = dispatchResult {
+                (captured as? SourcePlayerQueueGestureActions)?.queueDragStart() == true
+            }
+            override fun queueDrag(deltaPx: Float) = dispatch {
+                (captured as? SourcePlayerQueueGestureActions)?.queueDrag(deltaPx)
+            }
+            override fun queueDragEnd(velocityPxPerSecond: Float) = dispatch {
+                (captured as? SourcePlayerQueueGestureActions)?.queueDragEnd(velocityPxPerSecond)
+            }
+            override fun queueDragCancel() = dispatch {
+                (captured as? SourcePlayerQueueGestureActions)?.queueDragCancel()
+            }
+            override fun openTrackMenu(left: Float, top: Float, right: Float, bottom: Float,
+                lyricOffset: Boolean): Boolean = dispatchResult {
+                (captured as? SourcePlayerTrackMenuActions)?.openTrackMenu(left, top, right, bottom, lyricOffset) == true
+            }
+            override fun dismissDragStart(): Boolean = dispatchResult {
+                (captured as? SourcePlayerDismissGestureActions)?.dismissDragStart() == true
+            }
+            override fun dismissDrag(deltaPx: Float) = dispatch {
+                (captured as? SourcePlayerDismissGestureActions)?.dismissDrag(deltaPx)
+            }
+            override fun dismissDragEnd(velocityPxPerSecond: Float) = dispatch {
+                (captured as? SourcePlayerDismissGestureActions)?.dismissDragEnd(velocityPxPerSecond)
+            }
+            override fun dismissDragCancel() = dispatch {
+                (captured as? SourcePlayerDismissGestureActions)?.dismissDragCancel()
+            }
         }
+    }
+    override fun sharedSource(element: SourcePlayerSharedElement): SourcePlayerSharedSource? =
+        read { (original as? SourcePlayerSharedSourceAccess)?.sharedSource(element) }
+    // 同一次挂载只包装一次，包可在组合中反复读取同一对象。
+    private val lyricsLease = LyricsMotionLease()
+    override val lyricsMotion: SourcePlayerLyricsMotion get() = read { lyricsLease }
+    // 宿主数据与背景：包只能看到包装层，必须逐项转发；同一宿主内运行时与桥接同版本发布，缺失时按空数据处理。
+    override val queueSnapshot: SourcePlayerQueueSnapshot get() = read {
+        (original as? SourcePlayerQueueAccess)?.queueSnapshot ?: SourcePlayerQueueSnapshot(-1, 0, emptyList())
+    }
+    override val lyricsData: SourcePlayerLyrics get() = read {
+        (original as? SourcePlayerLyricsDataAccess)?.lyricsData
+            ?: SourcePlayerLyrics(original.timeline.trackId, SourcePlayerLyricsState.UNAVAILABLE, emptyList())
+    }
+    override val audioInfo: SourcePlayerAudioInfo? get() = read { (original as? SourcePlayerAudioInfoAccess)?.audioInfo }
+    @Composable override fun Backdrop(modifier: Modifier) {
+        checkCurrent()
+        (original as? SourcePlayerBackdropAccess)?.Backdrop(modifier)
     }
     override fun dismiss() = dispatch { original.dismiss() }
     override fun onFailure(message: String) = dispatch { original.onFailure(message) }
@@ -62,6 +118,24 @@ internal class SourcePlayerUiContextLease(
         original.SharedElement(element, modifier) { checkCurrent(); content() }
     }
     override fun close() { mounted.set(false) }
+
+    /** 歌词开合对象同样绑定挂载周期与账号；宿主未提供时按关闭态返回且动作不生效。 */
+    private inner class LyricsMotionLease : SourcePlayerLyricsMotion {
+        private fun motion() = (original as? SourcePlayerLyricsMotionAccess)?.lyricsMotion
+        override val opened get() = read { motion()?.opened == true }
+        override val lyricsProgress get() = read { motion()?.lyricsProgress ?: 0f }
+        override val headerProgress get() = read { motion()?.headerProgress ?: 0f }
+        override val dragging get() = read { motion()?.dragging == true }
+        override fun setOpened(opened: Boolean) = dispatch { motion()?.setOpened(opened) }
+        override fun dragStart(): Boolean = dispatchResult { motion()?.dragStart() == true }
+        override fun drag(deltaPx: Float) = dispatch { motion()?.drag(deltaPx) }
+        override fun dragEnd(velocityPxPerSecond: Float) = dispatch { motion()?.dragEnd(velocityPxPerSecond) }
+        override fun dragCancel() = dispatch { motion()?.dragCancel() }
+        @Composable override fun LyricsPanel(style: SourcePlayerLyricsStyle, modifier: Modifier) {
+            checkCurrent()
+            motion()?.LyricsPanel(style, modifier)
+        }
+    }
 }
 
 internal fun guardSourcePlayerUi(provider: SourcePlayerUiProvider, sourceId: String,
@@ -75,3 +149,4 @@ internal fun guardSourcePlayerUi(provider: SourcePlayerUiProvider, sourceId: Str
         provider.Player(guarded)
     }
 }
+

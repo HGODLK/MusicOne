@@ -78,6 +78,12 @@ internal class SourceApplicationHost private constructor(private val context: Co
         onMain { requirePlayback().playRecommendationTrack(song) }
     }
 
+    override fun playRecommendations(tracks: List<SourceTrackDetails>, startIndex: Int) {
+        require(startIndex in tracks.indices) { "推荐歌曲位置无效" }
+        val songs = tracks.map { it.toMusicTrack() }
+        onMain { requirePlayback().playRecommendationTracks(songs, startIndex) }
+    }
+
     override fun importTracks(tracks: List<SourceTrack>, destinationId: String) {
         val guard = SourceHostCallbackGuard.capture()
         scope.launch(guard?.context ?: EmptyCoroutineContext) {

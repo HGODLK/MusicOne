@@ -57,10 +57,21 @@ internal class SourceRadioController(
         request(initial = true)
     }
 
-    fun startWithSeed(seed: MusicTrack) {
+    fun insertAll(queue: List<MusicTrack>, current: MusicTrack?, tracks: List<MusicTrack>): List<MusicTrack> {
+        active = true
+        val result = window.insertAll(queue, current, tracks)
+        publish(SourceRadioEvent.Mode(true))
+        return result
+    }
+
+    fun startWithSeed(seed: MusicTrack) = startWithSeeds(listOf(seed))
+
+    /** 以一组歌曲开启电台：按顺序先播这几首，之后由电台续推。 */
+    fun startWithSeeds(seeds: List<MusicTrack>) {
+        require(seeds.isNotEmpty())
         stop()
         active = true
-        val queue = window.start(emptyList(), seed)
+        val queue = window.start(seeds.drop(1), seeds.first())
         publish(SourceRadioEvent.Mode(true))
         publish(SourceRadioEvent.Started(queue))
         prefetch()

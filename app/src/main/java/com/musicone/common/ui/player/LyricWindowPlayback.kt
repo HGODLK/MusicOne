@@ -49,6 +49,20 @@ internal class LyricWindowPlayback(private val trackId: String) {
         }
     }
 
+    /** 同曲新一轮播放接管本窗口：丢弃上一轮的定位交接，按新轮次重新接收进度。 */
+    fun rebind(snapshot: PlaybackProgressSnapshot) {
+        if (snapshot.trackId != trackId) return
+        Snapshot.withMutableSnapshot {
+            awaitingObservedHandoff = true
+            intermediatePositionOwned = false
+            intermediateCommit = null
+            intermediateCommitPending = false
+            generation = snapshot.generation
+            positionMs = snapshot.positionMs.coerceAtLeast(0L)
+            sampledAtMs = snapshot.sampledAtMs
+        }
+    }
+
     fun update(snapshot: PlaybackProgressSnapshot, previewMs: Long? = null, browsing: Boolean = false) {
         if (!browsing && snapshot.trackId == trackId &&
             (generation < 0L || generation == snapshot.generation)) {

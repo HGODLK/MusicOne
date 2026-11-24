@@ -137,7 +137,7 @@ internal class QqPackagePages(private val auth: QqAuthentication) : SourceAuthen
                 }
             },
             onStartQrLogin = { startQr() },
-        ), reduceMotion = auth.reduceMotion)
+        ), reduceMotion = auth.reduceMotion, expiryNote = remember { auth.lastExpiryNote() })
         required?.let { verification ->
             val verifyingPlayback = loginVerification == null
             fun isCurrentVerification(): Boolean = (if (verifyingPlayback)

@@ -30,7 +30,7 @@ internal class QqSmsLoginClient {
         )
         response.body.throwIfQqSecurityVerificationRequired(response.cookie)
         if (response.body.optInt("code", 0) != 0) {
-            throw qqLoginError(response.body, "QQ 音乐登录续期失败")
+            throw qqLoginError(response.body, "QQ 音乐登录续期失败", expiredMessage = "续票被拒：登录票据已过期")
         }
         val data = response.body.optJSONObject("data")
             ?: throw PlatformApiException("QQ 音乐没有返回续期凭据")
@@ -143,21 +143,29 @@ internal class QqSmsLoginClient {
     }
 }
 
+/** 续期参数按登录类型区分，对照 L-1124/QQMusicApi：微信（1）不带 access_token/expired_in/musicid，QQ（2）不带 unionid/str_musicid。 */
 internal fun qqCredentialRefreshParam(cookie: String): JSONObject {
     val values = cookie.cookieValues()
     val accountId = qqCredentialAccountId(cookie)
     val musicKey = qqCredentialMusicKey(cookie)
-    return JSONObject()
+    val loginType = values["loginType"]?.toIntOrNull()?.takeIf { it == 1 || it == 2 }
+        ?: if (musicKey.startsWith("W_X")) 1 else 2
+    val param = JSONObject()
         .put("openid", values["openid"].orEmpty())
-        .put("access_token", values["access_token"].orEmpty())
         .put("refresh_token", values["refresh_token"].orEmpty())
-        .put("expired_in", values["expired_at"]?.toLongOrNull() ?: 0L)
-        .put("str_musicid", values["str_musicid"].orEmpty().ifBlank { accountId })
-        .put("musicid", accountId.toLongOrNull() ?: 0L)
         .put("musickey", musicKey)
-        .put("unionid", values["unionid"].orEmpty())
         .put("refresh_key", values["refresh_key"].orEmpty())
         .put("loginMode", 2)
+    if (loginType != 1) {
+        param.put("access_token", values["access_token"].orEmpty())
+            .put("expired_in", values["expired_at"]?.toLongOrNull() ?: 0L)
+            .put("musicid", accountId.toLongOrNull() ?: 0L)
+    }
+    if (loginType != 2) {
+        param.put("str_musicid", values["str_musicid"].orEmpty().ifBlank { accountId })
+            .put("unionid", values["unionid"].orEmpty())
+    }
+    return param
 }
 
 private data class QqLoginResponse(val body: JSONObject, val cookie: String)

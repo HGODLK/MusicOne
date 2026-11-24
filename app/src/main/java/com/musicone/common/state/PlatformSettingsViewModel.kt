@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.musicone.source.sdk.SourceKind
+import com.musicone.source.sdk.SourceSessionStatus
 import com.musicone.sourceintegration.SourceApplicationHost
 import com.musicone.sourceintegration.SourcePackageController
 import kotlinx.coroutines.*
@@ -94,9 +95,11 @@ internal class PlatformSettingsViewModel @JvmOverloads constructor(application: 
     fun refreshSessionIfDue() {
         syncAccountState()
         val id = state.value.selectedSource.id
-        if (refresh?.isActive == true || !refreshSchedule.due(id, System.currentTimeMillis())) return
+        if (refresh?.isActive == true) return
         val auth = sources.running(id)?.entry?.authentication ?: return
-        if (auth.currentAccount().account == null) return
+        val account = auth.currentAccount()
+        if (account.account == null) return
+        if (!refreshSchedule.due(id, System.currentTimeMillis(), account.status == SourceSessionStatus.EXPIRED)) return
         refreshSchedule.attempted(id, System.currentTimeMillis())
         refresh = viewModelScope.launch {
             try {

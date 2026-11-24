@@ -30,6 +30,7 @@ internal class MusicOneUsbAudioSink(
     enabled: Boolean,
 ) : ForwardingAudioSink(delegate) {
     private val applicationContext = context.applicationContext
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val usbDevice = UsbAudioDevice.getInstance(applicationContext)
     private val systemBitPerfect = AndroidBitPerfectOutput(applicationContext)
     private val systemMediaVolume = SystemMediaVolumeGain(applicationContext)
@@ -41,6 +42,8 @@ internal class MusicOneUsbAudioSink(
     private var inputFormat: Format? = null
     private var stream: UsbAudioStream? = null
     private var streamingThread: DirectUsbStreamingThread? = null
+    @Volatile private var hardwareVolume: UsbHardwareVolumeFollower? = null
+    @Volatile private var hardwareVolumeTransition: UsbHardwareVolumeTransition? = null
     private var directInterfaceId: Int? = null
     private var directSampleRate = 0
     private var currentSampleRate = 0
@@ -295,8 +298,26 @@ internal class MusicOneUsbAudioSink(
             publishFallback("无法接管 USB 音频接口")
             return
         }
-        val output = createDirectUsbPcmOutput(usbDevice, deviceInfo, format, currentSourceBitDepth)
+        var initialHardwareGain = 1f
+        var initialHardwareApplied: Float? = null
+        var hardwareProbed = false
+        val output = createDirectUsbPcmOutput(usbDevice, deviceInfo, format, currentSourceBitDepth) { profile ->
+            if (PlaybackOptions.usbHardwareVolume) {
+                // 开流前直接写入当前系统音量，避免先推满再异步压低导致开头音量跳变。
+                val target = systemMediaVolume.current()
+                initialHardwareGain = target
+                initialHardwareApplied = usbDevice.prepareHardwareGain(profile, target)
+                hardwareProbed = true
+                UsbHardwareVolumeStatus.supported = initialHardwareApplied != null
+            } else {
+                hardwareProbed = false
+                initialHardwareApplied = null
+                UsbHardwareVolumeStatus.supported = null
+                usbDevice.maximizeHardwareVolume(profile)
+            }
+        }
         if (output == null) {
+            UsbHardwareVolumeStatus.supported = null
             usbDevice.closeDevice()
             publishFallback("USB 不接受源规格或 32bit／192kHz 兼容规格，继续使用系统输出")
             return
@@ -307,9 +328,47 @@ internal class MusicOneUsbAudioSink(
         directInterfaceId = streamProfile.interfaceId
         directSampleRate = output.sampleRate
         UsbExclusiveVolumeKeys.activeGain = systemMediaVolume
+        val hardwareReady = hardwareProbed && initialHardwareApplied != null
+        val follower = UsbHardwareVolumeFollower(
+            device = usbDevice,
+            profile = streamProfile,
+            initialSupported = if (hardwareProbed) hardwareReady else null,
+            initialGain = if (hardwareReady) initialHardwareGain else 1f,
+            initialAppliedGain = initialHardwareApplied ?: 1f,
+        )
+        // 留出约 8ms 余量覆盖 DAC 内部 FIFO，确保旧满幅样本彻底播完再推满硬件。
+        val transition = UsbHardwareVolumeTransition(marginFrames = output.sampleRate / 125L)
+        hardwareVolume = follower
+        hardwareVolumeTransition = transition
+        systemMediaVolume.startObserving {
+            // 系统媒体音量变化时立刻同步到硬件，暂停或刚切回前台也能零延迟响应。
+            if (PlaybackOptions.usbHardwareVolume) {
+                hardwareVolume?.follow(systemMediaVolume.current(), probe = false)
+            }
+        }
+        usbDevice.startHidVolumeMonitor { direction ->
+            mainHandler.post {
+                if (stream != null) {
+                    systemMediaVolume.adjust(direction)
+                    if (PlaybackOptions.usbHardwareVolume) {
+                        hardwareVolume?.follow(systemMediaVolume.current(), probe = false)
+                    }
+                }
+            }
+        }
         streamingThread = DirectUsbStreamingThread(candidate, format.sampleRate, format.channelCount,
             output.sampleRate, output.resampler) {
-            (pendingVolume * systemMediaVolume.current()).coerceIn(0f, 1f)
+            val system = systemMediaVolume.current()
+            val hardwareEnabled = PlaybackOptions.usbHardwareVolume
+            val decision = transition.step(
+                hardwareEnabled = hardwareEnabled,
+                systemGain = system,
+                hardwareAppliedGain = follower.appliedGain,
+                completedFrames = candidate.completedFrames,
+                pendingFrames = candidate.pendingAudioFrames,
+            )
+            decision.hardwareTarget?.let { follower.follow(it, probe = hardwareEnabled) }
+            (pendingVolume * decision.softwareGain).coerceIn(0f, 1f)
         }.also {
             if (!playbackStarted) it.pause()
             it.start()
@@ -324,6 +383,7 @@ internal class MusicOneUsbAudioSink(
                 output.sampleRate,
                 streamProfile.bitDepth,
                 if (output.converted) "已转换为兼容的 32bit／192kHz PCM，并跟随系统媒体音量"
+                else if (hardwareReady) "已绕过安卓混音与 SRC，并由 USB 设备硬件音量跟随系统媒体音量"
                 else "已绕过安卓混音与 SRC，并通过软件增益跟随系统媒体音量",
                 converted = output.converted,
                 channelCount = format.channelCount,
@@ -333,6 +393,10 @@ internal class MusicOneUsbAudioSink(
 
     private fun releaseDirectOutput() {
         UsbAudioOutputStatus.markDirectOutput(false)
+        UsbHardwareVolumeStatus.supported = null
+        hardwareVolumeTransition = null
+        systemMediaVolume.stopObserving()
+        usbDevice.stopHidVolumeMonitor()
         if (UsbExclusiveVolumeKeys.activeGain === systemMediaVolume) UsbExclusiveVolumeKeys.activeGain = null
         val activeStream = stream
         stream = null
@@ -343,6 +407,9 @@ internal class MusicOneUsbAudioSink(
                 activeStream.stop()
                 streamingThread?.stop()
                 streamingThread = null
+                // 先停掉硬件音量写入，再关闭设备恢复原始音量。
+                hardwareVolume?.close()
+                hardwareVolume = null
                 releaseUsbStream(activeStream::release, {
                     runCatching { usbDevice.setAltSetting(0, directInterfaceId) }
                     usbDevice.closeDevice()
@@ -351,6 +418,8 @@ internal class MusicOneUsbAudioSink(
             } else {
                 streamingThread?.stop()
                 streamingThread = null
+                hardwareVolume?.close()
+                hardwareVolume = null
                 directInterfaceId = null
             }
         } finally {
@@ -362,6 +431,7 @@ internal class MusicOneUsbAudioSink(
     private fun flushDirectOutput() {
         try {
             streamingThread?.flush()
+            hardwareVolumeTransition?.onFlush()
         } catch (failure: IllegalStateException) {
             throw UsbOutputException(failure)
         }

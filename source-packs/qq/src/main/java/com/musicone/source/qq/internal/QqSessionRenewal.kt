@@ -14,13 +14,20 @@ internal class QqSessionRenewal(
     private val session: () -> PlatformSession,
     private val keeper: QqPersistentSession,
     private val save: suspend (PlatformSession, QqValidatedSession) -> Unit,
-    private val onRejected: () -> Unit,
+    private val onRejected: (Throwable) -> Unit,
     private val retryWindowMs: Long = 60_000L,
+    private val forcedCooldownMs: Long = 10 * 60_000L,
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
     private val lock = Mutex()
     // 同一张票刚续失败时先不重复请求，避免并发请求连续打登录接口。
     @Volatile private var failed: Pair<String, Long>? = null
+    // 被拒后强制续出的新票及时间：新票马上又被同类接口拒绝，多半是接口自身限制（如权益），不再换票。
+    @Volatile private var forced: Pair<String, Long>? = null
+
+    /** 当前票是否刚由强制续票得到；此时再被拒不能判定为登录失效。 */
+    fun recentlyForced(credential: String): Boolean =
+        forced?.let { it.first == credential && nowMs() - it.second < forcedCooldownMs } == true
 
     /** 宿主定期校验：核实账号，票快到期时顺带续期，失败抛给调用方。 */
     suspend fun validate() {
@@ -44,7 +51,14 @@ internal class QqSessionRenewal(
         val current = session()
         if (current.credential.isBlank()) return@withLock null
         if (current.credential != rejected.credential) return@withLock current.takeIf { sameAccount(it, rejected) }
-        if (blocked(current.credential)) return@withLock null
+        if (blocked(current.credential)) {
+            QqSessionLog.record("强制续票跳过：同票刚续失败，退避中")
+            return@withLock null
+        }
+        if (recentlyForced(current.credential)) {
+            QqSessionLog.record("强制续票跳过：新票刚续出又被拒，按接口限制处理")
+            return@withLock null
+        }
         try {
             attempt(current) { keeper.renew(current) }
         } catch (cancelled: CancellationException) {
@@ -53,6 +67,7 @@ internal class QqSessionRenewal(
             return@withLock null
         }
         session().takeIf { it.credential != rejected.credential && sameAccount(it, rejected) }
+            ?.also { forced = it.credential to nowMs() }
     }
 
     private suspend fun attempt(previous: PlatformSession, work: () -> QqValidatedSession) {
@@ -69,7 +84,10 @@ internal class QqSessionRenewal(
             // 期间已重新登录或完成验证时，这次结果作废，不影响新票。
             if (session().credential != previous.credential) return
             failed = previous.credential to nowMs()
-            if (error.rejectsQqCredential()) onRejected()
+            if (error.rejectsQqCredential()) {
+                QqSessionLog.record("标记登录失效：${error.qqLogSummary()}")
+                onRejected(error)
+            } else QqSessionLog.record("续票或校验失败（不判失效）：${error.qqLogSummary()}")
             throw error
         }
     }

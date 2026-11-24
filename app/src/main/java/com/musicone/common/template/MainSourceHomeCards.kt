@@ -26,7 +26,7 @@ internal fun LazyStaggeredGridScope.mainSourceHomeItems(
     feed: MainSourceHomeContent,
     currentTrackId: String?,
     playing: Boolean,
-    onTrackClick: (MusicTrack) -> Unit,
+    onTrackClick: HomeTrackPageClick,
     actions: PlatformHomeActions,
     onRetry: () -> Unit,
     exitProgress: () -> Float,
@@ -72,7 +72,7 @@ internal fun LazyStaggeredGridScope.mainSourceHomeItems(
                         artworkMaxSide = artworkSizes.card,
                     )
                     is MainSourceHomeCard.Song -> MainSourceHomeSongCard(card, card.track.id == currentTrackId,
-                        playing && card.track.id == currentTrackId, { onTrackClick(card.track) })
+                        playing && card.track.id == currentTrackId, { onTrackClick(listOf(card.track), 0) })
                     is MainSourceHomeCard.SongGroup -> MainSourceHomeSongGroup(
                         card = card,
                         currentTrackId = currentTrackId,

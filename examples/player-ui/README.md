@@ -2,4 +2,4 @@
 
 将 [ExamplePlayerUi.kt](ExamplePlayerUi.kt) 加入主音源工程，在入口实现 `SourcePlayerUiProviderAccess`，返回 `ExamplePlayerUi()`。本目录不是独立 Gradle 工程。
 
-示例支持手机横竖屏与平板，演示共享元素、宿主歌词及受控播放动作。完整接线见[播放器规范](../../接入文档/Agent音源接入完整规范.md#player-ui)。
+示例支持手机横竖屏与平板，演示从迷你条展开并飞回的共享元素、封面色场背景、下拉收起、宿主歌词开合面板（旧宿主退回静态歌词）及受控播放动作。完整接线见[播放器规范](../../接入文档/Agent音源接入完整规范.md#player-ui)。

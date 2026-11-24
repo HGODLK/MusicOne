@@ -11,7 +11,7 @@ import com.musicone.source.sdk.*
 
 internal val LocalNeteaseReduceMotion = staticCompositionLocalOf { false }
 class NeteaseSourceEntry : SourceEntry, SourceMembershipProvider {
-    override val descriptor = SourceDescriptor(NETEASE_SOURCE_ID, "网易云音乐", SourceKind.MAIN, 1, "0.1",
+    override val descriptor = SourceDescriptor(NETEASE_SOURCE_ID, "网易云音乐", SourceKind.MAIN, 2, "0.2",
         setOf(SourceCapability.HOME, SourceCapability.SEARCH, SourceCapability.ACCOUNT, SourceCapability.PLAYLIST,
             SourceCapability.PLAYBACK, SourceCapability.LYRICS),
         useCustomPages = true, requiresLogin = true,

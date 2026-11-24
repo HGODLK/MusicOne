@@ -3,7 +3,9 @@ package com.musicone
 /** 标识由播放业务提供；系统适配层不解析音源名称、数字编号或平台前缀。 */
 internal data class SystemPlaybackKey(val trackId: String, val generation: Long)
 
-internal data class SystemLyricLine(val timeMs: Long, val text: String, val translation: String? = null)
+/** translation 已按歌词页显示内容裁剪；source 保留逐字、注音和完整翻译，供自带开关的桌面歌词读取。 */
+internal data class SystemLyricLine(val timeMs: Long, val text: String, val translation: String? = null,
+    val source: TimedLyric? = null)
 
 /** 歌词时间已在业务侧校准，展示层只使用实际播放位置和通用资料。 */
 internal data class SystemPlaybackPresentation(
@@ -17,6 +19,9 @@ internal data class SystemPlaybackPresentation(
     val durationMs: Long,
     val advancing: Boolean,
     val readyForPresentation: Boolean = true,
+    // 逐字时钟只叠加逐字提前量，不叠加整行提前量和手动偏移。
+    val wordLeadMs: Long = 0L,
+    val lyricState: LyricLoadState = LyricLoadState.READY,
 ) {
     fun positionAt(nowMs: Long): Long = continuousLyricPosition(
         positionMs, sampledAtMs, nowMs, advancing, seeking = false, durationMs,

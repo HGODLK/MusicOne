@@ -30,13 +30,19 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/** 首页歌曲点击：带上所在一页（货架当前页或三歌曲组）的歌曲和点击位置，由播放层决定入队范围。 */
+internal typealias HomeTrackPageClick = (tracks: List<MusicTrack>, index: Int) -> Unit
+
+/** 只认点击那一首的旧回调，转成按页点击。 */
+internal fun ((MusicTrack) -> Unit).asHomeTrackPageClick(): HomeTrackPageClick = { tracks, index -> tracks.getOrNull(index)?.let(this) }
+
 /** 使用官方返回的三行分组，横向翻页只切换当前响应中的本地页。 */
 @Composable
 internal fun MainSourceHomeSongShelf(
     shelf: MainSourceHomeCard.SongShelf,
     currentTrackId: String?,
     playing: Boolean,
-    onTrackClick: (MusicTrack) -> Unit,
+    onTrackClick: HomeTrackPageClick,
     showFavorites: Boolean,
     modifier: Modifier = Modifier,
     edgeInset: Dp = 0.dp,
@@ -73,7 +79,8 @@ internal fun MainSourceHomeSongShelf(
             )
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxWidth().height(pagerHeight).clipToBounds(),
+                // 滑到最后一页后继续左滑交给根页面切到“我的”。
+                modifier = Modifier.fillMaxWidth().height(pagerHeight).clipToBounds().rootPageEdgeSwipe(pagerState),
                 contentPadding = PaddingValues(start = edgeInset, end = edgeInset + pagePeek),
                 pageSpacing = 14.dp,
                 beyondViewportPageCount = 1,
@@ -100,7 +107,7 @@ internal fun MainSourceHomeSongGroup(
     card: MainSourceHomeCard.SongGroup,
     currentTrackId: String?,
     playing: Boolean,
-    onTrackClick: (MusicTrack) -> Unit,
+    onTrackClick: HomeTrackPageClick,
     modifier: Modifier = Modifier,
 ) {
     MainSourceHomeSongGroupCard(
@@ -118,21 +125,23 @@ private fun MainSourceHomeSongRows(
     columns: Int,
     currentTrackId: String?,
     playing: Boolean,
-    onTrackClick: (MusicTrack) -> Unit,
+    onTrackClick: HomeTrackPageClick,
     showFavorites: Boolean,
     favoriteMotion: PageTitleMotion,
     favoritesEnabled: Boolean,
 ) {
     val favorites = LocalMusicFavorites.current
+    val pageTracks = songs.map { it.track }
+    val perRow = columns.coerceAtLeast(1)
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        songs.chunked(columns.coerceAtLeast(1)).forEach { rowSongs ->
+        songs.chunked(perRow).forEachIndexed { row, rowSongs ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                rowSongs.forEach { song ->
+                rowSongs.forEachIndexed { column, song ->
                     MainSourceHomeSongRow(
                         song = song,
                         current = song.track.id == currentTrackId,
                         playing = playing && song.track.id == currentTrackId,
-                        onClick = { onTrackClick(song.track) },
+                        onClick = { onTrackClick(pageTracks, row * perRow + column) },
                         favorite = showFavorites && song.track.isMainSourceFavorite(favorites.state.ids),
                         onFavorite = { favorites.toggle(song.track) },
                         showFavorite = showFavorites,

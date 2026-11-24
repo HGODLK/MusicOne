@@ -1,15 +1,13 @@
 package com.musicone
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
+/** 一级分组“播放”：音质、播放行为、音频输出三个二级分组。 */
 @Composable
 internal fun PlaybackSettings(source: MusicSource) {
     val context = LocalContext.current
@@ -23,107 +21,71 @@ internal fun PlaybackSettings(source: MusicSource) {
     val usbStatus by UsbAudioOutputStatus.current.collectAsState()
     val qualities = playerQualitiesForSource(source)
     val dolby = DolbyPlaybackPolicy.eligibility
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("播放与音质", style = MaterialTheme.typography.titleLarge)
-        PlaybackSettingsMenuButton(
-            label = "首选音质 · ${preferred.displayLabel(source)}",
-            title = "首选音质",
-            options = qualities.map { quality ->
-                PlaybackSettingsMenuOption(quality.displayLabel(source), quality == preferred,
-                    enabled = quality.capabilityQuality != AudioQuality.DOLBY || dolby.allowed,
-                    description = dolby.unavailableReason.takeIf { quality.capabilityQuality == AudioQuality.DOLBY }) {
-                    if (DolbyPlaybackPolicy.permits(quality)) preferences.save(source, quality)
-                }
-            },
-        )
-        PlaybackSettingsMenuButton(
-            label = "移动网络 · ${mobileQuality?.displayLabel(source) ?: "跟随首选"}",
-            title = "移动网络音质上限",
-            options = listOf(PlaybackSettingsMenuOption("跟随首选", mobileQuality == null) {
-                PlaybackOptions.mobile(null)
-            }) + qualities.map { quality ->
-                PlaybackSettingsMenuOption(quality.displayLabel(source), quality == mobileQuality,
-                    enabled = quality.capabilityQuality != AudioQuality.DOLBY || dolby.allowed,
-                    description = dolby.unavailableReason.takeIf { quality.capabilityQuality == AudioQuality.DOLBY }) {
-                    if (DolbyPlaybackPolicy.permits(quality)) PlaybackOptions.mobile(quality)
-                }
-            },
-        )
-        PlaybackSettingsMenuButton(
-            label = "睡眠定时 · ${if (PlaybackSleepTimer.afterTrack) "本首结束" else if (PlaybackSleepTimer.deadline > 0) "已开启" else "关闭"}",
-            title = "睡眠定时",
-            options = listOf(0, -1, 15, 30, 60).map { minutes ->
-                PlaybackSettingsMenuOption(
-                    label = when (minutes) { 0 -> "关闭"; -1 -> "本首结束"; else -> "$minutes 分钟" },
-                    selected = (minutes == 0 && !PlaybackSleepTimer.afterTrack && PlaybackSleepTimer.deadline <= 0) ||
-                        (minutes == -1 && PlaybackSleepTimer.afterTrack),
-                ) { PlaybackSleepTimer.set(minutes) }
-            },
-        )
-        Row(
-            Modifier.fillMaxWidth().toggleable(
-                PlaybackOptions.keepScreenOn,
-                role = Role.Switch,
-                onValueChange = PlaybackOptions::screenOn,
-            ).padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                Text("播放页播放时屏幕常亮")
-                Text(
-                    "OLED 屏幕有烧屏风险",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            MusicOneSettingsSwitch(PlaybackOptions.keepScreenOn)
+    SettingsSection("播放") {
+        SettingsGroup("音质") {
+            SettingsMenuRow(
+                title = "首选音质",
+                value = preferred.displayLabel(source),
+                options = qualities.map { quality ->
+                    PlaybackSettingsMenuOption(quality.displayLabel(source), quality == preferred,
+                        enabled = quality.capabilityQuality != AudioQuality.DOLBY || dolby.allowed,
+                        description = dolby.unavailableReason.takeIf { quality.capabilityQuality == AudioQuality.DOLBY }) {
+                        if (DolbyPlaybackPolicy.permits(quality)) preferences.save(source, quality)
+                    }
+                },
+            )
+            SettingsMenuRow(
+                title = "移动网络音质上限",
+                value = mobileQuality?.displayLabel(source) ?: "跟随首选",
+                options = listOf(PlaybackSettingsMenuOption("跟随首选", mobileQuality == null) {
+                    PlaybackOptions.mobile(null)
+                }) + qualities.map { quality ->
+                    PlaybackSettingsMenuOption(quality.displayLabel(source), quality == mobileQuality,
+                        enabled = quality.capabilityQuality != AudioQuality.DOLBY || dolby.allowed,
+                        description = dolby.unavailableReason.takeIf { quality.capabilityQuality == AudioQuality.DOLBY }) {
+                        if (DolbyPlaybackPolicy.permits(quality)) PlaybackOptions.mobile(quality)
+                    }
+                },
+            )
         }
-        Row(
-            Modifier.fillMaxWidth().toggleable(
-                PlaybackOptions.keepQueueOnHomeRecommendation,
-                role = Role.Switch,
-                onValueChange = PlaybackOptions::keepQueueOnHomeRecommendation,
-            ).padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                Text("取消首页歌曲推荐替换播放队列")
-                Text(
-                    "开启后，点击首页推荐歌曲只插入当前队列，不再替换为猜你喜欢",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            MusicOneSettingsSwitch(PlaybackOptions.keepQueueOnHomeRecommendation)
+        SettingsGroup("播放行为") {
+            SettingsMenuRow(
+                title = "睡眠定时",
+                value = if (PlaybackSleepTimer.afterTrack) "本首结束" else if (PlaybackSleepTimer.deadline > 0) "已开启" else "关闭",
+                options = listOf(0, -1, 15, 30, 60).map { minutes ->
+                    PlaybackSettingsMenuOption(
+                        label = when (minutes) { 0 -> "关闭"; -1 -> "本首结束"; else -> "$minutes 分钟" },
+                        selected = (minutes == 0 && !PlaybackSleepTimer.afterTrack && PlaybackSleepTimer.deadline <= 0) ||
+                            (minutes == -1 && PlaybackSleepTimer.afterTrack),
+                    ) { PlaybackSleepTimer.set(minutes) }
+                },
+            )
+            SettingsSwitchRow("点播首页推荐不清空队列", "仅插入当前播放队列，不替换为猜你喜欢",
+                PlaybackOptions.keepQueueOnHomeRecommendation, PlaybackOptions::keepQueueOnHomeRecommendation)
+            FavoriteButtonSettings()
         }
-        DevicePlaybackSettings()
-        if (qualities.any { it.capabilityQuality == AudioQuality.DOLBY }) DolbyPlaybackSettings()
-        LgHiResSettings()
-        PlaybackOutputDetails(Modifier.fillMaxWidth().padding(vertical = 4.dp))
-        Row(
-            Modifier.fillMaxWidth()
-                .toggleable(
-                    value = PlaybackOptions.usbLosslessOutput,
-                    role = Role.Switch,
-                    onValueChange = { enabled ->
-                        PlaybackOptions.usbLossless(enabled)
-                        if (enabled) UsbAudioPermissionCoordinator.prepareForAutomaticSelection()
-                    },
-                )
-                .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                Text("USB 音频设备无损输出")
-                Text(
-                    usbOutputDescription(PlaybackOptions.usbLosslessOutput, usbStatus),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        SettingsGroup("音频输出") {
+            PlaybackOutputDetails(Modifier.fillMaxWidth().padding(horizontal = SettingsRowInset, vertical = 12.dp),
+                title = "当前输出")
+            DevicePlaybackSettings()
+            if (qualities.any { it.capabilityQuality == AudioQuality.DOLBY }) DolbyPlaybackSettings()
+            LgHiResSettings()
+            SettingsSwitchRow("USB 音频设备无损输出", usbOutputDescription(PlaybackOptions.usbLosslessOutput, usbStatus),
+                PlaybackOptions.usbLosslessOutput) { enabled ->
+                PlaybackOptions.usbLossless(enabled)
+                if (enabled) UsbAudioPermissionCoordinator.prepareForAutomaticSelection()
             }
-            MusicOneSettingsSwitch(PlaybackOptions.usbLosslessOutput)
+            UsbHardwareVolumeSetting()
         }
     }
+}
+
+/** 播放页常亮放在“显示 · 播放页”分组；选项可能先于播放设置组合，这里自行确保已读入。 */
+@Composable
+internal fun ScreenOnSetting() {
+    val context = LocalContext.current
+    remember { PlaybackOptions.initialize(context); true }
+    SettingsSwitchRow("播放页保持常亮", "播放期间不自动息屏，OLED 屏长时间使用请注意", PlaybackOptions.keepScreenOn, PlaybackOptions::screenOn)
 }
 
 private fun usbOutputDescription(enabled: Boolean, status: UsbAudioOutputSnapshot): String {
@@ -151,15 +113,21 @@ private fun usbOutputDescription(enabled: Boolean, status: UsbAudioOutputSnapsho
         .ifBlank { "已开启，等待播放或连接设备" }
 }
 
+/** 一级分组“关于”：版本信息、开发者与版本更新。 */
 @Composable
 internal fun AboutSettings() {
     val context = LocalContext.current
     val version = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty() }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("关于", style = MaterialTheme.typography.titleLarge)
-        Text("MusicOne · $version")
-        SettingsOptimizationNotice()
-        Text("开发者", style = MaterialTheme.typography.titleMedium)
-        DeveloperCredits()
+    SettingsSection("关于") {
+        SettingsCard {
+            Column(Modifier.padding(horizontal = SettingsRowInset, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("MusicOne · $version", style = MaterialTheme.typography.titleMedium)
+                SettingsOptimizationNotice()
+            }
+        }
+        // 开发者条目是自带内边距的列表项，不再额外缩进。
+        SettingsGroup("开发者") { DeveloperCredits() }
+        VersionUpdateSettings()
     }
 }

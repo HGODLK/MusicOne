@@ -5,6 +5,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.junit.Assert.*
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
@@ -92,8 +94,35 @@ class PlaylistAddMembershipTest {
             emptySet()
         }
         status.reset(listOf(song("qq-1")))
-        (1..6).map { index -> async { status.check(playlist("qq-$index", source = MusicSource.QQ)) } }.awaitAll()
-        assertEquals(2, peak.get())
+        (1..8).map { index -> async { status.check(playlist("qq-$index", source = MusicSource.QQ)) } }.awaitAll()
+        assertEquals(4, peak.get())
+        assertTrue(status.checking.isEmpty())
+    }
+
+    @Test fun cachedMembershipShowsImmediatelyAndRefreshReplacesIt() = runBlocking {
+        val track = song("qq-1")
+        val target = playlist("qq-target", source = MusicSource.QQ)
+        val release = CompletableDeferred<Unit>()
+        var reads = 0
+        val status = PlaylistAddMembership(cached = { _, _ -> setOf(track.id) }) { _, _ -> reads++; release.await(); emptySet() }
+        status.reset(listOf(track))
+        val query = async { status.check(target) }
+        withTimeout(2_000) { while (!status.added(target)) yield() }
+        // 有本地结果时不进入加载中，行可以立即操作。
+        assertTrue(status.checking.isEmpty())
+        status.check(target)
+        release.complete(Unit); query.await()
+        assertEquals(1, reads)
+        assertFalse(status.added(target))
+    }
+
+    @Test fun failedRefreshKeepsTheCachedResult() = runBlocking {
+        val track = song("qq-1")
+        val target = playlist("qq-target", source = MusicSource.QQ)
+        val status = PlaylistAddMembership(cached = { _, _ -> setOf(track.id) }) { _, _ -> error("断网") }
+        status.reset(listOf(track))
+        status.check(target)
+        assertTrue(status.added(target))
         assertTrue(status.checking.isEmpty())
     }
 

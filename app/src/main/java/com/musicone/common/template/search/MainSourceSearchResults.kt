@@ -118,7 +118,7 @@ private fun SearchResultList(
         val padding = maxOf(20.dp, (maxWidth - 1040.dp) / 2)
         LazyColumn(state = scroll, modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = padding, end = padding, top = 84.dp, bottom = bottomInset + 24.dp)) {
-            if (tab == MainSourceSearchTab.ALL && page.songs.isNotEmpty()) item("heading-songs") { Box(Modifier.animateItem(placementSpec = musicMotion(320))) { SearchGroupTitle("歌曲") } }
+            // 综合页歌曲在最前，不加“歌曲”标题，首行与“歌曲”分页同样从顶部留白处开始。
             searchResultItems("songs", page.songs, 12, all, folds, key = { "song-${it.id}" }) { track ->
                 Box(Modifier.animateItem(fadeInSpec = musicMotion(260), placementSpec = musicMotion(320), fadeOutSpec = musicMotion(220))) { SearchResultEntrance {
                 MusicTrackRow(track, player.currentTrack?.id == track.id,
@@ -193,7 +193,7 @@ internal fun SearchEntityRow(
         CrossfadingArtworkBitmapOrPlaceholder(artwork, artwork == null,
             playlist?.artworkStart ?: 0xFF7BAA9B, playlist?.artworkEnd ?: 0xFF374A43,
             title.take(1), Modifier.size(64.dp).then(if (playlist != null)
-                Modifier.motionAnchor(motion, id, false, corner = 12f, markSize = 24f, markX = 0f, markY = 0f)
+                Modifier.motionAnchor(motion, id, false, partial = true, corner = 12f, markSize = 24f, markX = 0f, markY = 0f)
                 else Modifier.entityArtworkAnchor("search:$id", 32f)),
             24.sp, shape, Alignment.Center)
         Column(Modifier.weight(1f).padding(start = 16.dp).graphicsLayer {

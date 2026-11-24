@@ -143,7 +143,7 @@ internal class MusicLibraryUiController(val context: Context, private val scope:
             withContext(Dispatchers.IO) {
                 file.parentFile?.mkdirs()
                 context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { input.copyTo(it) } } ?: error("无法读取歌词")
-                require(parseLibraryLyrics(file.readText(), extension).isNotEmpty()) { "未找到有效歌词时间轴" }
+                require(parseLibraryLyrics(file).isNotEmpty()) { "未找到有效歌词时间轴" }
                 // 直接播放的在线曲目可能尚未入库，先保留曲目身份再挂接歌词文件。
                 store.saveTrack(track)
                 store.setLyrics(track.id, file.absolutePath, onCommitted = { committed = true })
@@ -153,11 +153,17 @@ internal class MusicLibraryUiController(val context: Context, private val scope:
             if (!committed) file.delete()
         }
     }
-    fun imported(result: LocalImportResult) {
+    suspend fun imported(result: LocalImportResult) {
         if (result.failed.isNotEmpty()) {
             android.util.Log.w("MusicLibrary", "导入完成，未导入 ${result.failed.size} 项:\n${result.failed.joinToString("\n")}")
         }
         message = result.displaySummary()
+        // 开关打开时导入后顺带整理；整理失败不影响已完成的导入。
+        if (LibraryAutoOrganizePreference(context).enabled) {
+            try { store.organizeLocalLibrary(AutoPlaylistKind.entries) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { android.util.Log.w("MusicLibrary", "导入后自动整理失败", error) }
+        }
     }
     fun refresh(folder: LibraryFolder) = work("正在刷新目录…") { imported(importer.refresh(folder) { progress = it }) }
     fun mergeArchive(directory: Uri? = null) {

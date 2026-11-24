@@ -16,7 +16,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 internal class QqServices(private val context: Context, private val auth: QqAuthentication) :
     SourceCatalog, SourceDiscovery, SourceDailyRecommendations, SourceHomeSectionPresentation, SourceHomeContinuation, SourceSearch, SourceCollections, SourceFavorites,
-    SourceCollectionEditing, SourceRadio, SourceLyricProvider, SourceTrackTheme, SourceMediaPlayback, SourcePlaybackSessionProvider, SourcePlayback, SourcePlaybackBehavior, SourceLyricBehavior, SourcePlayerPresentation {
+    SourceCollectionEditing, SourceCollectionMembership, SourceRadio, SourceLyricProvider, SourceTrackTheme, SourceMediaPlayback, SourcePlaybackSessionProvider, SourcePlayback, SourcePlaybackBehavior, SourceLyricBehavior, SourcePlayerPresentation {
     override val missingArtworkHoldMs = 12_000L
     override val waitForSingleSwitchSettlement = true
 
@@ -35,6 +35,7 @@ internal class QqServices(private val context: Context, private val auth: QqAuth
     private val recentRepository = QqRecentPlayRepository(context)
     private val radioRepository = QqRadioRepository(context)
     private val songRepository = QqPlaylistSongRepository()
+    private val membershipIndex = QqPlaylistMembership(QqPlaylistMembershipStore(java.io.File(context.filesDir, "qq-playlist-membership")))
     private val homes = QqHomeFeed {
         QqMusicFeedPager(prepare = feed::prepare, fetch = { page, count, shelves, keys ->
             loadQqMusicFeedWithRetry { feed.load(page, count, shelves, keys) }
@@ -77,8 +78,14 @@ internal class QqServices(private val context: Context, private val auth: QqAuth
                 if (!error.rejectsQqCredential()) throw error
                 // 票可能被服务端提前作废：先续票，再用新票重试一次，续不上才报失效。
                 currentCoroutineContext().ensureActive()
-                session = auth.renewRejected(session) ?: throw error
-                work(session)
+                val rejected = session
+                session = auth.renewRejected(rejected) ?: throw if (auth.recentlyForcedRenewal(rejected.credential))
+                    error.asQqEndpointRejection("新票刚续出又被拒，未再续票") else error
+                try { work(session) } catch (again: Exception) {
+                    // 新票已通过账号校验仍被拒，是接口自身限制，不能报登录失效，也不再换票。
+                    if (!again.rejectsQqCredential()) throw again
+                    throw again.asQqEndpointRejection("续票后重试仍被拒")
+                }
             }
             currentCoroutineContext().ensureActive()
             if (!auth.isCurrent(session)) throw CancellationException("QQ账号已变化，旧请求结果已取消")
@@ -286,7 +293,36 @@ internal class QqServices(private val context: Context, private val auth: QqAuth
         } }
     }
     override suspend fun setCollectionFavorite(collection: SourceCollection, favorite: Boolean) = io { session -> setQqPlaylistCollected(session.credential, collection.playlist(), favorite) }
-    override suspend fun writableCollections(): List<SourceCollection> = io { session -> songRepository.targets(session).map { remember(it, session) } }
+    override suspend fun writableCollections(): List<SourceCollection> = io { session ->
+        val targets = songRepository.targets(session)
+        runCatching { membershipIndex.store.saveTargets(session.owner(), targets) }
+        targets.map { remember(it, session) }
+    }
+    override suspend fun cachedWritableCollections(): List<SourceCollection>? = withContext(Dispatchers.IO) {
+        val session = auth.session()
+        if (session.account == null) return@withContext null
+        runCatching { membershipIndex.store.targets(session.owner()) }.getOrNull()?.map { remember(it, session) }
+    }
+    override suspend fun containedTracks(collection: SourceCollection, tracks: List<SourceTrackDetails>, policy: SourceFetchPolicy): Set<String>? {
+        val identities = tracks.filter { it.track.identity.sourceId == QQ_SOURCE_ID }
+            .associate { it.stableId to (it.musicTrack().qqFavoriteIdentityIds() + it.identityAliases) }
+        if (policy == SourceFetchPolicy.CACHE_FIRST) return withContext(Dispatchers.IO) {
+            val session = auth.session()
+            if (session.account == null) null
+            else runCatching { membershipIndex.cached(session.owner(), collection.stableId, identities) }.getOrNull()
+        }
+        // 只读核对，不需要再拉一遍自建目录授权；目录编号随集合载荷传回。
+        return io { session ->
+            val target = collection.playlist()
+            membershipIndex.refresh(session.owner(), session.credential, target, identities) { playlistIdentities(target, session) }
+        }
+    }
+    /** 整单读取曲目身份：不解析权益与音质，只为判断归属。 */
+    private fun playlistIdentities(playlist: MusicPlaylist, session: PlatformSession): Set<String> = collectPlaylistTrackPages { cursor ->
+        val offset = cursor?.offset ?: 0
+        if (playlist.id.startsWith(QQ_PROFILE_DIRECTORY_ID_PREFIX)) library.profileDirectoryPage(playlist, session.credential, false, offset, resolveAccess = false)
+        else QqPlaylistPaging().page(playlist, session.credential, false, offset, resolveAccess = false)
+    }.tracks.flatMapTo(hashSetOf()) { it.qqFavoriteIdentityIds() }
     private fun editRequest(session: PlatformSession, mode: PlaylistEditMode, playlist: MusicPlaylist?, title: String) {
         val response = JSONObject(PlatformHttp.postJson("https://u.y.qq.com/cgi-bin/musicu.fcg",
             qqPlaylistEditRequest(session.credential, mode, playlist, title).toString(), session.credential,
@@ -316,10 +352,14 @@ internal class QqServices(private val context: Context, private val auth: QqAuth
         remember(target.copy(title = edit.title.trim()), session)
     }
     override suspend fun delete(collection: SourceCollection) = io { session ->
-        val target = owned(collection, session); editRequest(session, PlaylistEditMode.Delete, target, target.title); playlistsSeen.remove(target.id); Unit
+        val target = owned(collection, session); editRequest(session, PlaylistEditMode.Delete, target, target.title); playlistsSeen.remove(target.id)
+        runCatching { membershipIndex.store.invalidate(session.owner(), target.id) }; Unit
     }
     override suspend fun changeTracks(collection: SourceCollection, tracks: List<SourceTrackDetails>, add: Boolean) = io { session ->
-        songRepository.changeBatch(session, collection.stableId, tracks.map { it.musicTrack() }, add); Unit
+        val values = tracks.map { it.musicTrack() }
+        songRepository.changeBatch(session, collection.stableId, values, add)
+        runCatching { membershipIndex.applyWrite(session.owner(), collection.stableId, values.flatMapTo(hashSetOf()) { it.qqFavoriteIdentityIds() }, add) }
+        Unit
     }
     override suspend fun reorder(collection: SourceCollection, orderedTrackIds: List<String>) {
         throw UnsupportedOperationException("QQ原有排序为加入时间或名称本地排序，不提供远端自由重排")

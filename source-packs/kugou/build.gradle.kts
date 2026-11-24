@@ -31,7 +31,7 @@ android {
     androidResources { additionalParameters += listOf("--package-id", "0x71", "--allow-reserved-package-id") }
     defaultConfig {
         applicationId = "com.musicone.source.kugou"
-        minSdk = 23; targetSdk = 37; versionCode = 2; versionName = "1.1"
+        minSdk = 23; targetSdk = 37; versionCode = 3; versionName = "1.2"
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     buildFeatures { compose = true }
@@ -87,12 +87,12 @@ tasks.register<Sync>("packageDebugSource") {
     dependsOn("assembleDebug")
     from(layout.buildDirectory.file("outputs/apk/debug/kugou-debug.apk"))
     into(layout.buildDirectory.dir("outputs/source-packs/debug"))
-    rename { "kugou-1.1.mscm" }
+    rename { "kugou-1.2.mscm" }
 }
 tasks.register<Sync>("packageReleaseSource") {
     dependsOn("assembleRelease")
     from(layout.buildDirectory.file("outputs/apk/release/kugou-release.apk"))
     into(layout.buildDirectory.dir("outputs/source-packs/release"))
-    rename { "kugou-1.1.mscm" }
+    rename { "kugou-1.2.mscm" }
 }
 

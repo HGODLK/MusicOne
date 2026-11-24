@@ -41,6 +41,22 @@ class KugouCollectionDirectoryTest {
         }
     }
 
+    @Test fun peekNeverLoadsAndRefreshedReusesRecentConfirmation() = runBlocking {
+        val folder = temporary.newFolder()
+        assertNull(KugouCollectionDirectory(folder).peek("42", 0) {})
+        KugouCollectionDirectory(folder).current("42", 0, {}, { listOf(row(1)) })
+        // 重启后磁盘快照可立即读出，但未经本会话确认，核对时必须联网。
+        val cache = KugouCollectionDirectory(folder)
+        assertEquals("1", cache.peek("42", 0) {}?.single()?.listId)
+        var calls = 0
+        assertEquals("2", cache.refreshed("42", 0, 60_000, {}) { calls++; listOf(row(2)) }.single().listId)
+        assertEquals("2", cache.refreshed("42", 0, 60_000, {}) { calls++; listOf(row(3)) }.single().listId)
+        assertEquals(1, calls)
+        assertEquals("4", cache.refreshed("42", 0, 0, {}) { calls++; listOf(row(4)) }.single().listId)
+        assertEquals(2, calls)
+        assertEquals("4", cache.peek("42", 0) {}?.single()?.listId)
+    }
+
     @Test fun coldThreeSectionsAndRepeatedCacheFirstShareValidatedSessionSnapshot() = runBlocking {
         val cache = KugouCollectionDirectory(temporary.newFolder())
         var calls = 0

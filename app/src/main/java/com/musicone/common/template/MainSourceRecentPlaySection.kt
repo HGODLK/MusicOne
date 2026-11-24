@@ -26,7 +26,9 @@ internal fun MainSourceRecentPlaySection(
         when {
             playlists.isNotEmpty() -> BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val cardWidth = if (maxWidth >= 600.dp) 168.dp else 148.dp
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                val rowState = androidx.compose.foundation.lazy.rememberLazyListState()
+                // 滑到最左边后继续右滑交给根页面回到首页。
+                LazyRow(Modifier.rootPageEdgeSwipe(rowState), state = rowState, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     items(playlists, key = MusicPlaylist::id) { playlist ->
                         Column(Modifier.width(cardWidth)) {
                             MainSourceLibraryPlaylistCard(

@@ -16,6 +16,9 @@ internal object PlaybackOptions {
         private set
     var unlockDolbyAtmos by mutableStateOf(false)
         private set
+    /** USB 独占时由设备硬件调节音量，软件不再衰减 PCM。 */
+    var usbHardwareVolume by mutableStateOf(false)
+        private set
     private val mutableUsbLosslessOutput = MutableStateFlow(false)
     val usbLosslessOutputChanges = mutableUsbLosslessOutput.asStateFlow()
     private var store: android.content.SharedPreferences? = null
@@ -28,6 +31,7 @@ internal object PlaybackOptions {
         savedMobileQuality = AudioQuality.parse(store!!.getString("mobile_quality", null))
         usbLosslessOutput = store!!.getBoolean("usb_lossless_output", false)
         unlockDolbyAtmos = store!!.getBoolean("unlock_dolby_atmos", false)
+        usbHardwareVolume = store!!.getBoolean("usb_hardware_volume", false)
         mutableUsbLosslessOutput.value = usbLosslessOutput
     }
     fun screenOn(value: Boolean) { keepScreenOn = value; store?.edit()?.putBoolean("screen_on", value)?.apply() }
@@ -40,6 +44,10 @@ internal object PlaybackOptions {
         store?.edit()?.putBoolean("unlock_dolby_atmos", value)?.apply()
     }
     fun mobile(value: AudioQuality?) { savedMobileQuality = value; store?.edit()?.putString("mobile_quality", value?.name)?.apply() }
+    fun usbHardwareVolume(value: Boolean) {
+        usbHardwareVolume = value
+        store?.edit()?.putBoolean("usb_hardware_volume", value)?.apply()
+    }
     fun usbLossless(value: Boolean) {
         usbLosslessOutput = value
         mutableUsbLosslessOutput.value = value

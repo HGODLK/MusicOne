@@ -13,8 +13,13 @@ internal data class DirectUsbPcmOutput(
 )
 
 /** 先尝试原规格，再尝试兼容转换；每次失败均释放候选流，不让旧配置污染下一次。 */
-internal fun createDirectUsbPcmOutput(device: UsbAudioDevice, info: UsbAudioDeviceInfo,
-    format: Format, sourceBits: Int): DirectUsbPcmOutput? {
+internal fun createDirectUsbPcmOutput(
+    device: UsbAudioDevice,
+    info: UsbAudioDeviceInfo,
+    format: Format,
+    sourceBits: Int,
+    beforeStart: (UsbAudioStreamProfile) -> Unit = { device.maximizeHardwareVolume(it) },
+): DirectUsbPcmOutput? {
     val plans = usbPcmOutputPlans(format.sampleRate, sourceBits) { rate, bits ->
         device.findStreamProfile(rate, format.channelCount, bits)
     }
@@ -42,7 +47,11 @@ internal fun createDirectUsbPcmOutput(device: UsbAudioDevice, info: UsbAudioDevi
                 },
                 readSampleRate = { device.readSampleRate(profile) },
                 clockValid = { device.awaitClockValid(profile) },
-                start = stream::start)
+                start = {
+                    // 时钟确认后再初始化硬件音量，按当前模式推满或直接设到目标衰减。
+                    beforeStart(profile)
+                    stream.start()
+                })
             if (accepted) return DirectUsbPcmOutput(stream, profile, plan.sampleRate, resampler, plan.converted)
         } catch (error: Exception) {
             android.util.Log.w("MusicOneUsbAudio", "USB 输出候选配置失败", error)

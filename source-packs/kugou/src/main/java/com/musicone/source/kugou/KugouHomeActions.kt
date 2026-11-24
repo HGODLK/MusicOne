@@ -9,10 +9,10 @@ import kotlinx.coroutines.launch
 internal class KugouHomeActions(private val owner: KugouPackageState, private val collections: SourceCollections) {
     private var collectionJob: Job? = null
 
-    /** 货架点歌交给宿主，和公共首页一样按用户设置开猜你喜欢或插入当前队列。 */
-    fun playRecommendation(track: SourceTrackDetails) = safely {
-        requireCurrent(track.track.identity)
-        owner.environment.host.playRecommendation(track)
+    /** 货架点歌交给宿主，和公共首页一样按用户设置开猜你喜欢或插入当前队列；带上同一页歌曲，从点击处起依次入队。 */
+    fun playRecommendation(page: List<SourceTrackDetails>, index: Int) = safely {
+        page.forEach { requireCurrent(it.track.identity) }
+        owner.environment.host.playRecommendations(page, index)
     }
 
     fun playCollection(collection: SourceCollection) {

@@ -58,10 +58,7 @@ internal fun FeaturePlaylistCard(
     val motion = LocalPlaylistMotion.current
     val transition = LocalPlaylistCardTransition.current
     val viewport = LocalPlaylistCardViewport.current
-    val requester = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
-    var bounds by remember { androidx.compose.runtime.mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
     val cardHeight = minOf(desiredHeight, viewport.height.takeIf { it > 0.dp } ?: desiredHeight)
-    val cover = playlist.tracks.firstOrNull()
     val artwork by rememberArtworkBitmap(playlist.artworkUrl)
     val useDarkInk = remember(artwork, playlist.artworkEnd) {
         artwork?.recommendationCardUsesDarkInk()
@@ -72,26 +69,19 @@ internal fun FeaturePlaylistCard(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(cardHeight).onGloballyPositioned {
-                bounds = androidx.compose.ui.geometry.Rect(it.positionInRoot(), androidx.compose.ui.geometry.Size(it.size.width.toFloat(), it.size.height.toFloat()))
-            }
-            .bringIntoViewRequester(requester)
+            .height(cardHeight)
             .clip(shape)
             .clickable(enabled = transition?.busy != true && motion?.mounted != true) {
-                if (transition == null) onClick() else transition.open(playlist.id, artwork, {
-                    // 先让横向列表露出卡片，再按首页实际可视区域避让底部栏。
-                    requester.bringIntoView()
-                    viewport.reveal { bounds }
-                    repeat(2) { androidx.compose.runtime.withFrameNanos { } }
-                }, onClick)
+                // 被横向列表或底栏挡住一部分也直接起飞，飞行按可见块裁剪，不再先滚动露出。
+                if (transition == null) onClick() else transition.open(playlist.id, artwork, {}, onClick)
             },
     ) {
         PlaylistSyncedArtwork(
             artwork,
             playlist.artworkUrl?.isNotBlank() == true && artwork == null,
-            cover?.artworkStart ?: playlist.artworkStart, cover?.artworkEnd ?: playlist.artworkEnd,
-            cover?.artworkMark ?: playlist.artworkMark,
-            Modifier.fillMaxSize().motionAnchor(motion, playlist.id, false, corner = corner.value, markSize = 120f, markX = 0f, markY = 0f),
+            playlist.artworkStart, playlist.artworkEnd,
+            playlist.artworkMark,
+            Modifier.fillMaxSize().motionAnchor(motion, playlist.id, false, partial = true, corner = corner.value, markSize = 120f, markX = 0f, markY = 0f),
             120.sp, shape, Alignment.Center,
             sourceKey = playlist.id, imageUrl = playlist.artworkUrl,
         )

@@ -65,7 +65,7 @@ internal fun guardSourceFavorites(service: SourceFavorites, operations: SourceOp
     }
 
 internal fun guardSourceCollectionEditing(service: SourceCollectionEditing, operations: SourceOperationLease): SourceCollectionEditing =
-    object : SourceCollectionEditing, SourceCollectionDetailsEditing, SourceCollectionRemoteOrder {
+    object : SourceCollectionEditing, SourceCollectionDetailsEditing, SourceCollectionRemoteOrder, SourceCollectionMembership {
         override val supportedOperations get() = operations.read { service.supportedOperations }
         override suspend fun writableCollections() = operations.call { service.writableCollections() }
         override suspend fun create(edit: SourceCollectionEdit) = operations.call { service.create(edit) }
@@ -78,4 +78,9 @@ internal fun guardSourceCollectionEditing(service: SourceCollectionEditing, oper
         override suspend fun editDetails(collection: SourceCollection, edit: SourceCollectionDetailsEdit) = operations.call { requireNotNull(service as? SourceCollectionDetailsEditing).editDetails(collection, edit) }
         override fun supportsRemoteOrder(collection: SourceCollection) = operations.read { (service as? SourceCollectionRemoteOrder)?.supportsRemoteOrder(collection) == true }
         override suspend fun orderedTracks(collection: SourceCollection, request: SourceCursorRequest) = operations.call { requireNotNull(service as? SourceCollectionRemoteOrder).orderedTracks(collection, request) }
+        // 旧包没有实现归属接口时返回 null，宿主回退逐页核对。
+        override val supportsMembership get() = operations.read { (service as? SourceCollectionMembership)?.supportsMembership == true }
+        override suspend fun cachedWritableCollections() = operations.call { (service as? SourceCollectionMembership)?.cachedWritableCollections() }
+        override suspend fun containedTracks(collection: SourceCollection, tracks: List<SourceTrackDetails>, policy: SourceFetchPolicy) =
+            operations.call { (service as? SourceCollectionMembership)?.containedTracks(collection, tracks, policy) }
     }

@@ -50,4 +50,41 @@ class HomeRecommendationPlaybackTest {
         assertEquals(HomeRecommendationAction.INSERT_IN_QUEUE, action(radioAvailable = false, hasQueue = false))
         assertEquals(HomeRecommendationAction.INSERT_IN_QUEUE, action(radioAvailable = false, radioActive = true))
     }
+
+    private fun song(id: String, source: MusicSource = MusicSource.QQ) = MusicTrack(id = id, source = source, title = id,
+        artists = "歌手", album = "专辑", durationMs = 180_000L, artworkStart = 0L, artworkEnd = 0L, artworkMark = id, previewUrl = "")
+    private fun ids(tracks: List<MusicTrack>) = tracks.map { it.id }
+
+    @Test fun 点击中间一首时上面的不入队() {
+        val page = listOf(song("a"), song("b"), song("c"))
+        assertEquals(listOf("a", "b", "c"), ids(homeRecommendationBatch(page, 0) { true }))
+        assertEquals(listOf("b", "c"), ids(homeRecommendationBatch(page, 1) { true }))
+        assertEquals(listOf("c"), ids(homeRecommendationBatch(page, 2) { true }))
+        assertEquals(emptyList<String>(), ids(homeRecommendationBatch(page, 3) { true }))
+    }
+
+    @Test fun 后续歌曲不可播或跨音源时跳过() {
+        val page = listOf(song("a"), song("b"), song("c", MusicSource.KUGOU), song("d"))
+        assertEquals(listOf("a", "d"), ids(homeRecommendationBatch(page, 0) { it.id != "b" }))
+    }
+
+    @Test fun 整批接在当前歌曲后且原有后续顺延() {
+        val queue = listOf(song("h"), song("cur"), song("r1"), song("b"), song("r2"))
+        val result = insertTracksAfterCurrent(queue, song("cur"), listOf(song("a"), song("b"), song("c")))
+        assertEquals(listOf("h", "cur", "a", "b", "c", "r1", "r2"), ids(result))
+    }
+
+    @Test fun 当前歌曲在这批里时随这批重新排位() {
+        val queue = listOf(song("h"), song("b"), song("r1"))
+        val result = insertTracksAfterCurrent(queue, song("b"), listOf(song("a"), song("b"), song("c")))
+        assertEquals(listOf("h", "a", "b", "c", "r1"), ids(result))
+    }
+
+    @Test fun 电台窗口整批插入后以第一首为中心并记为已出现() {
+        val window = SourceRadioQueueWindow()
+        val queue = window.start(listOf(song("r1"), song("r2"), song("r3"), song("r4"), song("r5")), song("cur"))
+        val result = window.insertAll(queue, song("cur"), listOf(song("a"), song("b"), song("c")))
+        assertEquals(listOf("cur", "a", "b", "c", "r1", "r2", "r3"), ids(result))
+        assertEquals(true, window.seenIds().containsAll(listOf("a", "b", "c")))
+    }
 }

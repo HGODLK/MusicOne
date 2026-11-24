@@ -106,6 +106,11 @@ internal fun PlayerRelatedMenuHost(state: MusicOneUiState, model: MusicPlaybackR
     }
 }
 
+/** 标题点击打开关联菜单的启用条件；原生播放页与音源自建播放页共用。 */
+internal fun playerTrackMenuEnabled(track: MusicTrack, lyricOffset: Boolean): Boolean =
+    track.source != MusicSource.LOCAL || track.source.supportsLibraryEditing ||
+        track.source.supportsManualLyrics || (lyricOffset && track.source.supportsLyricOffset)
+
 internal fun Modifier.playerRelatedInformation(track: MusicTrack, enabled: Boolean, lyricOffsetMenu: Boolean = false): Modifier = composed {
     val menu = LocalMainSourcePlaylistSongMenu.current
     val actionLabel = if (lyricOffsetMenu) "调整歌词偏移" else if (track.source.supportsLibraryEditing || track.source.supportsManualLyrics) "歌曲资料与歌词" else "查看歌手或专辑"
@@ -119,9 +124,8 @@ internal fun Modifier.playerRelatedInformation(track: MusicTrack, enabled: Boole
                 press = coordinates?.takeIf { it.isAttached }?.localToRoot(down.position) ?: bounds.center
             }
         }
-        .clickable(enabled = enabled && (track.source != MusicSource.LOCAL ||
-            track.source.supportsLibraryEditing || track.source.supportsManualLyrics ||
-            (lyricOffsetMenu && track.source.supportsLyricOffset)) && menu != null,
+        .clickable(enabled = enabled && playerTrackMenuEnabled(track, lyricOffsetMenu) &&
+            menu != null,
             onClickLabel = actionLabel) {
             val point = press ?: bounds.center
             menu?.open(track, Rect(point.x - 1f, point.y - 1f, point.x + 1f, point.y + 1f),

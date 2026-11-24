@@ -130,7 +130,7 @@ internal fun MiniPlayerInkProvider(backdrop: GraphicsLayer, backdropBounds: Rect
                                     val surface = if (ExperiencePreferences.options.disableBlur || android.os.Build.VERSION.SDK_INT < 31) {
                                         Color(0xFFF6F7F8)
                                     } else {
-                                        Color.White.copy(alpha = .28f).compositeOver(pixel)
+                                        Color.White.copy(alpha = MiniPlayerSurfaceTint.light).compositeOver(pixel)
                                     }
                                     lightness += surface.luminance()
                                 }

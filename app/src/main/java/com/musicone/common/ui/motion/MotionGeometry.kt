@@ -1,5 +1,8 @@
 package com.musicone
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Rect
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -14,6 +17,9 @@ internal fun motionRect(start: Rect, end: Rect, progress: Float): Rect = Rect(
     motionLerp(start.left, end.left, progress), motionLerp(start.top, end.top, progress),
     motionLerp(start.right, end.right, progress), motionLerp(start.bottom, end.bottom, progress),
 )
+
+/** 部分露出的锚点：可见块在宿主内且有面积才可用，完整位置允许超出屏幕。 */
+internal fun partialAnchorUsable(visible: Rect, host: Rect): Boolean = anchorFits(visible, host)
 
 internal fun anchorFits(anchor: Rect, host: Rect): Boolean =
     anchor.width > 1f && anchor.height > 1f &&
@@ -31,7 +37,22 @@ internal fun contentReveal(progress: Float): Float = ((progress - .22f) / .78f).
 internal fun playlistDetailProgress(pageProgress: Float, entranceProgress: Float): Float =
     minOf(contentReveal(pageProgress), entranceProgress).coerceIn(0f, 1f)
 
-internal fun playerSurfaceCorner(progress: Float): Float = motionLerp(19f, 0f, progress)
+/** 迷你播放条外轮廓圆角（dp）：经典底栏 19，并排底栏与导航胶囊统一为 20；飞行玻璃各处经 [playerSurfaceCorner] 读取同一个值。 */
+internal object MiniPlayerSurfaceCorner {
+    var dp by mutableFloatStateOf(19f)
+
+    /** 播放页展开终点的屏幕圆角（dp），由 PlayerScreenCornerEffect 按当前窗口同步；取不到时为 0。 */
+    var screenDp by mutableFloatStateOf(0f)
+}
+
+/** 迷你播放条浅色玻璃的白度，随底栏布局取值；飞行玻璃的起始白度和迷你条文字取色读同一个值。 */
+internal object MiniPlayerSurfaceTint {
+    var light by mutableFloatStateOf(.28f)
+}
+
+/** 运动途中从迷你条圆角过渡到屏幕圆角；完全展开后回到直角，截图和录屏的四角不会露出下层页面。 */
+internal fun playerSurfaceCorner(progress: Float): Float =
+    if (progress >= 1f) 0f else motionLerp(MiniPlayerSurfaceCorner.dp, MiniPlayerSurfaceCorner.screenDp, progress)
 
 /** 歌词紧凑态用量化补偿维持约 12dp 视觉圆角，减少动画中的形状更新次数。 */
 internal fun phoneArtworkCorner(progress: Float): Float {

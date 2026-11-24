@@ -52,6 +52,7 @@ internal data class NavigationCapsuleMetrics(
     val labelGap: Dp,
     val fontSize: TextUnit,
     val lineHeight: TextUnit,
+    val labels: Boolean = true,
 )
 
 private val PhoneNavigationCapsule = NavigationCapsuleMetrics(
@@ -68,6 +69,22 @@ private val TabletNavigationCapsule = NavigationCapsuleMetrics(
 
 internal fun navigationCapsuleMetrics(phone: Boolean): NavigationCapsuleMetrics =
     if (phone) PhoneNavigationCapsule else TabletNavigationCapsule
+
+/** 并排底栏的胶囊：与迷你播放条同高（62dp）、同圆角、同上下留白。手机只留图标，平板空间充裕保留图标和文字。 */
+private val PhoneRowNavigationCapsule = NavigationCapsuleMetrics(
+    width = 104.dp, innerHeight = 52.dp, innerPadding = 5.dp,
+    topGap = MiniPlayerLayoutMetrics.outerPadding, bottomGap = MiniPlayerLayoutMetrics.outerPadding,
+    outerRadius = 20.dp, selectionRadius = 15.dp,
+    iconSize = 22.dp, labelGap = 0.dp, fontSize = 11.sp, lineHeight = 13.sp, labels = false,
+)
+
+private val TabletRowNavigationCapsule = TabletNavigationCapsule.copy(
+    topGap = MiniPlayerLayoutMetrics.outerPadding, bottomGap = MiniPlayerLayoutMetrics.outerPadding,
+    outerRadius = PhoneRowNavigationCapsule.outerRadius, selectionRadius = PhoneRowNavigationCapsule.selectionRadius,
+)
+
+internal fun rowNavigationCapsuleMetrics(phone: Boolean): NavigationCapsuleMetrics =
+    if (phone) PhoneRowNavigationCapsule else TabletRowNavigationCapsule
 
 internal fun navigationCapsuleSelectionBounds(width: Float, height: Float, position: Float): Rect {
     val itemWidth = width / MusicOnePage.entries.size
@@ -135,7 +152,7 @@ private fun NavigationCapsuleLabel(
 ) {
     Column(modifier.fillMaxHeight(), Arrangement.Center, Alignment.CenterHorizontally) {
         Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(metrics.iconSize))
-        Text(label, color = color, fontSize = metrics.fontSize, lineHeight = metrics.lineHeight, maxLines = 1,
+        if (metrics.labels) Text(label, color = color, fontSize = metrics.fontSize, lineHeight = metrics.lineHeight, maxLines = 1,
             fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
             modifier = Modifier.padding(top = metrics.labelGap))
     }

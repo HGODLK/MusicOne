@@ -1,8 +1,6 @@
 package com.musicone
 
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.material3.Text
@@ -10,6 +8,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import kotlinx.coroutines.launch
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
@@ -56,6 +55,8 @@ internal fun MainSourceMyScreen(
     var host by remember { mutableStateOf(Rect.Zero) }
     var hiddenId by remember { mutableStateOf<String?>(null) }
     val removals = remember(account?.userId) { PlaylistCardRemovalState() }
+    val selection = remember(source, account?.userId) { PlaylistCardSelection() }
+    val selectionHost = LocalPlaylistSelectionBarHost.current
     val editorBackdrop = rememberGraphicsLayer()
     var savedSection by rememberSaveable { mutableIntStateOf(MY_SECTION_CREATED) }
     // 音源未声明的创建／收藏分区不显示，只剩本地时连分段按钮一起隐藏。
@@ -81,6 +82,18 @@ internal fun MainSourceMyScreen(
     val reorder = rememberPlaylistCardReorder(scroll, availablePlaylists,
         if (localSection) "local" else "${source.name.lowercase()}:${account?.userId.orEmpty()}:$section", localSection)
     val displayedPlaylists = reorder.arrange(availablePlaylists)
+    // 卡片多选：创建分区要音源声明了删除，收藏分区要音源支持收藏歌单，本地分区始终可用。
+    val canBatch = when {
+        localSection -> true
+        created -> library.signedIn && com.musicone.source.sdk.SourceCollectionOperation.DELETE in
+            sourceEntry?.collectionEditing?.supportedOperations.orEmpty()
+        else -> library.signedIn && sourceEntry?.favorites?.supportsCollections == true
+    }
+    val selectableIds = displayedPlaylists.map { it.id }.filter { it != PHONE_STORAGE_PLAYLIST_ID }
+    LaunchedEffect(section) { selection.close() }
+    LaunchedEffect(selectableIds) { selection.retain(selectableIds) }
+    // 编辑面板或多选期间不能左右切到首页。
+    LockRootPageSwipe(editor.open || selection.active)
     val myVisible = LocalMyPageVisible.current
     ObserveMainSourceMyLibraryRefresh(source.id to account?.userId,
         library.signedIn || favoriteAccess == MainSourceFavoriteAccess.AVAILABLE,
@@ -99,8 +112,14 @@ internal fun MainSourceMyScreen(
         val pairedWidth = if (maxWidth >= 600.dp) favoriteWidth * 1.08f else null
         val cardSide = (maxWidth - gutter * 2 - 16.dp * (columns - 1)) / columns
         val trailingSpace = key(section) { playlistGridTrailingSpace(displayedPlaylists.size, columns, cardSide) }
+        SideEffect { selection.slots = playlistGridSlots(listOf(displayedPlaylists.map { it.id }), columns) }
         LazyVerticalGrid(GridCells.Fixed(columns), state = scroll, modifier = Modifier.fillMaxSize()
             .onGloballyPositioned { segmentMotion.viewportTop = it.positionInRoot().y }
+            // 多选、编辑、拖动排序期间不响应左右滑动切分区；切换动画中可以接着滑，由切换函数打断续接。
+            .librarySegmentSwipe(sections, section, !reorder.dragging && !editor.open && !selection.active,
+                { segmentMotion.headerTop - segmentMotion.viewportTop }, switchSegment)
+            // 过渡中只吞掉按下，卡片点不开，但横滑仍能接手（原先整页盖层连滑动一起挡掉了）。
+            .blockLibraryTapsWhile(segmentMotion.moving)
             .librarySegmentMotion(segmentMotion, section)
             .playerQualityBackdropSnapshot(editorBackdrop, editor.open),
             userScrollEnabled = !segmentMotion.moving && !reorder.dragging && !editor.open,
@@ -159,10 +178,15 @@ internal fun MainSourceMyScreen(
                 }, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("我的歌单", fontSize = 23.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        // 平时是多选图标和新建按钮，多选时整组原位淡出，“全选”在同一槽位淡入。
                         // 无需登录的音源没有账号歌单可建，只在本地分区保留新建。
-                        if (localSection || (!loginFree && MY_SECTION_CREATED in sections)) IconButton(onClick = { if (localSection) editor.show(null, Rect.Zero, local = true) else if (library.signedIn) editor.show(null, Rect.Zero) else entry() }) {
-                            Icon(Icons.Rounded.Add, "新建歌单")
-                        }
+                        val showCreate = localSection || (!loginFree && MY_SECTION_CREATED in sections)
+                        PlaylistSectionSelectAll(selection, selectableIds, { selection.begin(null) }.takeIf { canBatch && selectableIds.isNotEmpty() },
+                            trailing = if (showCreate) { {
+                                IconButton(onClick = { if (localSection) editor.show(null, Rect.Zero, local = true) else if (library.signedIn) editor.show(null, Rect.Zero) else entry() }) {
+                                    Icon(Icons.Rounded.Add, "新建歌单")
+                                }
+                            } } else null)
                     }
                     if (sections.size > 1) LibrarySectionTabs(sections.indexOf(section),
                         listOf("创建 ${library.createdPlaylists.size}", "收藏 ${library.collectedPlaylists.size}", "本地 ${musicLibraryUi.snapshot.localPlaylists.size}").let { all -> sections.map(all::get) }) { switchSegment(sections[it]) }
@@ -171,22 +195,26 @@ internal fun MainSourceMyScreen(
             items(displayedPlaylists, key = { it.id }) { playlist ->
                 val presented = playlist.withMainSourceLibrarySongCountSubtitle()
                 val artworkVersion = library.artworkVersions[playlist.id] ?: 0L
-                MainSourcePlaylistCard(
-                    playlist = presented,
-                    onClick = { onOpenPlaylist(presented) },
-                    onPlay = { onPlayPlaylist(presented) },
-                    modifier = Modifier.fillMaxWidth().playlistCardLift(reorder, playlist.id).graphicsLayer {
+                SelectablePlaylistCard(selection, playlist.id, playlist.id != PHONE_STORAGE_PLAYLIST_ID,
+                    Modifier.fillMaxWidth().playlistCardLift(reorder, playlist.id).graphicsLayer {
                         alpha = if (hiddenId == playlist.id || removals.hidden(playlist.id)) 0f else 1f
                     }.animateItem(
                         fadeInSpec = if (segmentMotion.moving) null else musicMotion(320),
                         fadeOutSpec = if (segmentMotion.moving || removals.hidden(playlist.id)) null else musicMotion(220),
                         placementSpec = if (segmentMotion.moving || reorder.activeId == playlist.id) null else musicSpring(),
-                    ),
+                    )) { hintVisibility ->
+                MainSourcePlaylistCard(
+                    playlist = presented,
+                    onClick = { onOpenPlaylist(presented) },
+                    onPlay = { onPlayPlaylist(presented) },
+                    modifier = Modifier.fillMaxWidth(),
                     width = 1280.dp,
                     artworkVersion = artworkVersion,
                     sourceKey = if (localSection) "library-user:${playlist.id}" else "${source.id}:my-library:$created:${playlist.id}",
                     freezeArtwork = hiddenId == playlist.id,
-                    reorderState = reorder,
+                    // 多选期间停用拖动排序；播放按钮淡出但保留位置，点击由多选层接管。
+                    reorderState = reorder.takeUnless { selection.active },
+                    playVisibility = hintVisibility,
                     onLongClick = if (created || localSection) { origin ->
                         removals.hold(playlist, displayedPlaylists.indexOfFirst { it.id == playlist.id })
                         hiddenId = playlist.id
@@ -194,6 +222,7 @@ internal fun MainSourceMyScreen(
                             currentBounds = origin.currentBounds)
                     } else null,
                 )
+                }
             }
             if (displayedPlaylists.isEmpty() && (localSection || !library.signedIn || !loading)) item("status", span = { GridItemSpan(maxLineSpan) }) {
                 MainSourceInlineMessage(when {
@@ -210,9 +239,57 @@ internal fun MainSourceMyScreen(
                 }
             }
         }
-        if (segmentMotion.moving) Box(Modifier.matchParentSize().clickable(
-            interactionSource = remember { MutableInteractionSource() }, indication = null,
-        ) {})
+        PlaylistCardSelectionBar(selection, selectableIds, if (created || localSection) "删除" else "取消收藏") {
+            val targets = displayedPlaylists.filter { it.id in selection.ids }
+            val names = playlistBatchNames(targets)
+            // 云端批量：逐个请求，操作条显示进度；全部成功退出多选，否则只保留失败项。
+            // 已完成的卡片先淡出缩小，再刷新列表让其余卡片补位。
+            fun runRemote(verb: String, action: suspend ((Int, Int) -> Unit) -> CollectionBatchResult) {
+                scope.launch {
+                    selection.busyText = "正在$verb…"
+                    var finished = emptyList<String>()
+                    val text = try {
+                        val result = action { index, total -> selection.busyText = "正在$verb ${index + 1}/$total" }
+                        selection.busyText = null
+                        finished = result.done.map { it.id }
+                        selection.markLeaving(finished)
+                        if (result.failed.isEmpty()) selection.close() else selection.keepOnly(result.failed.map { it.id })
+                        result.summary(verb)
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        failure.asUserMessage()
+                    } finally {
+                        selection.busyText = null
+                    }
+                    android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show()
+                    if (finished.isNotEmpty()) kotlinx.coroutines.delay(PlaylistCardLeaveMillis)
+                    onRefresh()
+                    // 列表迟迟没有刷新时恢复显示，不让卡片一直隐身。
+                    if (finished.isNotEmpty()) { kotlinx.coroutines.delay(4_000); selection.clearLeaving() }
+                }
+            }
+            selectionHost.confirm = when {
+                localSection -> PlaylistBatchConfirm("删除 ${targets.size} 个歌单？", names + "\n只删除歌单，原音乐文件会保留。", "删除") {
+                    musicLibraryUi.work("正在删除歌单…") {
+                        val ids = targets.map { it.id }
+                        selection.close()
+                        selection.markLeaving(ids)
+                        kotlinx.coroutines.delay(PlaylistCardLeaveMillis)
+                        val removed = try { musicLibraryUi.store.deletePlaylists(ids) }
+                            catch (failure: Exception) { selection.clearLeaving(); throw failure }
+                        musicLibraryUi.message = "已删除 $removed 个歌单"
+                    }
+                }
+                created -> PlaylistBatchConfirm("删除 ${targets.size} 个歌单？",
+                    names + "\n将从你的${source.label}账号中永久删除，无法恢复。", "删除") {
+                    runRemote("删除") { progress -> deleteSourceCollections(context, source, targets, progress) }
+                }
+                else -> PlaylistBatchConfirm("取消收藏 ${targets.size} 个歌单？", names + "\n歌单本身不会被删除，可以重新收藏。", "取消收藏") {
+                    runRemote("取消收藏") { progress -> unfavoriteSourceCollections(context, source, account?.userId, targets, progress) }
+                }
+            }
+        }
         MainSourcePlaylistEditorOverlay(
             editor = editor,
             host = host,

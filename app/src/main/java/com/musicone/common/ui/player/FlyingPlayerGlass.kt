@@ -293,7 +293,7 @@ internal fun FlyingPlayerGlass(motion: PageMotion) {
         ) {
             // 末段覆盖为静态迷你玻璃自身保存的最终合成结果，使模糊与亮度在交接帧完全一致。
             sourcePath.reset()
-            sourcePath.addRoundRect(RoundRect(sourceBounds, CornerRadius(19.dp.toPx())))
+            sourcePath.addRoundRect(RoundRect(sourceBounds, CornerRadius(MiniPlayerSurfaceCorner.dp.dp.toPx())))
             rotatePath(sourcePath, sourceBounds.center, sourceGeometry.rotation)
             paint.alpha = sourceHandoffAlpha
             drawContext.canvas.saveLayer(phonePlayerFlightBounds(sourceBounds, sourceGeometry.rotation), paint)
@@ -341,7 +341,7 @@ internal fun playerGlassSampleScale(widthPx: Int, heightPx: Int): Float {
     return minOf(.4f, 1_440f / longEdge).coerceAtLeast(.25f)
 }
 
-internal fun playerGlassTintAlpha(progress: Float): Float = motionLerp(.28f, .16f, progress)
+internal fun playerGlassTintAlpha(progress: Float): Float = motionLerp(MiniPlayerSurfaceTint.light, .16f, progress)
 
 internal fun playerGlassDarkTintAlpha(progress: Float): Float = motionLerp(.82f, .58f, progress)
 

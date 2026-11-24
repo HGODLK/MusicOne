@@ -123,14 +123,17 @@ internal class SourcePublicTrackComponents(private val access: SourcePublicCompo
         access.Host {
             SideEffect { handle.update(tracks) }
             CompositionLocalProvider(LocalPlaylistMultiSelection provides handle.selection) {
-                LazyColumn(modifier, state = scroll) {
-                    playlistTrackItems(handle.collection?.copy(tracks = sorted) ?: libraryPlaylist("component:$sourceId", "歌曲", sorted),
-                        MusicOneUiState(currentTrack = mapped.firstOrNull { it.id == player.stableTrackId }, isPlaying = player.isPlaying),
-                        tracks.filter { it.stableId in favoriteIds || it.toMusicTrack().id in favoriteIds }.mapTo(hashSetOf()) { it.toMusicTrack().id },
-                        { song -> sourceById[song.id]?.let(click) },
-                        { song -> sourceById[song.id]?.let(favorite) }, loading = loading, loadMessage = error,
-                        selectionLoadAll = loadAll?.let { load -> { handle.check(); load().also { handle.update(it, complete = true) }.map { it.toMusicTrack() } } })
-                    item("source-component-load-more") { ArtistLoadMore(loading && tracks.isNotEmpty(), error, hasMore, access.event(onLoadMore)) }
+                // 音源页面会继承根歌单的关闭进度，公共歌曲行须与它隔离，否则整行透明。
+                SourceLibraryContentScope {
+                    LazyColumn(modifier, state = scroll) {
+                        playlistTrackItems(handle.collection?.copy(tracks = sorted) ?: libraryPlaylist("component:$sourceId", "歌曲", sorted),
+                            MusicOneUiState(currentTrack = mapped.firstOrNull { it.id == player.stableTrackId }, isPlaying = player.isPlaying),
+                            tracks.filter { it.stableId in favoriteIds || it.toMusicTrack().id in favoriteIds }.mapTo(hashSetOf()) { it.toMusicTrack().id },
+                            { song -> sourceById[song.id]?.let(click) },
+                            { song -> sourceById[song.id]?.let(favorite) }, loading = loading, loadMessage = error,
+                            selectionLoadAll = loadAll?.let { load -> { handle.check(); load().also { handle.update(it, complete = true) }.map { it.toMusicTrack() } } })
+                        item("source-component-load-more") { ArtistLoadMore(loading && tracks.isNotEmpty(), error, hasMore, access.event(onLoadMore)) }
+                    }
                 }
             }
         }
@@ -143,8 +146,10 @@ internal class SourcePublicTrackComponents(private val access: SourcePublicCompo
         access.Host {
             SideEffect { handle.register(track) }
             CompositionLocalProvider(LocalPlaylistMultiSelection provides handle.selection) {
-                PlaylistTrackRow(track.toMusicTrack(), current, playing, favorite, false,
-                    access.event(onClick), access.event(onFavorite), modifier)
+                SourceLibraryContentScope {
+                    PlaylistTrackRow(track.toMusicTrack(), current, playing, favorite, false,
+                        access.event(onClick), access.event(onFavorite), modifier)
+                }
             }
         }
     }

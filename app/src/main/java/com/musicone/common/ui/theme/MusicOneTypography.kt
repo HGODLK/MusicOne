@@ -156,7 +156,7 @@ private fun AnnotatedString.Builder.appendFontSpan(
     }
 }
 
-private fun scriptFor(char: Char, cjkScript: MusicOneScript): MusicOneScript = when {
+internal fun scriptFor(char: Char, cjkScript: MusicOneScript): MusicOneScript = when {
     isKorean(char) -> MusicOneScript.KO
     isJapanese(char) -> MusicOneScript.JA
     isCjk(char) -> cjkScript

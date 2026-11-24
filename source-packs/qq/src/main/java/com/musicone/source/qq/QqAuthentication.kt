@@ -11,8 +11,10 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-internal class QqAuthentication(private val context: Context, private val onLoginCompleted: () -> Unit, private val motionPreference: () -> Boolean) : SourceAuthentication {
+internal class QqAuthentication(private val context: Context, private val onLoginCompleted: () -> Unit, private val motionPreference: () -> Boolean,
+    private val onExpired: (String) -> Unit = {}) : SourceAuthentication {
     val reduceMotion get() = motionPreference()
+    init { QqSessionLog.attach(context) }
     // 页面仅在完整会话写入成功后退出，播放安全验证不会触发此出口。
     fun loginCompleted() = onLoginCompleted()
     // 播放验证结束只关闭认证覆盖层，不把它当作新的登录成功。
@@ -23,9 +25,23 @@ internal class QqAuthentication(private val context: Context, private val onLogi
     private val revision = QqAccountRevision()
     private val challenges = ConcurrentHashMap<String, Pending>()
     @Volatile private var expired = false
+    private val expiryNote = QqExpiryNote(context)
+    private val recovery = QqExpiryRecovery()
     private val renewal = QqSessionRenewal(::session, QqPersistentSession(),
         save = { previous, result -> saveIfCurrent(previous, result.credential, result.account, refreshing = true) },
-        onRejected = { expired = true })
+        onRejected = ::markExpired)
+    val isExpired get() = expired
+    /** 最近一次失效原因与时间，登录页展示。 */
+    fun lastExpiryNote(): String? = expiryNote.describe()
+    // 只在“有效→失效”时记录原因并提示一次；复核期间再被拒只走退避，不重复弹出。
+    private fun markExpired(error: Throwable) = synchronized(recovery) {
+        if (expired) return@synchronized
+        expired = true
+        val reason = error.qqExpiryReason()
+        expiryNote.record(reason)
+        recovery.expired()
+        onExpired(reason)
+    }
     @Volatile private var verificationCredential = ""
     @Volatile private var verifiedTransition: Pair<String, String>? = null
     fun isCurrent(previous: PlatformSession): Boolean {
@@ -135,9 +151,14 @@ internal class QqAuthentication(private val context: Context, private val onLogi
         currentCoroutineContext().ensureActive()
         check(session().credential == previous.credential) { "账号已变化，旧登录结果已取消" }
         preferences.saveSession(credential, account)
+        QqSessionLog.record(if (refreshing) "保存会话：校验或续票，票据${if (previous.credential != credential) "已更新" else "未变"}，此前失效=$expired"
+            else "保存会话：重新登录")
         if (!refreshing || previous.credential != credential) QqSessionRequestCoordinator.sessionChanged(credential)
+        if (refreshing && expired) QqSessionLog.record("失效后复核通过，自动恢复登录")
+        if (!refreshing) expiryNote.clear()
         revision.saved(previous.account, account, refreshing, expired)
         expired = false
+        recovery.recovered()
     }
     // QQ续期失败保留原凭证，网络故障不能触发清空迁移数据。
     override suspend fun refreshAccount(): SourceAccountState = withContext(Dispatchers.IO) {
@@ -146,15 +167,30 @@ internal class QqAuthentication(private val context: Context, private val onLogi
     }
     suspend fun prepareRequest() = withContext(Dispatchers.IO) { renewal.prepare() }
     suspend fun renewRejected(rejected: PlatformSession): PlatformSession? = withContext(Dispatchers.IO) { renewal.renewRejected(rejected) }
-    // 定时保活只处理快到期的票；已确认失效时等用户重新登录或宿主校验，不在后台反复请求。
+    fun recentlyForcedRenewal(credential: String): Boolean = renewal.recentlyForced(credential)
+    // 定时保活只处理快到期的票；失效后改由 recoverIfDue 按退避复核，不在后台反复请求。
     suspend fun renewIfDue() { if (!expired) prepareRequest() }
+    /** 失效后按退避节奏复核一次：通过即恢复登录，仍被拒则推迟下次。 */
+    suspend fun recoverIfDue() = withContext(Dispatchers.IO) {
+        if (!expired || !recovery.due()) return@withContext
+        recovery.attempted()
+        QqSessionLog.record("失效后自动复核")
+        try { renewal.validate() }
+        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) { }
+        if (expired) recovery.failed()
+    }
+    fun networkAvailable() = recovery.networkAvailable()
     override suspend fun logout() {
+        QqSessionLog.record("退出登录：用户操作")
         challenges.clear()
         verificationCredential = ""
         verifiedTransition = null
         QqSessionRequestCoordinator.sessionChanged("")
         preferences.clearSession(MusicSource.QQ)
         expired = false
+        recovery.recovered()
+        expiryNote.clear()
         revision.incrementAndGet()
     }
     override fun exportSession(): SourceSessionSnapshot? {

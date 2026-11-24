@@ -108,33 +108,26 @@ internal fun VersionUpdateSettings() {
     val state by model.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val available = state.available
-    Column {
-        Text("版本更新", style = MaterialTheme.typography.titleLarge)
-        ListItem(
-            headlineContent = {
-                Text(when {
-                    available != null -> "${available.version.label} 获取下载"
-                    state.checking -> "正在检查更新…"
-                    state.error != null -> "检查更新"
-                    state.checked -> "已是最新版"
-                    else -> "检查更新"
-                })
+    // 放在“关于”一级分组下，作为“版本更新”二级分组，左边距与其他设置项一致。
+    SettingsGroup("版本更新") {
+        SettingsEntryRow(
+            title = when {
+                available != null -> "${available.version.label} 获取下载"
+                state.checking -> "正在检查更新…"
+                state.error != null -> "检查更新"
+                state.checked -> "已是最新版"
+                else -> "检查更新"
             },
-            supportingContent = {
-                Text(if (available == null && state.error != null) state.error.orEmpty()
-                    else "当前版本 ${state.installedVersion}")
-            },
-            trailingContent = {
+            subtitle = if (available == null && state.error != null) state.error.orEmpty()
+                else "当前版本 ${state.installedVersion}",
+            trailing = {
                 if (state.checking) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 else Text("›")
             },
-            modifier = Modifier.fillMaxWidth().clickable(
-                enabled = !state.checking || available != null,
-                role = Role.Button,
-            ) {
-                if (available != null) model.showPromptManually(available) else model.checkManually()
-            },
-        )
+            enabled = !state.checking || available != null,
+        ) {
+            if (available != null) model.showPromptManually(available) else model.checkManually()
+        }
     }
 }
 

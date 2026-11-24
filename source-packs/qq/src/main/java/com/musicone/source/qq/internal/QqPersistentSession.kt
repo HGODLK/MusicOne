@@ -13,27 +13,31 @@ internal class QqPersistentSession(
 ) {
     fun validate(session: PlatformSession, nowSeconds: Long = System.currentTimeMillis() / 1_000L): QqValidatedSession {
         var credential = session.credential
-        var attemptedRefresh = false
-        if (shouldRefresh(credential, nowSeconds)) {
-            attemptedRefresh = true
+        var refreshFailure: Exception? = null
+        val attemptedRefresh = shouldRefresh(credential, nowSeconds)
+        if (attemptedRefresh) {
             try {
-                credential = refresh(session.deviceId, credential)
+                credential = refreshLogged(session, credential, "到期前续期")
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Throwable) {
+            } catch (failure: Exception) {
                 // 当前票据可能仍有效，继续向服务端核实。
+                refreshFailure = failure
             }
         }
         val verifiedAccount = try {
             account(credential)
         } catch (error: PlatformApiException) {
-            if (attemptedRefresh || error.apiCode != 301) throw error
+            if (!error.rejectsQqCredential()) throw error
+            // 续期只是网络、风控或频率失败时按临时故障上报，不能据此判定登录失效。
+            refreshFailure?.let { if (!it.rejectsQqCredential()) throw it }
+            if (attemptedRefresh) throw error
             val renewed = try {
-                refresh(session.deviceId, credential)
+                refreshLogged(session, credential, "校验被拒后续期")
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Throwable) {
-                throw error
+            } catch (failure: Exception) {
+                throw if (failure.rejectsQqCredential()) error else failure
             }
             val renewedAccount = account(renewed)
             credential = renewed
@@ -44,8 +48,22 @@ internal class QqPersistentSession(
 
     /** 服务端已拒绝当前票时使用：不看到期时间，直接换新票并核实账号。 */
     fun renew(session: PlatformSession): QqValidatedSession {
-        val renewed = refresh(session.deviceId, session.credential)
+        val renewed = refreshLogged(session, session.credential, "请求被拒后续期")
         return QqValidatedSession(renewed, account(renewed))
+    }
+
+    private fun refreshLogged(session: PlatformSession, credential: String, reason: String): String {
+        val started = System.currentTimeMillis()
+        return try {
+            refresh(session.deviceId, credential).also {
+                QqSessionLog.record("续票成功：$reason，耗时=${System.currentTimeMillis() - started}ms")
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            QqSessionLog.record("续票失败：$reason，${failure.qqLogSummary()}，耗时=${System.currentTimeMillis() - started}ms")
+            throw failure
+        }
     }
 
     companion object {

@@ -29,6 +29,7 @@ internal data class MusicFavoriteActions(
     val toggleDeferredRemoval: (MusicTrack) -> Unit = {},
     val flushDeferredRemovals: (() -> Unit) -> Unit = { it() },
     val currentState: () -> MusicFavoriteUiState = { state },
+    val setFavorite: (MusicTrack, Boolean) -> Unit = { track, _ -> toggle(track) },
 )
 
 internal val LocalMusicFavorites = staticCompositionLocalOf { MusicFavoriteActions() }
@@ -124,11 +125,13 @@ internal class MusicFavoriteViewModel(application: Application) : AndroidViewMod
         }
     }
 
-    fun toggle(track: MusicTrack) {
+    fun toggle(track: MusicTrack) = setFavorite(track, !track.isMainSourceFavorite(_state.value.ids))
+
+    fun setFavorite(track: MusicTrack, liked: Boolean) {
+        if (track.isMainSourceFavorite(_state.value.ids) == liked) return
         refresh.markChanged(track.id)
         cancelSourceReconcile()
         val alreadyUpdating = track.id in _state.value.updating
-        val liked = !track.isMainSourceFavorite(_state.value.ids)
         val requestedKey = configurationKey
         _state.update { state ->
             val ids = state.ids.toMutableSet().apply {
@@ -142,7 +145,7 @@ internal class MusicFavoriteViewModel(application: Application) : AndroidViewMod
         viewModelScope.launch {
             var confirmed = !liked
             while (requestedKey == configurationKey) {
-                val desired = track.id in _state.value.ids
+                val desired = track.isMainSourceFavorite(_state.value.ids)
                 if (desired == confirmed) break
                 try {
                     // 同一歌曲串行同步；请求过程中撤销只更新目标状态，不发出相互覆盖的并发请求。

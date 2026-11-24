@@ -41,6 +41,8 @@ internal class SourcePackageController private constructor(private val context: 
         override fun playDetailed(tracks: List<SourceTrackDetails>, startIndex: Int) = requireActions().playDetailed(tracks, startIndex)
         override fun enqueueDetailed(tracks: List<SourceTrackDetails>, playNext: Boolean) = requireActions().enqueueDetailed(tracks, playNext)
         override fun playRecommendation(track: SourceTrackDetails) = requireActions().playRecommendation(track)
+        override fun playRecommendations(tracks: List<SourceTrackDetails>, startIndex: Int) =
+            requireActions().playRecommendations(tracks, startIndex)
         override fun importTracks(tracks: List<SourceTrack>, destinationId: String) = requireActions().importTracks(tracks, destinationId)
         override fun exitSource() = requireActions().exitSource()
         override fun reportError(message: String) { mutableMessage.value = message; actions?.reportError(message) }

@@ -47,7 +47,7 @@ internal fun ArtistScreen(singer: MainSourceArtist, player: MusicOneUiState, bot
     val albumsScroll = rememberLazyListState()
     val favorites = LocalMusicFavorites.current
     val motion = LocalPlaylistMotion.current
-    val activation = motion?.let { rememberPlaylistContentActivation(singer.id, it) }
+    val activation = motion?.let { rememberPlaylistContentActivation(singer.id, it, EntityContentEarlyProgress) }
     val songsEntrance = rememberEntityDataEntrance(data.songs.isNotEmpty())
     val tracks = remember(data.songs, data.searchSongs, data.searchResultsQuery, search.query) {
         artistSearchTracks(data.songs, data.searchSongs, data.searchResultsQuery, search.query)

@@ -19,11 +19,40 @@ class SourceLibraryFeaturesLeaseTest {
             assertEquals("新歌单", guarded.create(SourceCollectionEdit("新歌单")).title)
             assertTrue((guarded as SourceCollectionDetailsEditing).editableFields.isEmpty())
             assertFalse((guarded as SourceCollectionRemoteOrder).supportsRemoteOrder(collection))
+            val membership = guarded as SourceCollectionMembership
+            assertFalse(membership.supportsMembership)
+            assertNull(membership.cachedWritableCollections())
+            assertNull(membership.containedTracks(collection, emptyList(), SourceFetchPolicy.REFRESH))
             val search = guardSourceSearch(object : SourceSearch {
                 override val kinds = setOf(SourceSearchKind.TRACK)
                 override suspend fun search(query: String, kind: SourceSearchKind, request: SourceCursorRequest) = SourceSearchResult()
             }, lease) as SourceHotSearch
             assertFalse(search.supportsHotSearch)
+        } finally { lease.close() }
+    }
+
+    @Test fun membershipPassesPolicyAndStopsAfterRemoval() = runBlocking {
+        var active = true
+        val policies = mutableListOf<SourceFetchPolicy>()
+        val service = object : SourceCollectionEditing, SourceCollectionMembership {
+            override suspend fun writableCollections() = listOf(collection)
+            override suspend fun cachedWritableCollections() = listOf(collection)
+            override suspend fun containedTracks(collection: SourceCollection, tracks: List<SourceTrackDetails>, policy: SourceFetchPolicy): Set<String>? {
+                policies += policy
+                return if (policy == SourceFetchPolicy.CACHE_FIRST) null else tracks.mapTo(hashSetOf()) { it.stableId }
+            }
+        }
+        val lease = SourceOperationLease { check(active) }
+        try {
+            val guarded = guardSourceCollectionEditing(service, lease) as SourceCollectionMembership
+            val track = SourceTrackDetails(SourceTrack(TrackIdentity("test", "42", "1"), "歌"), "s1")
+            assertTrue(guarded.supportsMembership)
+            assertEquals(listOf(collection), guarded.cachedWritableCollections())
+            assertNull(guarded.containedTracks(collection, listOf(track), SourceFetchPolicy.CACHE_FIRST))
+            assertEquals(setOf("s1"), guarded.containedTracks(collection, listOf(track), SourceFetchPolicy.REFRESH))
+            assertEquals(listOf(SourceFetchPolicy.CACHE_FIRST, SourceFetchPolicy.REFRESH), policies)
+            active = false
+            assertTrue(runCatching { guarded.containedTracks(collection, listOf(track), SourceFetchPolicy.REFRESH) }.exceptionOrNull() is IllegalStateException)
         } finally { lease.close() }
     }
 

@@ -55,16 +55,38 @@ class QqPersistentSessionTest {
     }
 
     @Test
-    fun 到期续期失败且旧票据失效时不重复请求() {
+    fun 到期续期临时失败且旧票据被拒时按临时故障上报且不重复请求() {
         val old = "musicid=123456; musickey=old; musickeyCreateTime=1000; keyExpiresIn=3600"
         var refreshCount = 0
         val keeper = QqPersistentSession(
-            refresh = { _, _ -> refreshCount++; throw PlatformApiException("续期失败") },
+            refresh = { _, _ -> refreshCount++; throw PlatformApiException("请求过于频繁", 104604) },
+            account = { throw PlatformApiException("旧票据失效", 301) },
+        )
+        val error = runCatching { keeper.validate(session(old), nowSeconds = 4_100) }.exceptionOrNull()
+        assertEquals(104604, (error as PlatformApiException).apiCode)
+        assertFalse(error.rejectsQqCredential())
+        assertEquals(1, refreshCount)
+    }
+
+    @Test
+    fun 到期续期被明确拒绝且旧票据失效时判定失效() {
+        val old = "musicid=123456; musickey=old; musickeyCreateTime=1000; keyExpiresIn=3600"
+        val keeper = QqPersistentSession(
+            refresh = { _, _ -> throw PlatformApiException("登录信息已过期", 1000) },
             account = { throw PlatformApiException("旧票据失效", 301) },
         )
         val error = runCatching { keeper.validate(session(old), nowSeconds = 4_100) }.exceptionOrNull()
         assertEquals(301, (error as PlatformApiException).apiCode)
-        assertEquals(1, refreshCount)
+    }
+
+    @Test
+    fun 校验被拒后续期遇到网络故障不判定失效() {
+        val keeper = QqPersistentSession(
+            refresh = { _, _ -> throw java.io.IOException("断网") },
+            account = { throw PlatformApiException("旧票据失效", 301) },
+        )
+        val error = runCatching { keeper.validate(session("musicid=123456; musickey=old")) }.exceptionOrNull()
+        assertTrue(error is java.io.IOException)
     }
 
     @Test
@@ -79,6 +101,22 @@ class QqPersistentSessionTest {
         assertEquals("access-token", param.getString("access_token"))
         assertEquals(12345L, param.getLong("expired_in"))
         assertEquals(2, param.getInt("loginMode"))
+        assertFalse(param.has("unionid"))
+        assertFalse(param.has("str_musicid"))
+    }
+
+    @Test
+    fun 微信登录续期只带微信字段() {
+        val param = qqCredentialRefreshParam(
+            "musicid=123456; musickey=W_X_old; str_musicid=123456; unionid=union; refresh_key=rk; refresh_token=rt; " +
+                "access_token=at; expired_at=1",
+        )
+        assertEquals("union", param.getString("unionid"))
+        assertEquals("123456", param.getString("str_musicid"))
+        assertEquals("rk", param.getString("refresh_key"))
+        assertFalse(param.has("access_token"))
+        assertFalse(param.has("expired_in"))
+        assertFalse(param.has("musicid"))
     }
 
     private fun session(credential: String) = PlatformSession(MusicSource.QQ, credential, "device", account)

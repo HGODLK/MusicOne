@@ -46,6 +46,8 @@ internal class MainSourceLibraryViewModel(application: Application) : AndroidVie
     private val favoriteSnapshot = MainSourceFavoritePlaylistSnapshot()
     private val snapshots = MainSourceLibrarySnapshotStore(application)
     private var configuredNamespace = ""
+    // 已经把本地存档读进界面的账号；启动时两次配置紧挨着，第一次的读取会被第二次取消。
+    private var restoredNamespace = ""
     private var restoreJob: Job? = null
     private var changesJob: Job? = null
     private val restoreRefresh = MainSourceLibraryRestoreRefresh()
@@ -114,12 +116,16 @@ internal class MainSourceLibraryViewModel(application: Application) : AndroidVie
         configuredSource = source
         val signedIn = authenticated && session.credential.isNotBlank() && session.account != null
         val readable = signedIn || favoriteAccess(source, signedIn) == MainSourceFavoriteAccess.AVAILABLE
-        val sameAccount = readable && configuredNamespace == session.cacheNamespace()
+        // 存档还没读完就不能按“同账号续期”保留现状：此时界面是空的，离线冷启动没有联网结果补上，会一直读不到存档。
+        val namespaceUnchanged = readable && configuredNamespace == session.cacheNamespace()
+        val sameAccount = namespaceUnchanged && restoredNamespace == configuredNamespace
         configuredNamespace = if (readable) session.cacheNamespace() else ""
-        if (!sameAccount) {
+        // 账号真的变了才丢弃待同步的收藏改动；只是存档没读完时保留，重新读一遍存档即可。
+        if (!namespaceUnchanged) {
             favoriteChanges = emptyMap()
             favoriteSnapshot.clear()
         }
+        if (!sameAccount) restoredNamespace = ""
         val restoration = if (readable) restoreRefresh.begin() else null
         // 同账号续期只更新请求归属，不能先清空已显示的目录。
         _state.value = if (sameAccount) _state.value.copy(
@@ -142,6 +148,7 @@ internal class MainSourceLibraryViewModel(application: Application) : AndroidVie
                 if (key != configurationKey) return@launch
                 cached.favoritePlaylist?.let(favoriteSnapshot::record)
                 _state.value = cached.copy(signedIn = signedIn, favoritePlaylist = favoriteSnapshot.present(favoriteChanges))
+                restoredNamespace = session.cacheNamespace()
             }
             val request = restoreRefresh.complete(restoration) ?: return@launch
             loadFavorites(session, key, request.forceArtworkIds, request.policy)

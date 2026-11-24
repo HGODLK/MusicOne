@@ -212,7 +212,7 @@ internal fun MainSourcePlaylistSongMenuHost(
                                         PlaylistAddMenuRow(target.title + if (!target.isManagedLibrary && menu.batchTracks.any { it.source != target.source }) "（可添加 ${menu.batchTracks.count { it.source == target.source }} 首）" else "",
                                             target, menu, onChanged)
                                     }
-                                    if (menu.targets.isEmpty() && !menu.busy) SongMenuRow("重新加载", true) { menu.choose() }
+                                    if (menu.targets.isEmpty() && !menu.busy && !menu.loadingTargets) SongMenuRow("重新加载", true) { menu.choose() }
                                 } else {
                                     if (removable && !phase.second) SongMenuRow(if (favorites) "移除我喜欢" else "移出当前歌单", !menu.busy) {
                                         if (favorites && menu.batchTracks.isNotEmpty()) {

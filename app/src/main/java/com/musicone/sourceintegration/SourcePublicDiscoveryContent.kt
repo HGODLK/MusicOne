@@ -78,7 +78,7 @@ internal fun SourcePublicDiscoveryContent(request: SourcePageRequest, catalog: M
                 }
                 error?.let { MainSourceInlineMessage(it) }
                 MainSourceSimilarRecommendationSection(state, playback.currentTrack?.id, playback.isPlaying,
-                    player::playTrackNext, { revision++ })
+                    { tracks, index -> tracks.getOrNull(index)?.let(player::playTrackNext) }, { revision++ })
             }
             else -> Unit
         }

@@ -21,6 +21,8 @@ internal data class MotionAnchor(
     val bottomFade: Float = 0f,
     val contentScale: Float = 1f,
     val textSizeSp: Float = 0f,
+    /** 来源只露出一部分时的可见块（根坐标），只用于判断端点是否可用；bounds 此时是完整位置，可以超出屏幕。null 表示完整可见。 */
+    val visible: Rect? = null,
 )
 
 internal class PageMotion(
@@ -37,6 +39,10 @@ internal class PageMotion(
     val progress = Animatable(if (initialOpen) 1f else 0f).apply {
         if (dragAnimation != null) updateBounds(0f, 1f)
     }
+    /** 整页向下滑出屏幕的位移（0～1，按页面高度），只用于没有共享端点可飞回的收起。 */
+    val slideOut = Animatable(0f)
+    /** 页面实际盖住底页的程度：开合进度扣掉滑出部分，给需要随之显隐的底页元素使用。 */
+    val coverage get() = value * (1f - slideOut.value)
     var phase by mutableStateOf(if (initialOpen) MotionPhase.SHOWN else MotionPhase.HIDDEN)
         private set
     var wantsOpen by mutableStateOf(initialOpen)
@@ -189,6 +195,23 @@ internal class PageMotion(
         }
     }
 
+    /**
+     * 不经过共享飞行，整页滑出屏幕后直接切到隐藏；用于清空队列后迷你条已不在、没有落点的收起。
+     * 页面在屏幕外才切换状态，切换本身不可见。
+     */
+    suspend fun slideOutAndHide(animation: AnimationSpec<Float>) {
+        job?.cancel()
+        try {
+            if (ExperiencePreferences.options.reduceMotion) slideOut.snapTo(1f) else slideOut.animateTo(1f, animation)
+            wantsOpen = false
+            openingDrag = false
+            progress.snapTo(0f)
+            complete()
+        } finally {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { slideOut.snapTo(0f) }
+        }
+    }
+
     private suspend fun awaitStableAnchors(): Boolean {
         withTimeoutOrNull(160L) {
             var last: List<Rect?>? = null
@@ -222,6 +245,7 @@ internal class PageMotion(
     }
 
     private fun validSharedAnchor(key: String, anchor: MotionAnchor): Boolean {
+        anchor.visible?.let { return partialAnchorUsable(it, hostBounds) }
         if (anchorFits(anchor.bounds, hostBounds)) return true
         val b = anchor.bounds
         // 空标题或歌手没有字形，但测量完成的空端点仍属于完整交接批次。

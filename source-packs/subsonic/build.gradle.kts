@@ -25,7 +25,7 @@ android {
     androidResources { additionalParameters += listOf("--package-id", "0x77", "--allow-reserved-package-id") }
     defaultConfig {
         applicationId = "com.musicone.source.subsonic"
-        minSdk = 23; targetSdk = 37; versionCode = 1; versionName = "0.1"
+        minSdk = 23; targetSdk = 37; versionCode = 2; versionName = "0.2"
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     buildFeatures { compose = true }
@@ -80,11 +80,11 @@ tasks.register<Sync>("packageDebugSource") {
     dependsOn("assembleDebug")
     from(layout.buildDirectory.dir("outputs/apk/debug")) { include("*.apk") }
     into(layout.buildDirectory.dir("outputs/source-packs/debug"))
-    rename { "subsonic-0.1.mscm" }
+    rename { "subsonic-0.2.mscm" }
 }
 tasks.register<Sync>("packageReleaseSource") {
     dependsOn("assembleRelease")
     from(layout.buildDirectory.dir("outputs/apk/release")) { include("*.apk") }
     into(layout.buildDirectory.dir("outputs/source-packs/release"))
-    rename { "subsonic-0.1.mscm" }
+    rename { "subsonic-0.2.mscm" }
 }

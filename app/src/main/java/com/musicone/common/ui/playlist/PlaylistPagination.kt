@@ -34,7 +34,7 @@ internal class PlaylistPageActions(
         return sortedPlaylistTracks(full.tracks, sort())
     }
 
-    fun loadedSelectionTracks(): List<MusicTrack>? = entry.page?.playlist?.let {
+    fun loadedSelectionTracks(): List<MusicTrack>? = entry.displayed?.let {
         sortedPlaylistTracks(it.tracks, sort())
     }
 
@@ -53,10 +53,10 @@ internal class PlaylistPageActions(
         playJob = scope.launch {
             attempt {
                 val online = isOnline()
-                val full = playlistForPlayback(entry.page?.playlist ?: playlist(), online, cachedTrackIds) {
+                val full = playlistForPlayback(entry.displayed ?: playlist(), online, cachedTrackIds) {
                     completePlaylistForSelectedTrack({
                         controller.checkCurrent(playlist(), entry)
-                        entry.page?.playlist ?: playlist()
+                        entry.displayed ?: playlist()
                     }, track) {
                         controller.complete(playlist())
                     }

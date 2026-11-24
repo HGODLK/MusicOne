@@ -1,16 +1,11 @@
 package com.musicone
 
-internal val localLyricExtensions = setOf("lrc", "xlrc", "spl")
-
-internal fun localLyricExtension(name: String): String =
-    name.substringAfterLast('.', "").lowercase().takeIf { it in localLyricExtensions } ?: "lrc"
-
 private val localLineStamp = Regex("\\[(\\d{1,3}):(\\d{1,2})(?:[.:](\\d{1,6}))?]")
 private val localWordStamp = Regex("[<\\[]([0-9]{1,3}):([0-9]{1,2})(?:[.:]([0-9]{1,6}))?[>\\]]")
 private val localOffset = Regex("\\[offset:([+-]?\\d+)]", RegexOption.IGNORE_CASE)
 private val xlrcTranslation = Regex("^\\[>[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*](.*)$")
 private val xlrcVoice = Regex("^\\[v:[^]\\r\\n]+]")
-private val xlrcReading = Regex("(?<=[\\u3400-\\u9FFF\\uF900-\\uFAFF])\\[[\\u3040-\\u30FF\\u31F0-\\u31FF]+]")
+private val xlrcReading = Regex("([\\u3400-\\u9FFF\\uF900-\\uFAFF]+)\\[([\\u3040-\\u30FF\\u31F0-\\u31FF]+)]")
 
 private fun MatchResult.localMillis(): Long = groupValues[1].toLong() * 60_000 +
     groupValues[2].toLong() * 1_000 + groupValues[3].padEnd(3, '0').take(3).toLong()
@@ -26,21 +21,21 @@ private data class LocalLyricRow(
 )
 
 /** LRC 同时刻按文件顺序配对；XLRC 和 SPL 的扩展标记只在各自格式内解释。 */
-internal fun parseLibraryLyrics(raw: String, extension: String = "lrc"): List<TimedLyric> {
+internal fun parseLocalLrc(raw: String, extension: String): List<TimedLyric> {
     val format = extension.lowercase()
     val spl = format == "spl"
     val xlrc = format == "xlrc"
     val offset = localOffset.find(raw)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
     val rows = mutableListOf<LocalLyricRow>()
     var parents = emptyList<LocalLyricRow>()
-    fun clean(text: String): String = if (xlrc) text.replace(xlrcReading, "") else text
+    fun mark(text: String): String = if (xlrc) xlrcReading.replace(text) { "{${it.groupValues[1]}|${it.groupValues[2]}}" } else text
     for (source in raw.lineSequence()) {
         val line = source.trim().removePrefix("\uFEFF")
         if (line.isEmpty()) continue
         if (xlrc) {
             val translated = xlrcTranslation.matchEntire(line)
             if (translated != null) {
-                val text = clean(translated.groupValues[1].replace(xlrcVoice, "")).trim()
+                val text = lyricRubyPlainText(mark(translated.groupValues[1].replace(xlrcVoice, ""))).trim()
                 if (text.isNotEmpty()) parents.forEach { it.translations += text }
                 continue
             }
@@ -76,10 +71,10 @@ internal fun parseLibraryLyrics(raw: String, extension: String = "lrc"): List<Ti
         val marked = buildString {
             var position = 0
             for (marker in markers) {
-                append(clean(body.substring(position, marker.range.first)))
+                append(mark(body.substring(position, marker.range.first)))
                 position = marker.range.last + 1
             }
-            append(clean(body.substring(position)))
+            append(mark(body.substring(position)))
         }.trim()
         // 注音标注只影响显示文本，逐字片段里的标注同样去掉。
         val ruby = marked.takeIf(::lyricRubyMarked)
@@ -100,7 +95,7 @@ internal fun parseLibraryLyrics(raw: String, extension: String = "lrc"): List<Ti
             val words = mutableListOf<Pair<Long, String>>()
             val content = StringBuilder()
             for (marker in markers) {
-                content.append(clean(body.substring(position, marker.range.first)))
+                content.append(mark(body.substring(position, marker.range.first)))
                 val time = marker.localMillis()
                 if (time >= wordStart && (end == null || time <= end)) {
                     if (content.isNotEmpty()) {
@@ -111,7 +106,7 @@ internal fun parseLibraryLyrics(raw: String, extension: String = "lrc"): List<Ti
                 }
                 position = marker.range.last + 1
             }
-            content.append(clean(body.substring(position)))
+            content.append(mark(body.substring(position)))
             if (content.isNotEmpty()) words += wordStart to plain(content.toString())
             LocalLyricRow(start, text, if (markers.isEmpty()) emptyList() else words, end, ruby = ruby).also(rows::add)
         }
@@ -144,4 +139,17 @@ internal fun parseLibraryLyrics(raw: String, extension: String = "lrc"): List<Ti
             transliteration = ruby,
         )
     }
+}
+
+/** 必须有一个跟在正文后、且不早于行首的时间标记；连续行首时间戳仍是 LRC 复唱。 */
+internal fun hasSquareLyricWords(raw: String): Boolean = raw.lineSequence().any { line ->
+    val text = line.trim().removePrefix("\uFEFF")
+    val first = localLineStamp.matchAt(text, 0) ?: return@any false
+    var cursor = first.range.last + 1
+    while (true) {
+        val repeated = localLineStamp.matchAt(text, cursor) ?: break
+        cursor = repeated.range.last + 1
+    }
+    val next = localLineStamp.find(text, cursor) ?: return@any false
+    text.substring(cursor, next.range.first).isNotBlank() && next.localMillis() > first.localMillis()
 }

@@ -24,19 +24,29 @@ internal fun PlayerQueueSideHandle(state: PlayerQueueState) {
 
 /** 拉杆与标题各占独立位置，数量和标题使用相同字号、行高并垂直居中。 */
 @Composable
-internal fun PlayerQueueHeader(count: Int, modifier: Modifier = Modifier, showHandle: Boolean = true) {
+internal fun PlayerQueueHeader(count: Int, modifier: Modifier = Modifier, showHandle: Boolean = true,
+    selection: PlaylistMultiSelection? = null, queue: List<MusicTrack> = emptyList()) {
     Column(modifier.fillMaxWidth().padding(top = 12.dp, bottom = 14.dp)) {
         if (showHandle) {
             Box(Modifier.align(Alignment.CenterHorizontally).size(38.dp, 4.dp)
                 .background(Color.White.copy(alpha = .28f), RoundedCornerShape(2.dp)))
             Spacer(Modifier.height(12.dp))
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("播放列表", fontSize = 20.sp, lineHeight = 28.sp,
+        // 右侧多选按钮自带 48dp 触摸区，右边距相应收窄让图标对齐列表右缘；触摸区向上下溢出，不撑高标题行。
+        Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = if (selection != null) 12.dp else 24.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            val selecting = selection?.active == true
+            Text(if (selecting) "已选" else "播放列表", fontSize = 20.sp, lineHeight = 28.sp,
                 fontWeight = FontWeight.SemiBold, color = Color.White)
             Spacer(Modifier.width(8.dp))
-            Text(count.toString(), fontSize = 20.sp, lineHeight = 28.sp,
+            Text((if (selecting) selection!!.ids.size else count).toString(), fontSize = 20.sp, lineHeight = 28.sp,
                 fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = .55f))
+            if (selection != null) {
+                Spacer(Modifier.weight(1f))
+                Box(Modifier.height(28.dp).wrapContentHeight(unbounded = true)) {
+                    PlayerQueueSelectionActions(selection, queue)
+                }
+            }
         }
     }
 }

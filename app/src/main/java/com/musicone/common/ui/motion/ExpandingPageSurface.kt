@@ -22,6 +22,7 @@ internal fun ExpandingPageSurface(origin: Rect, progress: () -> Float, snapshot:
     surfaceReveal: (Float) -> Float = { 1f },
     contentReveal: (Float) -> Float = { ((it - .18f) / .82f).coerceIn(0f, 1f) },
     sourceCorner: Dp = 28.dp,
+    sourceDrift: Dp = 20.dp,
     sourceContent: (@Composable () -> Unit)? = null,
     backgroundContent: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit) {
@@ -48,14 +49,14 @@ internal fun ExpandingPageSurface(origin: Rect, progress: () -> Float, snapshot:
                 .graphicsLayer {
                     val p = progress()
                     translationX = origin.left - bounds.left
-                    translationY = origin.top - bounds.top - 20.dp.toPx() * p
+                    translationY = origin.top - bounds.top - sourceDrift.toPx() * p
                     alpha = (1f - p / .45f).coerceIn(0f, 1f)
                 }, contentAlignment = androidx.compose.ui.Alignment.Center) { sourceContent() }
         }
         if (snapshot != null) Canvas(Modifier.fillMaxSize()) {
             val p = progress()
             val source = origin.translate(-bounds.left, -bounds.top)
-            drawImage(snapshot, dstOffset = IntOffset(source.left.toInt(), (source.top - 20.dp.toPx() * p).toInt()),
+            drawImage(snapshot, dstOffset = IntOffset(source.left.toInt(), (source.top - sourceDrift.toPx() * p).toInt()),
                 dstSize = IntSize(source.width.toInt().coerceAtLeast(1), source.height.toInt().coerceAtLeast(1)),
                 alpha = (1f - p / .45f).coerceIn(0f, 1f))
         }

@@ -189,11 +189,10 @@ class PlaylistCardTransitionTest {
         coroutineContext.cancelChildren()
     }
 
-    @Test fun visibilityAccountsForBothHeaderAndBottomBar() {
-        val viewport = Rect(0f, 120f, 1000f, 700f)
-        assertEquals(-40f, playlistScrollDistance(Rect(20f, 80f, 320f, 462f), viewport))
-        assertEquals(82f, playlistScrollDistance(Rect(20f, 400f, 320f, 782f), viewport))
-        assertEquals(0f, playlistScrollDistance(Rect(20f, 160f, 320f, 542f), viewport))
+    @Test fun partiallyShownSourceStaysUsableWhileItsVisibleSliceHasArea() {
+        val host = Rect(0f, 0f, 1000f, 2000f)
+        assertTrue(partialAnchorUsable(Rect(20f, 1700f, 320f, 1800f), host))
+        assertFalse(partialAnchorUsable(Rect(20f, 1999f, 320f, 1999.5f), host))
     }
 
     @Test fun landingFadesInformationInContinuously() = runBlocking {

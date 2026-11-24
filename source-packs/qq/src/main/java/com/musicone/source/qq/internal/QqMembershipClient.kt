@@ -22,7 +22,7 @@ internal class QqMembershipClient {
         return try {
             val response = PlatformHttp.postJson(
                 "https://u.y.qq.com/cgi-bin/musicu.fcg", qqMembershipRequest(credential).toString(), credential,
-                mapOf("Referer" to "https://y.qq.com/", "User-Agent" to "QQMusic 20050009(android 14)"),
+                mapOf("Referer" to "https://y.qq.com/", "User-Agent" to QQ_ANDROID_USER_AGENT),
                 connectTimeoutMs = 5_000, readTimeoutMs = 8_000,
             )
             parseQqMembership(JSONObject(response.text))
@@ -36,7 +36,7 @@ internal class QqMembershipClient {
 
 internal fun qqMembershipRequest(credential: String): JSONObject = JSONObject()
     .put("comm", qqPlaybackComm(credential).put("uin", qqCredentialAccountId(credential))
-        .put("authst", qqCredentialMusicKey(credential)).put("ct", 11).put("cv", 20050009))
+        .put("authst", qqCredentialMusicKey(credential)))
     .put("membership", JSONObject().put("module", "VipLogin.VipLoginInter")
         .put("method", "vip_login_base").put("param", JSONObject()))
 

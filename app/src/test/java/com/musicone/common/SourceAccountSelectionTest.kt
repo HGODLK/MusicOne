@@ -45,4 +45,14 @@ class SourceAccountSelectionTest {
         assertTrue(schedule.due("qq", 7_000))
         assertTrue(schedule.due("kugou", 1_001))
     }
+
+    @Test
+    fun 登录失效时不等长周期只受短间隔节流() {
+        val schedule = SourceAccountRefreshSchedule(validMs = 6_000, retryMs = 500)
+        schedule.attempted("qq", 1_000)
+        schedule.succeeded("qq", 1_000)
+        assertFalse(schedule.due("qq", 1_499, expired = true))
+        assertTrue(schedule.due("qq", 1_500, expired = true))
+        assertFalse(schedule.due("qq", 1_500))
+    }
 }

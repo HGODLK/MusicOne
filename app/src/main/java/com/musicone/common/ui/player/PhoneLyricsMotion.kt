@@ -99,6 +99,27 @@ internal class PhoneLyricsMotion(initiallyVisible: Boolean, private val scope: C
         } }
     }
 
+    /**
+     * 回到前台的兜底：开合停在与请求不符的静止位置、或入场透明度停在半途，直接归到目标端点。
+     * 仍在动画或拖动中不干预；卡住的准备任务（静止却未到位）一并取消。
+     */
+    suspend fun repairAfterResume(visible: Boolean) {
+        if (dragging || dragged != null || lyrics.isRunning || header.isRunning || entranceAlpha.isRunning) return
+        val target = if (visible) 1f else 0f
+        if (lyrics.value == target && header.value == target && entranceAlpha.value == 1f) return
+        LyricDisplayDiagnostics.recovery("回到前台歌词开合未到位", this)
+        entranceRecovery?.cancel()
+        animationJob?.cancel()
+        animationJob = null
+        openingAlignment = null
+        entranceDeadlineNanos = Long.MAX_VALUE
+        lyricsVelocity = 0f
+        headerVelocity = 0f
+        lyrics.snapTo(target)
+        header.snapTo(target)
+        entranceAlpha.snapTo(1f)
+    }
+
     /** 页面已不可见时直接复位，避免紧接着重新打开时续播隐藏中的歌词收起动画。 */
     suspend fun resetWhileHidden(visible: Boolean = false) {
         entranceRecovery?.cancel()
@@ -296,6 +317,15 @@ internal fun rememberPhoneLyricsMotion(
     }
     val preparingTurn = presentation?.bodyMoving == true || presentation?.preparation?.preparing == true
     val fadingTurn = LocalPhonePlayerPresentation.current?.preparation?.fading == true
+    val resumeSignal = rememberLyricResumeSignal()
+    val latestVisible = androidx.compose.runtime.rememberUpdatedState(visible)
+    val latestPageVisible = androidx.compose.runtime.rememberUpdatedState(pageVisible)
+    LaunchedEffect(resumeSignal) {
+        if (resumeSignal == 0) return@LaunchedEffect
+        kotlinx.coroutines.delay(LyricResumeRepairDelayMs)
+        if (latestPageVisible.value && presentation?.bodyMoving != true && presentation?.preparation?.preparing != true)
+            motion.repairAfterResume(latestVisible.value)
+    }
     LaunchedEffect(visible, exitAlignment, motion.gestureRevision, pageVisible, prepareOpening, preparingTurn, fadingTurn) {
         if (preparingTurn) return@LaunchedEffect
         // 开关请求和对应的列表对齐对象使用同一任务；反向时会一起取消。

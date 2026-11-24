@@ -67,6 +67,10 @@ internal class SourceHostLease(private val host: SourceHost, private val validat
     override fun playDetailed(tracks: List<SourceTrackDetails>, startIndex: Int) = operations.dispatch { checkTracks(tracks.map { it.track }); host.playDetailed(tracks, startIndex) }
     override fun enqueueDetailed(tracks: List<SourceTrackDetails>, playNext: Boolean) = operations.dispatch { checkTracks(tracks.map { it.track }); host.enqueueDetailed(tracks, playNext) }
     override fun playRecommendation(track: SourceTrackDetails) = operations.dispatch { checkTracks(listOf(track.track)); host.playRecommendation(track) }
+    override fun playRecommendations(tracks: List<SourceTrackDetails>, startIndex: Int) = operations.dispatch {
+        require(startIndex in tracks.indices) { "推荐歌曲位置无效" }
+        checkTracks(tracks.map { it.track }); host.playRecommendations(tracks, startIndex)
+    }
     private fun checkTracks(tracks: List<SourceTrack>) { require(tracks.all { it.identity.sourceId == descriptor.id }) { "不能跨音源提交曲目" } }
     override fun registerTask(cancel: () -> Unit): AutoCloseable {
         check(active) { "运行实例已失效" }

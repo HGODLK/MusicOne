@@ -8,8 +8,10 @@ internal class SourceAccountRefreshSchedule(
     private val attemptedAt = mutableMapOf<String, Long>()
     private val succeededAt = mutableMapOf<String, Long>()
 
-    fun due(id: String, now: Long): Boolean {
+    /** expired：音源已报告登录失效，此时不等长周期，按短间隔复核，避免卡在失效直到重启。 */
+    fun due(id: String, now: Long, expired: Boolean = false): Boolean {
         if (attemptedAt[id]?.let { now - it < retryMs } == true) return false
+        if (expired) return true
         return succeededAt[id]?.let { now - it >= validMs } ?: true
     }
 
