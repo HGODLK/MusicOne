@@ -11,7 +11,7 @@ import kotlinx.coroutines.withContext
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
-/** 只加载可见收藏夹的首屏，完整内容仍由打开、播放和缓存操作获取。 */
+/** 只按需预加载当前滑到屏幕里的收藏夹首屏预览，完整歌曲等点进去或缓存时再拉。 */
 internal class CachePlaylistPreviews(
     private val directory: CachePlaylistDirectory,
     private val offline: OfflineMusicStore,
@@ -24,7 +24,7 @@ internal class CachePlaylistPreviews(
     private val previewed: MutableSet<String> = Collections.newSetFromMap(ConcurrentHashMap())
     fun clear() = previewed.clear()
 
-    /** 随可见卡片请求预览；离屏取消等待，不把所有收藏夹排进网络队列。 */
+    /** 卡片滑入屏幕时请求首屏预览，滑出屏幕自动取消，避免把所有收藏夹全塞进请求队列。 */
     suspend fun load(playlist: MusicPlaylist) = withContext(Dispatchers.IO) {
         val requestedOwners = owners()
         val revision = mutable.value.directoryRevision

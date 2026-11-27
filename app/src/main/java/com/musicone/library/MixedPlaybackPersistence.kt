@@ -6,7 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import org.json.JSONObject
 
-/** 播放会话与浏览平台无关；首次兼容读取旧 QQ 快照，不覆盖旧数据。 */
+/** 保存跨音源的播放队列和进度快照，不绑定当前浏览的主音源；首次读取时兼容旧版 QQ 快照。 */
 internal class MixedPlaybackPersistence(context: Context) {
     private val preferences = context.getSharedPreferences("mixed_playback_snapshot", Context.MODE_PRIVATE)
     private val legacy = LegacyPlaybackSnapshotStore(context)

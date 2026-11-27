@@ -40,7 +40,7 @@ data class SourceDescriptor(
     val versionCode: Long,
     val versionName: String,
     val capabilities: Set<SourceCapability>,
-    // 仅决定默认内容页面由谁组织，不限制公开页面和组件的按需复用。
+    // 只决定默认内容页面由谁渲染，不影响按需复用公共页面和组件。
     val useCustomPages: Boolean = false,
     val requiresLogin: Boolean = false,
     val permissions: SourcePermissions = SourcePermissions(),
@@ -65,7 +65,7 @@ data class PlaybackAddress(
     val expiresAtEpochMs: Long? = null
 )
 
-// 失败通过异常返回；取消不得转换成空页或分页结束。
+// 失败直接抛异常；协程取消时照常抛出，不要转成空页或当成最后一页。
 interface SourcePlayback { suspend fun resolve(track: SourceTrack, quality: String?): PlaybackAddress }
 interface SourceCatalog {
     suspend fun tracks(page: SourceRoute, cursor: String?): SourcePage<SourceTrack>
@@ -96,8 +96,8 @@ interface SourceHost {
     // 包启动的独立任务须登记取消回调；移除后不能继续提交账号、分页或资料结果。
     fun registerTask(cancel: () -> Unit): AutoCloseable = AutoCloseable { }
 }
-// 包私有持久化必须向后兼容；更新、降级及手动回退共享稳定目录，不能重置账号或用户资料。
-// 宿主公共资料通过 SourceHost 写入；初始化验证使用独立临时目录且拒绝宿主业务操作。
+// 音源私有存储需保持向后兼容；升级、降级或回退都共用同一目录，不能清空账号或用户数据。
+// 宿主公共数据通过 SourceHost 写入；校验初始化时会用独立临时目录，且禁止宿主业务操作。
 data class SourceEnvironment(
     val context: Context,
     val dataDirectory: File,

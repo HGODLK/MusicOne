@@ -2,12 +2,12 @@ package com.musicone
 
 import org.json.JSONObject
 
-/** 标题等资料可并发更新，核验依据变化后不能用旧探测结果覆盖新状态。 */
+/** 歌曲信息可能会并发更新，用来做完整度校验的几个关键字段如果变了，就不能用旧校验结果覆盖新记录。 */
 internal data class OfflineIndexVerificationBasis(val pending: Boolean, val trial: Boolean, val durationMs: Long) {
     constructor(row: JSONObject) : this(row.optBoolean("pending"), row.optBoolean("trial"), row.optLong("durationMs"))
 }
 
-/** 一轮只解析一次索引；同一物理缓存保留首条校验依据和所有歌曲别名。 */
+/** 扫描一轮只解析一次离线索引；多条记录指向同一份物理缓存时只校验一次，同时把所有关联歌曲 ID 都记下来。 */
 internal fun scanOfflineTrackIds(
     records: List<Pair<String, JSONObject>>,
     completeBytes: (String) -> Boolean,

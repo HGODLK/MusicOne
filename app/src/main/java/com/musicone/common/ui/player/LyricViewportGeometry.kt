@@ -3,7 +3,7 @@ package com.musicone
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.LayoutCoordinates
 
-/** 仅真实视口或方向变化时更新，不能用播放帧或当前句作为裁剪缓存键。 */
+/** 歌词视口几何键（方向 + 宽高），仅在真实尺寸或方向变化时触发缓存失效。 */
 internal data class LyricViewportGeometry(val rotation: Int, val width: Int, val height: Int)
 
 internal fun lyricClipCovers(expected: Rect, actual: Rect, tolerance: Float = 1f): Boolean =
@@ -11,7 +11,7 @@ internal fun lyricClipCovers(expected: Rect, actual: Rect, tolerance: Float = 1f
         actual.top <= expected.top + tolerance && actual.right >= expected.right - tolerance &&
         actual.bottom >= expected.bottom - tolerance)
 
-/** 准备阶段校验最终裁剪，不能用已经执行绘制回调替代真正的可见范围。 */
+/** 校验文字区域是否确实落在列表视口内，防止仅凭绘制回调误判为可见就绪。 */
 internal fun lyricTextClipReady(viewport: LayoutCoordinates?, text: LayoutCoordinates?): Boolean {
     if (viewport?.isAttached != true || text?.isAttached != true) return false
     return runCatching {

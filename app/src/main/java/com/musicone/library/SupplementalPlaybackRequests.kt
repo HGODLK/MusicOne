@@ -5,7 +5,7 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.ResolvingDataSource
 import java.util.concurrent.ConcurrentHashMap
 
-/** 请求头与稳定缓存键绑定到已解析的具体地址，不修改全局 HTTP 工厂。 */
+/** 按解析出来的具体 URL 记录专属请求头和缓存 key，不动全局 HTTP 工厂配置。 */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal object SupplementalPlaybackRequests {
     private data class Request(val headers: Map<String, String>, val key: String)

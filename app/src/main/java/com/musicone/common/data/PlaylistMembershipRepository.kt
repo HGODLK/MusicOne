@@ -25,7 +25,7 @@ internal fun existingPlaylistSelections(playlist: MusicPlaylist, selected: List<
 internal fun playlistAdditionCandidates(playlist: MusicPlaylist, selected: List<MusicTrack>): List<MusicTrack> =
     if (playlist.isManagedLibrary) selected else selected.filter { it.source == playlist.source }
 
-/** 优先用音源的歌单归属索引；音源未提供时成员分页经过音源 SDK，找到全部所选曲目即可停止。 */
+/** 查询歌曲是否已在歌单里：优先用音源自带的归属索引，没有就分页拉歌单，找齐所选歌曲就提前停。 */
 internal class PlaylistMembershipRepository(private val preferences: PlatformPreferences) {
     private val catalog = PlatformCatalogRepository(preferences.applicationContext)
     private val online = PlatformPlaylistSongRepository(preferences.applicationContext)

@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 独立记录实际拖动和回退距离，抬手速度不能把短促回勾放大成主动撤销。 */
+/** 记录拖动过程中的净位移和最大回退距离，防止抬手瞬间的轻微回勾被误判成取消。 */
 internal class PlayerGestureDisplacement(private val original: Boolean) {
     var distancePx = 0f
         private set
@@ -14,7 +14,7 @@ internal class PlayerGestureDisplacement(private val original: Boolean) {
     }
 }
 
-/** 位置优先：过线后按位置收尾，长距离和短划分别提供提交路径，取消保留已到达的端点。 */
+/** 判断松手后是展开还是收起：优先看是否拖过阈值，未过线时再按长距离拖动或快划速度决定。 */
 internal fun playerGestureTarget(
     progress: Float,
     openingVelocityDp: Float,
@@ -38,7 +38,7 @@ internal fun playerGestureTarget(
     if (reverseDistanceDp >= 24f) return original
     val direction = if (original) -1f else 1f
     val distance = openingDistanceDp * direction
-    // 慢拖未过线时不凭微小位移提交；短划必须同时满足有效位移与同向速度门槛。
+    // 没过中线时，要么拖够 commitDistanceDp，要么快划同时满足距离和速度门槛，才算切换。
     if (distance >= commitDistanceDp ||
         (distance >= flingDistanceDp && openingVelocityDp * direction >= flingVelocityDp)) {
         return !original
@@ -46,6 +46,6 @@ internal fun playerGestureTarget(
     return original
 }
 
-/** 收尾只携带朝向所选端点的速度，避免已确定目标后先反向弹一下。 */
+/** 过滤掉与目标方向相反的初速度，避免松手确定方向后还先反向弹一下。 */
 internal fun playerGestureSettlingVelocity(open: Boolean, velocity: Float): Float =
     if (open) velocity.coerceAtLeast(0f) else velocity.coerceAtMost(0f)

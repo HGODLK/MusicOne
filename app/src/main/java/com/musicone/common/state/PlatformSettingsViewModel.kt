@@ -10,7 +10,7 @@ import com.musicone.sourceintegration.SourcePackageController
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
-/** 账号协议和续期属于音源；宿主只观察公开账号与入口选择。 */
+/** 登录协议和续期全归音源包管，这里只监听公开的账号状态和主音源选择。 */
 internal class PlatformSettingsViewModel @JvmOverloads constructor(application: Application, private val fixedSource: MusicSource? = null) : AndroidViewModel(application) {
     private val preferences = PlatformPreferences(application)
     private val sources = SourcePackageController.get(application)
@@ -58,7 +58,7 @@ internal class PlatformSettingsViewModel @JvmOverloads constructor(application: 
         preferences.saveSource(source)
         readState()
     }
-    /** 需要登录的音源等账号就绪才成为主音源，中途退出时保持原选择。 */
+    /** 需要登录的音源等用户真正登完再切为主音源，中途取消登录就保持原来的选择。 */
     fun selectAfterLogin(source: MusicSource) {
         if (sources.running(source.id)?.entry?.authentication == null) return
         pendingLogin.begin(source)
@@ -73,13 +73,13 @@ internal class PlatformSettingsViewModel @JvmOverloads constructor(application: 
         if (!source.supportsSourceSettings) return
         host.openDestination("source-settings", mapOf("sourceId" to source.id))
     }
-    // 音源可能不主动通知登录成功，统一在登录页关闭时核对公开账号。
+    // 有些音源不会主动回调登录成功，统一在关闭登录页时查一下当前账号。
     private fun settlePendingLogin() {
         pendingLogin.settle { preferences.readSession(it).account != null }?.let(::selectSource)
     }
     private fun accountFingerprint(source: MusicSource): Any? =
         sources.running(source.id)?.entry?.authentication?.currentAccount()?.let { Triple(it.status, it.account?.id, it.revision) }
-    // 音源可在请求中自行恢复或判定失效；只有公开账号状态变化才重读，同账号续期不刷新页面。
+    // 只有公开的账号或登录状态真的变了才刷新界面，同账号静默续期不重刷。
     private fun syncAccountState() {
         if (!sources.startup.value.initializing && accountFingerprint(state.value.selectedSource) != observedAccount) readState()
     }

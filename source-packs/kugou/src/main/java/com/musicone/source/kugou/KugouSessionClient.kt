@@ -207,7 +207,7 @@ internal class KugouSessionClient(private val membership: KugouMembershipClient 
     private fun favoriteEntries(cookie: String): List<KugouFavoriteEntry> {
         val session = cookie.requiredKugouSession()
         val entries = cloudPlaylistEntries(session, favoriteListId(session), "酷狗音乐我喜欢加载失败")
-        // 收藏项编号只服务删除；回读状态只依赖一个档位 hash，缺编号不能吞掉整条收藏。
+        // 检查收藏状态只需要任意一档 hash，缺少删除用的 fileid 也不能把这条收藏丢掉
         return entries.mapNotNull { item -> item.kugouFavoriteHash()?.let(::KugouFavoriteEntry) }
     }
 

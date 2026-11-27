@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 后台音质探测、票据有效期与预加载调度的纯策略，便于单测覆盖。 */
+/** 音质探测、地址有效期和预加载调度的核心策略（纯函数，方便写单测）。 */
 
 internal const val PLAYBACK_PRELOAD_PROBE_COUNT = 5
 internal const val PLAYBACK_PRELOAD_DOWNLOAD_COUNT = 2
@@ -23,17 +23,17 @@ internal data class PlaybackQualityProbe(
     val cacheable: Boolean,
 )
 
-/** 包未声明票据到期时使用公开的十八分钟默认值，实际结果优先。 */
+/** 音源包没返回地址有效期时，默认按 18 分钟算。 */
 internal fun playbackTicketTtlMs(source: MusicSource): Long = if (source == MusicSource.LOCAL) 0L else 18 * 60_000L
 
-/** 第 index 首后续歌曲开始探测的相对时刻：0s、2s、5s，之后每 1.5s。 */
+/** 计算后面第 index 首歌延迟多久开始探测音质：0s、2s、5s，之后每首间隔 1.5s。 */
 internal fun playbackProbeDelayMs(index: Int): Long = when {
     index <= 0 -> PLAYBACK_PRELOAD_NEXT_PROBE_DELAY_MS
     index == 1 -> PLAYBACK_PRELOAD_SECOND_PROBE_DELAY_MS
     else -> PLAYBACK_PRELOAD_THIRD_PROBE_DELAY_MS + (index - 2) * PLAYBACK_PRELOAD_PROBE_GAP_MS
 }
 
-/** 播放时下载前两首；暂停时立即准备前三首，不等待播放计时或缓冲阈值。 */
+/** 播放中只预下载后面 2 首；暂停时立刻开始预下载后面 3 首，不用等缓冲和计时。 */
 internal fun playbackDownloadDelayMs(index: Int, conservative: Boolean = false, paused: Boolean = false): Long? = when {
     paused -> if (index in 0 until PLAYBACK_PRELOAD_PAUSED_DOWNLOAD_COUNT) 0L else null
     else -> when (index) {
@@ -43,7 +43,7 @@ internal fun playbackDownloadDelayMs(index: Int, conservative: Boolean = false, 
     }
 }
 
-/** 协议档位和回退顺序由当前包提供，宿主只执行公共设备策略。 */
+/** 获取当前音源的音质回退顺序（由音源包定义，宿主只做设备限制）。 */
 internal fun playbackQualityLadder(source: MusicSource, preferred: AudioQuality): List<AudioQuality> =
     preferred.fallbackCandidates(source).distinct()
 
@@ -57,7 +57,7 @@ internal fun playbackQualityAllowed(source: MusicSource, quality: AudioQuality, 
 internal fun playbackCachedStart(cached: AudioQuality?, source: MusicSource, preferred: AudioQuality): AudioQuality? {
     if (cached == null) return null
     if (playbackQualityAllowed(source, cached, preferred)) return cached
-    // 已缓存的其他编码或更高档不能证明新首选可用，重新按包声明的完整回退链探测。
+    // 缓存的是其他编码或更高档位时，不能直接复用，按新首选的回退顺序重新探测。
     if (preferred != AudioQuality.DOLBY || cached != AudioQuality.HI_RES) return null
     return playbackQualityLadder(source, preferred).firstOrNull { it.ordinal <= cached.ordinal }
 }

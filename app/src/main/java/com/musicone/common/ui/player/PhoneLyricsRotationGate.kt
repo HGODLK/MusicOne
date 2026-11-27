@@ -3,7 +3,7 @@ package com.musicone
 import androidx.compose.runtime.*
 import kotlinx.coroutines.flow.first
 
-/** 等待只观察开合，不接管其任务或消耗转向准备的三秒预算。 */
+/** 转屏前等待歌词开合动画停稳，避免开合和转屏同时抢布局。 */
 internal class PhoneLyricsRotationGate {
     private var owner: Any? = null
     private var motion by mutableStateOf<PhoneLyricsMotion?>(null)

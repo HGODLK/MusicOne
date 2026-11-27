@@ -7,7 +7,7 @@ import kotlin.math.log10
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
-/** UAC2 控制传输抽象，便于驱动在无真实 USB 硬件的单元测试中验证协议状态机。 */
+/** UAC2 控制传输接口，方便单元测试在不接真机时模拟硬件响应。 */
 internal fun interface UsbControlTransfer {
     fun transfer(type: Int, request: Int, value: Int, index: Int, buffer: ByteArray): Int
 }

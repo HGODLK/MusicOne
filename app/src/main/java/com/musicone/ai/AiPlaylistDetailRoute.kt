@@ -13,7 +13,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
-/** 会话临时视图复用完整歌单详情、搜索和工具栏，不创建持久歌单。 */
+/** 临时歌单直接复用完整的歌单详情页（含搜索和工具栏），不会写入本地歌单库。 */
 @Composable
 internal fun AiPlaylistDetailRoute(playlist: MusicPlaylist, controller: AiAssistantController, bottomInset: Dp,
     motion: PageMotion, onBack: () -> Unit) {
@@ -29,10 +29,22 @@ internal fun AiPlaylistDetailRoute(playlist: MusicPlaylist, controller: AiAssist
     var bounds by remember { mutableStateOf(Rect.Zero) }
     val composerBackdrop = LocalAiComposerBackdrop.current
     DisposableEffect(composerBackdrop) { onDispose { composerBackdrop?.artworkBounds = Rect.Zero } }
-    CompositionLocalProvider(LocalPlaylistMotion provides motion,
+    CompositionLocalProvider(
+        // AI 详情挂在设置层里，此时根层的 EntityPageHost 没挂载，关掉歌手/专辑跳转避免点了没反应。
+        LocalEntityNavigation provides null,
+        LocalPlaylistMotion provides motion,
         LocalPlaylistContentEntrance provides entrance,
         LocalPlaylistLoadedContent provides true,
-        LocalMiniPlayerGlassSampling provides rememberMiniPlayerGlassSampling(backdrop)) {
+        LocalMiniPlayerGlassSampling provides rememberMiniPlayerGlassSampling(backdrop),
+    ) {
+        MainSourcePlaylistSongMenuHost(
+            playlist = displayed,
+            createdPlaylists = emptyList(),
+            bottomInset = bottomInset,
+            onRemoved = {},
+            onChanged = {},
+            onFavorite = favorites.toggle,
+        ) {
         PlaylistMotionHost(motion, playlist) {
             Box(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
@@ -54,6 +66,7 @@ internal fun AiPlaylistDetailRoute(playlist: MusicPlaylist, controller: AiAssist
                 cover?.artworkEnd ?: displayed.artworkEnd, cover?.artworkMark ?: displayed.artworkMark,
                 modifier = Modifier.aiComposerArtworkBackdrop(composerBackdrop))
             }
+        }
         }
     }
 }

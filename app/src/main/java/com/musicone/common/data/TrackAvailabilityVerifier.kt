@@ -5,7 +5,7 @@ import com.musicone.source.sdk.SourceOperationException
 import com.musicone.sourceintegration.*
 import kotlinx.coroutines.CancellationException
 
-/** 只有包明确返回不可播放时才置灰，网络及验证失败仍保留重试。 */
+/** 只有音源包明确返回不可播时才置灰，网络超时或异常仍允许用户点击重试。 */
 internal class TrackAvailabilityVerifier(private val context: Context) {
     suspend fun verify(track: MusicTrack): String? = try {
         val entry = SourcePackageController.get(context).running(track.source.id)?.entry

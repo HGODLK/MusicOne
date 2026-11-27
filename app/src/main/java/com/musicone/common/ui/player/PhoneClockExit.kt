@@ -7,7 +7,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
-/** 旧画面覆盖期间暂停退场，交接后从原位置和速度续接；请求取消则由新目标接管。 */
+/** 时钟退场动画：旧画面快照还没撤掉前先暂停，画面揭开后再从原位置和速度继续滑出。 */
 internal suspend fun PhoneClockFlight.exitWhenVisible(
     covered: () -> Boolean,
     travel: () -> Float,

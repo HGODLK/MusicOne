@@ -9,7 +9,7 @@ import androidx.compose.ui.Modifier
 import com.musicone.source.sdk.*
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** 新的公共页面和组件延续包实例的操作边界，不受默认页面开关限制。 */
+/** 公共页面和组件同样受当前实例租约限制，不受默认页面开关影响。 */
 internal class SourcePublicUiLease(
     content: SourceContentUi,
     private val sourceId: String,
@@ -79,7 +79,7 @@ internal class SourcePublicUiLease(
     } }
 }
 
-/** 列表观察可能晚于页面注销收尾，旧实例或旧账号不能继续向宿主页头写位置。 */
+/** 列表滚动回调可能晚于页面销毁，旧实例或旧账号不能再往宿主页头写滚动位置。 */
 internal class SourceRootScrollCallback(private val checkActive: () -> Unit) {
     private val mounted = AtomicBoolean(true)
     fun close() { mounted.set(false) }

@@ -4,12 +4,12 @@ import android.app.Activity
 import android.util.Log
 import androidx.compose.ui.MotionDurationScale
 
-/** 应用动效使用真实时间，不修改系统的动画倍率设置。 */
+/** 应用内动效固定按 1x 速度播放，不受系统开发者选项里的动画倍率影响。 */
 internal object MusicMotionDurationScale : MotionDurationScale {
     override val scaleFactor: Float = 1f
 }
 
-/** 仅请求当前分辨率的最高刷新率，避免切换分辨率或操控系统设置。 */
+/** 只在当前分辨率下选最高刷新率，不改分辨率也不动系统设置。 */
 @Suppress("DEPRECATION")
 internal fun Activity.requestMusicDisplayRate() {
     val screen = window.decorView.display ?: windowManager.defaultDisplay

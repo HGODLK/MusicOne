@@ -25,7 +25,7 @@ import kotlinx.coroutines.Deferred
  */
 @OptIn(UnstableApi::class)
 internal class MusicOneUsbAudioSink(
-    private val delegate: DefaultAudioSink,
+    private val delegate: AudioSink,
     context: Context,
     enabled: Boolean,
 ) : ForwardingAudioSink(delegate) {
@@ -93,7 +93,7 @@ internal class MusicOneUsbAudioSink(
         try {
             if (reuseDirectOutput) flushDirectOutput() else selectOutput(inputFormat)
             super.configure(inputFormat, specifiedBufferSize, outputChannels)
-            // 只在 delegate 初始化成功后确认直通接管，避免把系统输出错误算成 USB 中断。
+            // 等内层 delegate 也初始化成功后再标记 USB 直通生效，避免把系统输出异常误判成 USB 断开。
             UsbAudioOutputStatus.markDirectOutput(stream?.isAlive == true)
             if (stream?.isAlive == true) muteDelegate() else unmuteDelegate()
         } finally {
@@ -105,7 +105,7 @@ internal class MusicOneUsbAudioSink(
         if (routeChangePending) return false
         val activeStream = stream
         val worker = streamingThread
-        // 设置切换与解码器复用可能先于输出重建，旧独占流也不能接收杜比降混数据。
+        // 切设置或复用解码器时，输出可能还没来得及重建，此时不能把杜比降混数据喂给旧的 USB 独占流。
         if (dolbySource && activeStream != null) return false
         if (activeStream != null && worker != null) {
             throwDirectWriteError()

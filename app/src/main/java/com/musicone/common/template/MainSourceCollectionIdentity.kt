@@ -4,7 +4,7 @@ import com.musicone.source.sdk.SourceCollectionFavoritePolicy
 import com.musicone.source.sdk.SourceFavorites
 import com.musicone.sourceintegration.toSourceCollection
 
-/** 收藏资格与等价键由音源提供，稳定 ID 继续用于原列表、缓存和导航。 */
+/** 能不能收藏由音源自己的策略判断，列表、缓存和导航继续用原来的稳定歌单 ID。 */
 internal fun MusicPlaylist.canCollectWith(service: SourceFavorites?, accountId: String?): Boolean =
     canCollectAsPlaylist() && (service as? SourceCollectionFavoritePolicy)?.canFavorite(toSourceCollection(accountId)) != false
 

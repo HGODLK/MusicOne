@@ -2,7 +2,7 @@ package com.musicone
 
 import java.net.URI
 
-/** 仅兼容读取 0.2 旧孤立缓存的确定文件名规格；新资源使用包声明和真实媒体头。 */
+/** 仅用于兼容读取 0.2 老版本缓存文件的文件名音质标识，新缓存直接读音源包信息和文件头。 */
 internal fun legacyCachedAudioQuality(value: String): AudioQuality? {
     val normalized = if (value.startsWith("//")) "https:$value" else value
     val path = runCatching {

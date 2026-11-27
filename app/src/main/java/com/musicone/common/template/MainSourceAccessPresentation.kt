@@ -7,7 +7,7 @@ import com.musicone.source.sdk.SourceEntry
 import com.musicone.source.sdk.currentMembership
 import com.musicone.source.sdk.membershipDetectorOrNull
 
-/** 通用会员筛选将 false 折叠为未知；角标需要保留酷狗检测器明确确认的非会员状态。 */
+/** 读取当前会员状态：酷狗需要明确区分“已确认非会员(false)”和“未知(null)”，所以单独直读检测器。 */
 internal fun sourceAccessMembership(entry: SourceEntry?, source: MusicSource): Boolean? =
     if (source == MusicSource.KUGOU) entry?.membershipDetectorOrNull()?.currentMembership else entry?.currentMembership()
 

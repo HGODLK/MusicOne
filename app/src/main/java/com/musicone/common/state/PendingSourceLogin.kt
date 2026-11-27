@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 记录等待登录结果的音源；登录页关闭时只结算一次，有账号才交给调用方切换。 */
+/** 记下正在等登录的音源，登录页关掉时核对一次，确实登上了再切换过去。 */
 internal class PendingSourceLogin {
     private var source: MusicSource? = null
 

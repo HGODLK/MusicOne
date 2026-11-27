@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInRoot
 
-/** 输入区置于聊天采样层之外，复用搜索及播放控件的实时玻璃。 */
+/** 输入框放在背景采样层外面，直接复用搜索框和播放条的实时毛玻璃效果。 */
 @Composable
 internal fun AiChatComposer(state: AiAssistantUiState, onAction: (AiUiAction) -> Unit,
     backdrop: GraphicsLayer, bounds: Rect, modifier: Modifier = Modifier) {
@@ -38,7 +38,7 @@ internal fun AiChatComposer(state: AiAssistantUiState, onAction: (AiUiAction) ->
     }
     val echoes = remember(state.currentConversationId) { AiInputEchoes() }
     LaunchedEffect(state.input) {
-        // 同文回填保留输入法选区与组合态；仅外部真正换文时替换。
+        // 文本没变时不动 TextFieldValue（保留光标和输入法候选状态），只有外部真的改了内容才替换。
         val echo = echoes.consume(state.input)
         if (!echo && state.input != input.text) input = TextFieldValue(state.input, TextRange(state.input.length))
     }
@@ -62,7 +62,7 @@ internal fun AiChatComposer(state: AiAssistantUiState, onAction: (AiUiAction) ->
             val frame = MainSourceSearchGeometry(viewport * open, 0.dp, 0.dp, 0.dp, 28.dp, viewport, 0.dp)
             Offset(with(density) { searchContentOffset(viewport, frame, open).toPx() }, 0f)
         }) {
-        // 尺寸动画放在玻璃内部，让外层玻璃和列表留白读取同一个动画中高度。
+        // 把高度动画放在毛玻璃里面，这样外层玻璃和列表底部留白能同步拿到变化中的高度。
         Column(Modifier.animateContentSize(animationSpec = musicMotion(220))
             .padding(start = 20.dp, end = 8.dp, top = 16.dp, bottom = 8.dp)) {
             BasicTextField(input, {

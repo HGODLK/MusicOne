@@ -30,7 +30,7 @@ internal suspend fun preloadMainSourceArtwork(
     withTimeoutOrNull(waitLimitMs) { pending.awaitAll() }
 }
 
-/** 刷新退场由一条全局曲线驱动，完成后才允许发布新一代，兼容系统动画缩放。 */
+/** 刷新时先用统一的退场动画把旧卡片清走，退场完再通知上新卡片。 */
 @Composable
 internal fun rememberMainSourceFeedExitProgress(feed: MainSourceHomeContent, onExited: () -> Unit): () -> Float {
     val exit = remember { Animatable(0f) }

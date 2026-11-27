@@ -4,7 +4,7 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
-/** 复用QQ已有可见性门闩，合并重新可见与回前台，不在隐藏页请求资料库。 */
+/** 页面重新可见或切回前台时合并触发一次资料库刷新，页面不可见时不发请求。 */
 @Composable
 internal fun ObserveMainSourceMyLibraryRefresh(identity: Any?, signedIn: Boolean, visible: Boolean,
     onRefresh: () -> Unit) {

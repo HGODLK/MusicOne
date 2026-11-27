@@ -27,7 +27,7 @@ internal fun playerRevealGeometry(motion: PageMotion, flight: PhonePlayerFlightR
     return geometry.copy(bounds = geometry.bounds.translate(-target.left, -target.top))
 }
 
-/** 圆角始终交给原生轮廓；外层旋转遮罩，内层等量反转，使背景与内容留在物理窗口。 */
+/** 通过外层旋转裁剪轮廓 + 内层等量反旋，让旋转中的播放页背景和内容始终保持水平正向。 */
 @Composable
 internal fun PlayerSurfaceReveal(motion: PageMotion, prewarming: Boolean, content: @Composable () -> Unit) {
     val flight = LocalPhonePlayerFlightRotation.current

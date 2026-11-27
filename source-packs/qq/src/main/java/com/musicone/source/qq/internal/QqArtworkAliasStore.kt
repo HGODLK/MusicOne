@@ -65,7 +65,7 @@ internal class QqArtworkAliasStore(context: Context) {
     }
 }
 
-/** 在歌单数据准备阶段补全决定外层封面的首曲，避免以播放作为封面加载条件。 */
+/** 提前补齐歌单第一首歌的封面，让歌单卡片还没播放时就能显示正确封面。 */
 internal class QqPlaylistArtworkAliasResolver(
     private val api: QqApiClient,
     private val aliases: QqArtworkAliasStore,
@@ -83,7 +83,7 @@ internal class QqPlaylistArtworkAliasResolver(
     }
 }
 
-/** 歌单没有独立封面时，在歌曲封面补全后同步派生首曲封面。 */
+/** 歌单本身没封面时，用补全后的第一首歌封面顶上。 */
 internal fun MusicPlaylist.withResolvedTrackArtwork(resolvedTracks: List<MusicTrack>): MusicPlaylist {
     if (source == MusicSource.QQ && id == QQ_FAVORITES_PLAYLIST_ID)
         return copy(tracks = resolvedTracks).withQqFavoriteArtwork()

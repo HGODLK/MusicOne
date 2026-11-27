@@ -50,7 +50,7 @@ internal class QqMusicFeedPager(
             endReached = result.shelfCount == 0
             val incoming = unseenQqMusicFeedCards(result.cards, previous + pool)
             pool = mergeQqMusicFeed(pool, incoming)
-            // 原始响应先留在池中；准备失败重试时复用已取得的数据，不丢失成功页。
+            // 先把拉回来的卡片放进待展示池，后面补详情失败重试时直接复用，不浪费已拉到的页
             pending = pool
         }
 
@@ -60,7 +60,7 @@ internal class QqMusicFeedPager(
                 if (endReached) "QQ 音乐暂时没有更多推荐" else "暂未获得新的推荐内容，轻触继续加载",
             )
         }
-        // 只在当前已取得的池内整理顺序，不为了寻找另一种卡型额外探测接口。
+        // 只在现有卡片池里交错排序，不为了凑卡片类型多发请求
         val arrangedPool = qqMusicFeedDisplayCards(interleaveQqMusicFeedCards(pool))
         val candidates = if (firstBatch) qqFeedInitialCandidates(arrangedPool) else arrangedPool
         val selected = takeQqMusicFeedBatch(candidates, size).visible

@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import org.json.JSONObject
 
-/** 只在本机按行检索历史正文，查询不进入模型上下文，也不切换正在使用的会话数据库。 */
+/** 只在本地按行搜索历史消息正文，不会发给模型，也不会切换当前打开的会话数据库。 */
 internal fun aiSearchConversations(folder: File, conversations: List<AiConversationSummary>, query: String,
     checkActive: () -> Unit = {}): List<AiConversationUi> {
     val needle = query.trim()

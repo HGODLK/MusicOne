@@ -8,7 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 
-/** 飞行内容使用玻璃同一帧的原生轮廓，旋转及归位中都不能越过承载背景。 */
+/** 用与毛玻璃相同的旋转圆角轮廓裁剪飞行中的封面和文字，防止内容越出玻璃边界。 */
 @Composable
 internal fun PlayerFlyingContentHost(motion: PageMotion, content: @Composable () -> Unit) {
     val frame = LocalPlayerSurfaceFlightFrame.current

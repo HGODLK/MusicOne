@@ -43,7 +43,7 @@ internal fun libraryFavoriteActions(remote: MusicFavoriteActions): MusicFavorite
     )
 }
 
-/** 根界面重组时复用集合与动作，只把真实收藏变化交给下游。 */
+/** 缓存收藏集合和回调引用，避免根页面重组时把所有子列表一起带动刷新。 */
 @Composable
 internal fun rememberLibraryFavoriteActions(
     remote: MusicFavoriteActions,

@@ -18,7 +18,7 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 
-/** 保留切换前的完整网格，以标题坐标差补偿列表缩短时系统自动夹紧的滚动位置。 */
+/** 切换歌单分区时的过渡动画状态：保留切换前的网格快照，并用标题位置差补偿列表变短引起的滚动回弹。 */
 internal class MainSourceLibrarySegmentMotion {
     var moving by mutableStateOf(false)
     var headerTop = 0f
@@ -187,6 +187,6 @@ internal fun Modifier.librarySegmentMotion(motion: MainSourceLibrarySegmentMotio
     }
 }
 
-/** 向下取整采样起点，保留跨越分区边界的抗锯齿像素。 */
+/** 采样起点向下取整，避免分区交界处被裁掉 1px 出现白线。 */
 internal fun librarySegmentSnapshotTop(contentTop: Float, viewportTop: Float, height: Int): Int =
     floor(contentTop - viewportTop).toInt().coerceIn(0, (height - 1).coerceAtLeast(0))

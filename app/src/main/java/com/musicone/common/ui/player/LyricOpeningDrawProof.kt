@@ -6,7 +6,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CompletableDeferred
 
-/** 准备完成后等待这一窗口实际绘制，取消的旧曲请求不能放行新曲展开。 */
+/** 等待歌词展开准备完成后的真实首帧绘制，校验凭据避免旧歌的绘制误放行新歌。 */
 internal class LyricOpeningDrawProof {
     private class Request(val line: Int, val stamp: LyricDisplayStamp?, val ready: CompletableDeferred<Unit> = CompletableDeferred())
     private var request by mutableStateOf<Request?>(null)

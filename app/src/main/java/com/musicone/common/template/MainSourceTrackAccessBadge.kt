@@ -9,7 +9,7 @@ import com.musicone.source.sdk.TrackAccessInfo
 import com.musicone.sourceintegration.*
 import kotlinx.coroutines.CancellationException
 
-/** 展示资料可离线读取；在线权益刷新失败时保留上次已知声明。 */
+/** 离线时直接用本地存好的角标信息，在线核对失败也保留上次已知的状态。 */
 @Composable
 internal fun mainSourceDisplayedAccessBadge(track: MusicTrack): SourceTrackBadge? {
     val context = LocalContext.current

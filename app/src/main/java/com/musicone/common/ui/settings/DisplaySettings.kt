@@ -1,5 +1,6 @@
 package com.musicone
 
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -10,16 +11,23 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
 
+/** Android 12（API 31）起系统才支持 RenderEffect / BlurEffect 实时模糊。 */
+internal fun supportsBlurSettings(sdkInt: Int = Build.VERSION.SDK_INT): Boolean =
+    sdkInt >= Build.VERSION_CODES.S
+
 /** 一级分组“显示”：歌词、播放页、外观与动效、页面与底栏四个二级分组。 */
 @Composable
-internal fun DisplaySettings() {
+internal fun DisplaySettings(onOpenCustomFonts: () -> Unit = {}) {
     val options = ExperiencePreferences.options
+    val showBlurSettings = supportsBlurSettings()
     SettingsSection("显示") {
         SettingsGroup("歌词") {
             LyricDisplayContentSettings()
             LyricFontSizeSettings()
-            DisplaySetting("关闭未播放歌词模糊", "歌词保持清晰，不虚化未播放行", options.disableLyricBlur) {
-                ExperiencePreferences.update(options.copy(disableLyricBlur = it))
+            if (showBlurSettings) {
+                DisplaySetting("关闭未播放歌词模糊", "歌词保持清晰，不虚化未播放行", options.disableLyricBlur) {
+                    ExperiencePreferences.update(options.copy(disableLyricBlur = it))
+                }
             }
             DisplaySetting("关闭逐字歌词渐亮", "改为整行同步高亮", !options.verbatimLyricAnimation) {
                 ExperiencePreferences.update(options.copy(verbatimLyricAnimation = !it))
@@ -46,16 +54,18 @@ internal fun DisplaySettings() {
             ScreenOnSetting()
         }
         SettingsGroup("外观与动效") {
-            AppFontSettings()
+            AppFontSettings(onOpenCustomFonts)
             AnimationFrameRateSettings()
             DisplaySetting("始终使用深色模式", "开启后固定深色，关闭则跟随系统", options.alwaysDark) {
                 ExperiencePreferences.update(options.copy(alwaysDark = it))
             }
-            DisplaySetting("关闭模糊效果", "改用纯色背景，减少性能消耗", options.disableBlur) {
-                ExperiencePreferences.update(options.copy(disableBlur = it))
-            }
-            DisplaySetting("关闭播放控件及顶部模糊", "播放控件与顶栏改用纯色渐隐，不影响歌词模糊", options.disablePlayerControlsBlur) {
-                ExperiencePreferences.update(options.copy(disablePlayerControlsBlur = it))
+            if (showBlurSettings) {
+                DisplaySetting("关闭模糊效果", "改用纯色背景，减少性能消耗", options.disableBlur) {
+                    ExperiencePreferences.update(options.copy(disableBlur = it))
+                }
+                DisplaySetting("关闭播放控件及顶部模糊", "播放控件与顶栏改用纯色渐隐，不影响歌词模糊", options.disablePlayerControlsBlur) {
+                    ExperiencePreferences.update(options.copy(disablePlayerControlsBlur = it))
+                }
             }
             DisplaySetting("减弱动态效果", "减少界面位移和背景流动动画", options.reduceMotion) {
                 ExperiencePreferences.update(options.copy(reduceMotion = it))

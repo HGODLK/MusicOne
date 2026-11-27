@@ -6,7 +6,7 @@ import com.musicone.source.sdk.SourceCollectionOperation
 import com.musicone.source.sdk.SourceFetchPolicy
 import com.musicone.sourceintegration.*
 
-/** 歌单写入归属和远端协议由当前音源包核验。 */
+/** 云端歌单的增删和权限校验全部交给对应音源包处理。 */
 internal class PlatformPlaylistSongRepository(context: Context) {
     private val controller = SourcePackageController.get(context)
     private fun entry(source: MusicSource) = controller.running(source.id)?.entry ?: error("${source.label}音源未启用")
@@ -61,4 +61,4 @@ internal fun MusicPlaylist.isAccountFavorites(): Boolean = isPlatformFavorites
 internal fun MusicPlaylist.canCollectAsPlaylist(): Boolean =
     !isAccountFavorites() && providerData["templateEphemeral"] != "true"
 internal val MusicPlaylist.supportsSongMenu: Boolean
-    get() = isManagedLibrary || source != MusicSource.LOCAL
+    get() = isManagedLibrary || source != MusicSource.LOCAL || isAiTemporaryPlaylist

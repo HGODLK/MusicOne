@@ -110,7 +110,7 @@ internal class MainSourceHomeViewModel(application: Application) : AndroidViewMo
         mutableState.value = previous.copy(loading = true, message = null, refreshing = false, refreshLoading = startsDailyFeed)
         job = viewModelScope.launch {
             try {
-                // 刷新先交付一屏左右的官方卡位，继续下滑时再按视口补齐，避免首批探测过多页面。
+                // 首次和刷新先拉一屏左右的卡片尽快显示，继续往下滑再补拉，避免一上来请求太多页。
                 val firstBatch = replace || previous.cards.isEmpty()
                 val batchSize = if (firstBatch) {
                     MAIN_SOURCE_FEED_REFRESH_BATCH_SIZE
@@ -142,7 +142,7 @@ internal class MainSourceHomeViewModel(application: Application) : AndroidViewMo
                     generation = previous.generation + if (replace) 1 else 0,
                     settled = true,
                 )
-                // 分页只追加内容，不把昨日列表续期为今日；只有成功首批或整页刷新更新日期。
+                // 下滑加载更多不更新“今日已刷新”日期，只有首屏加载或手动刷新成功才记为今天。
                 if (startsDailyFeed) refreshedDay = requestedDay
                 withContext(Dispatchers.IO) { store?.write(merged, refreshedDay) }
                 // 已显示三条推荐后，用现有追加流程准备暂存音乐流，不延长首页刷新状态。

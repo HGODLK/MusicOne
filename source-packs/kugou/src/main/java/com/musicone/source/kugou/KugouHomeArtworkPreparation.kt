@@ -2,7 +2,7 @@ package com.musicone.source.kugou
 
 import com.musicone.source.sdk.*
 
-/** 由启动及快照恢复任务调用，页面不观察准备状态，也不等待此任务。 */
+/** 启动恢复缓存时顺手预热首页封面，后台静默跑，不阻塞页面展示。 */
 internal suspend fun prepareKugouHomeCachedArtwork(environment: SourceEnvironment, state: KugouHomeState) {
     if (environment.validationOnly) return
     val artworks = kugouHomeCachedArtworks(state)
@@ -12,7 +12,7 @@ internal suspend fun prepareKugouHomeCachedArtwork(environment: SourceEnvironmen
 }
 
 internal fun kugouHomeCachedArtworks(state: KugouHomeState): List<SourceArtwork> = buildList {
-    // 顺序与首页相同；日推和最近播放卡只使用各自实际显示的第一首封面。
+    // 按首页展示顺序预热，日推和最近播放卡片只预热第一首歌的封面
     state.daily.firstOrNull()?.let { add(it.artwork) }
     state.recent.tracks.firstOrNull()?.let { add(it.artwork) }
     state.homeSections.forEach { section ->

@@ -5,6 +5,6 @@ interface SourceEntityArtwork {
     suspend fun artwork(reference: SourceEntityRef): SourceArtwork
 }
 
-/** 实体图片由此可选接口提供，不向 SourceEntry 增加抽象成员。 */
+/** 通过此可选接口提供实体图片，避免给 SourceEntry 新增抽象方法。 */
 suspend fun SourceEntities.artwork(reference: SourceEntityRef): SourceArtwork =
     (this as? SourceEntityArtwork)?.artwork(reference) ?: entity(reference).artwork

@@ -8,7 +8,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.isActive
 
-/** 常驻只改变关闭态的准备方式；持续刷新由独立构建开关控制。 */
+/** 常驻歌词策略：关闭态下保持歌词停在当前句，是否后台持续刷新由构建开关单独控制。 */
 internal data class LyricResidency(
     val retained: Boolean = false,
     val available: Boolean = false,

@@ -13,7 +13,7 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Constraints
 import kotlin.math.roundToInt
 
-/** 时钟保持单一实例，退出阶段继续沿用最后横屏的测量尺寸。 */
+/** 横屏大时钟的进出过渡：始终复用同一个实例，退出时沿用上一次横屏的尺寸。 */
 @Composable
 internal fun PhonePlayerClockTransition(visualTrack: MusicTrack, motion: PageMotion,
     showLyrics: Boolean, contentActivated: Boolean, rotation: Int) {
@@ -39,7 +39,7 @@ internal fun PhonePlayerClockTransition(visualTrack: MusicTrack, motion: PageMot
     val generation = turn?.generation ?: 0
     val revealWithPage = rotation != 0 && motion.mounted && motion.wantsOpen &&
         motion.phase != MotionPhase.SHOWN && !motion.targetContentHandoff
-    // 手势阶段切换不会重启相同入口；只有目标方向、可见状态或真正首次展开改变才续接。
+    // 只有方向、显隐或首次展开状态真正变化时才触发新请求，普通手势切换不重启时钟动画。
     val request = phoneClockTransitionRequest(target, rotation, revealWithPage, preparing, fading, generation)
     PhoneClockHandoffRecovery(handoff, request, visualTrack, turn, clockFlight,
         exposure = { exposure.value }, nativeDrawing = { nativeEntry })
@@ -50,7 +50,7 @@ internal fun PhonePlayerClockTransition(visualTrack: MusicTrack, motion: PageMot
                 clockFlight.clearEndpointWait()
                 presentation?.preparation?.clockEntered(generation)
                 presentation?.additionalMotion("clock", entrance.value != 0f)
-                // 隐藏请求持续有效，但旧快照撤下前不消耗退场行程；快速改向也沿用当前速度。
+                // 收到隐藏请求后，等旧画面快照撤掉再开始退场位移，快速转向时保留当前速度。
                 clockFlight.exitWhenVisible(
                     covered = { presentation?.preparation?.let { it.active || it.image != null } == true },
                     travel = { travel },
@@ -72,8 +72,7 @@ internal fun PhonePlayerClockTransition(visualTrack: MusicTrack, motion: PageMot
             }
             presentation?.additionalMotion("clock", entrance.value != target)
             try {
-                // 入口跟随本轮代次续接；目标准备不限时，入口预算从旧帧释放后开始。
-                // 进度已经为一也可能仍绑定旧方向；先复核实际端点，不能只凭动画数值宣布完成。
+                // 先等待本轮横屏时钟端点就绪（即使动画值已是 1 也需复核，防止仍绑定在旧方向）。
                 if (target == 1f) {
                     val sharedBudget = presentation?.preparation?.clockWaitMillis(generation)
                         ?: PHONE_PLAYER_TURN_PREPARATION_MILLIS
@@ -97,7 +96,7 @@ internal fun PhonePlayerClockTransition(visualTrack: MusicTrack, motion: PageMot
                 }
                 val velocity = clockFlight.velocity
                 if (phoneClockRevealWithPage(revealWithPage, entrance.value, velocity)) {
-                    // 直接从迷你条打开时，时钟随原整页显露，不在开合结束后再启动第二段进场。
+                    // 从迷你条直接展开横屏播放页时，时钟随页面一起显现，不再单独播一段飞入动画。
                     clockFlight.snapTo(target)
                 } else {
                     if (entrance.value == 0f) exposure.snapTo(1f)

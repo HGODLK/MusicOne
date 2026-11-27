@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.withLock
 
-/** 只编排现有服务；每个分区独立失败、取消和保存，不扩展页面或播放协议。 */
+/** 酷狗首页数据控制器：各分区独立加载、容错和缓存。 */
 internal class KugouHomeController(
     private val scope: CoroutineScope,
     private val owner: () -> KugouHomeOwner,
@@ -56,7 +56,7 @@ internal class KugouHomeController(
             if (jobs["recent"]?.isActive == true) recentRevision++
             jobs.values.forEach { it.cancel() }
         } else {
-            // 与QQ可见性刷新一致：回到首页核对其他设备的云端历史。
+            // 回到首页时刷一次云端最近播放，同步其他设备听过的记录
             recentRevision++
             load()
         }
@@ -66,10 +66,10 @@ internal class KugouHomeController(
         if (closed || owner() != expected) throw CancellationException("酷狗账号已变化，首页旧请求已取消")
     }
 
-    /** 包启动阶段只恢复本地快照，网络核对仍由原可见性入口触发。 */
+    /** 启动时只先恢复本地缓存，联网刷新等首页真正可见时再触发。 */
     @Synchronized fun restoreSnapshot() { selectOwner() }
 
-    /** 换号立即释放旧首页及请求；新账号仍由原可见入口恢复，不在登录线程读磁盘。 */
+    /** 切换账号时立刻清掉旧账号的首页数据和在途请求，等页面可见时再加载新账号缓存。 */
     @Synchronized fun clearMemory() {
         snapshotRevision.incrementAndGet()
         artworkJob?.cancel()
@@ -85,7 +85,7 @@ internal class KugouHomeController(
         mutableState.value = KugouHomeState()
     }
 
-    /** 每个账号会话首次展示快照并核对一次，返回页面不重复加载。 */
+    /** 当前账号首次进入首页时先展示缓存再联网刷新一次，从子页面返回时不重复拉。 */
     fun load(): Job = scope.launch(Dispatchers.IO) {
         val expected = synchronized(this@KugouHomeController) { selectOwner() }
         val requests = synchronized(this@KugouHomeController) {
@@ -154,7 +154,7 @@ internal class KugouHomeController(
                 currentCoroutineContext().ensureActive(); checkOwner(expected)
                 prepareArtwork(snapshot)
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { /* 缓存准备失败不改变已恢复内容及原页面状态。 */ }
+            catch (_: Exception) { /* 封面预热失败不影响首页正常展示 */ }
         }
     }
 
@@ -164,7 +164,7 @@ internal class KugouHomeController(
         jobs[part]?.cancel()
         val version = (versions[part] ?: 0) + 1
         versions[part] = version
-        // 按尝试日期去重，跨日失败后也不因返回页面反复请求；手动刷新仍可重试。
+        // 每天自动刷新只尝试一次，避免失败后每次返回首页都反复弹错（手动刷新不受限）
         val requestedRecentRevision = recentRevision
         val homeAttemptDay = if (part == "home") snapshots.dayKey().also { lastHomeAttemptDay = it } else null
         val dailyAttemptDay = if (part == "daily") snapshots.dayKey().also { lastDailyAttemptDay = it } else null
@@ -206,12 +206,12 @@ internal class KugouHomeController(
                     val revision = snapshotRevision.incrementAndGet()
                     if (part == "recent") {
                         loadedRecentRevision = requestedRecentRevision
-                        // 请求期间的新上报只补一次后续同步，不把旧响应当成最新状态。
+                        // 如果拉取期间又有新的播放上报，等这次完事后再补拉一次
                         if (visible && recentRevision != requestedRecentRevision) start("recent", true)
                     }
                     result to revision
                 }
-                // 大快照编码和落盘不持有页面可见性锁；旧结果不得覆盖较新的成功快照。
+                // 序列化和写磁盘单独加锁，不阻塞页面状态更新，且旧结果不覆盖新快照
                 persistence.withLock {
                     val guard = {
                         context.ensureActive()
@@ -230,7 +230,7 @@ internal class KugouHomeController(
                 throw cancelled
             }
             catch (failure: Exception) {
-                // 隐藏页面引起的线程中断不能成为首页错误提示。
+                // 页面切后台取消协程导致的中断不算报错，不弹错误提示
                 val context = currentCoroutineContext()
                 synchronized(this@KugouHomeController) {
                     context.ensureActive()

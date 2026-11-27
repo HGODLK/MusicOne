@@ -4,7 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
 import org.json.JSONObject
 
-/** 时长与播放事件各自确认，任何一步失败都不能冒充另一项已成功。 */
+/** 酷狗听歌时长和播放事件上报接口（两路独立上报）。 */
 internal interface KugouListeningService {
     suspend fun baseline(cookie: String, check: () -> Unit): Long
     suspend fun sync(cookie: String, baselineSec: Long, addedSec: Long, check: () -> Unit): Long
@@ -44,7 +44,7 @@ internal class KugouListeningClient(
         cscc.report(cookie, songId, started, playedMs, completed, occurredAtMs, check)
 }
 
-/** 沿用本音源的 3116 身份及 RSA，查询基线后只提交本会话真实新增秒数。 */
+/** 构造听歌等级时长上报请求（沿用 3116 客户端参数和 RSA 加密），先查服务端基线再报本次新增秒数。 */
 internal fun kugouGradeRequest(cookie: String, nowMs: Long, baselineSec: Long?, addedSec: Long?): KugouGradeRequest {
     val session = cookie.requiredKugouSession()
     require((baselineSec == null) == (addedSec == null)) { "时长基线与增量必须同时提供" }
@@ -57,7 +57,7 @@ internal fun kugouGradeRequest(cookie: String, nowMs: Long, baselineSec: Long?, 
     val proof = if (baselineSec == null) JSONObject().put("clienttime", time).put("userid", session.userId.toLong())
         else {
             body.put("d_sec", baselineSec).put("diff_sec", addedSec).put("y_type", 0).put("m_type", 0)
-            // 沿用同一 3116 公开协议的默认字段值，不从音频可播放权益推断这两个字段。
+            // 按 3116 协议约定填固定默认值
             JSONObject().put("token", session.token).put("md5", KugouProtocol.md5("${baselineSec}${addedSec}00"))
         }
     body.put("p", KugouLoginCrypto.rawRsaEncrypt(proof.toString()))

@@ -5,7 +5,7 @@ import org.json.JSONObject
 
 internal data class AiProtocolWindow(val rows: List<Pair<Int, JSONObject>>, val truncated: Boolean)
 
-/** 归档与当前模型窗口分开；按保存的顺序恢复，不能把窗口截成固定消息条数。 */
+/** 归档历史和当前上下文窗口分开存，恢复时按记录的行号还原，不能硬截成固定条数。 */
 internal fun SQLiteDatabase.aiProtocolWindow(metadata: JSONObject): AiProtocolWindow {
     val positions = metadata.optJSONArray("protocolPositions")
     val rows = mutableListOf<Pair<Int, JSONObject>>()
@@ -24,7 +24,7 @@ internal fun SQLiteDatabase.aiProtocolWindow(metadata: JSONObject): AiProtocolWi
         while (rows.firstOrNull()?.second?.optString("role") == "tool") rows.removeAt(0)
         return AiProtocolWindow(rows, missing || rows.size != count)
     }
-    // 旧版没有保存窗口行号，仅保留既有恢复路径，不能把全部归档和压缩摘要混发。
+    // 兼容旧版没存行号的数据，只取最近 128 条，避免把全部历史和摘要混在一起发给模型。
     rawQuery("SELECT position,data FROM protocol ORDER BY position DESC LIMIT 128", null).use { cursor ->
         while (cursor.moveToNext()) rows += cursor.getInt(0) to JSONObject(cursor.getString(1))
     }

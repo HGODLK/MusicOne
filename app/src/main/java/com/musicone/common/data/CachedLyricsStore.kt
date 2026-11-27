@@ -4,7 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** 歌词与音频共用账号隔离及磁盘配额，原文和翻译一起保存。 */
+/** 歌词缓存按账号隔离并计入磁盘配额，原文和翻译存在一起。 */
 internal class CachedLyricsStore(private val context: Context) {
     private fun namespace(track: MusicTrack) = com.musicone.sourceintegration.sourceCacheNamespace(context, track.source)
     private fun key(track: MusicTrack, namespace: String) = "lyrics|$namespace|${track.id}"
@@ -16,7 +16,7 @@ internal class CachedLyricsStore(private val context: Context) {
         accepted
     }
 
-    // 刷新失败或离线时仍可展示旧内容，但不能将它写成已验证的新版本。
+    // 离线或刷新失败时先拿旧歌词兜底显示，但不把它当成已校验的新版本覆盖回去。
     suspend fun readFallback(track: MusicTrack, namespace: String = namespace(track)): List<TimedLyric> = withContext(Dispatchers.IO) {
         MusicDiskCache.get(context).read(key(track, namespace))
             ?.let { decodeCachedLyrics(it.toString(Charsets.UTF_8)) }
@@ -31,7 +31,7 @@ internal class CachedLyricsStore(private val context: Context) {
         val cache = MusicDiskCache.get(context)
         if (!hasReusableLyrics(track, lyrics)) {
             if (lyrics.isEmpty() || !validLyricTimeline(lyrics)) return@withContext
-            // 普通接口降级结果保留为离线后备，但不能覆盖已经确认的逐字或普通歌词。
+            // 降级接口拿到的歌词只当离线兜底，不覆盖本地已有的高质量歌词缓存。
             val existing = cache.read(key(track, namespace))?.let { decodeCachedLyrics(it.toString(Charsets.UTF_8)) }.orEmpty()
             if (hasReusableLyrics(track, existing) ||
                 (existing.any { it.words.isNotEmpty() } &&

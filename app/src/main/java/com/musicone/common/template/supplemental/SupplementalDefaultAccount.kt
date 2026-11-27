@@ -11,7 +11,7 @@ import com.musicone.source.sdk.SourceRoute
 import com.musicone.sourceintegration.SourceExternalSurface
 import com.musicone.sourceintegration.rememberSourceMembership
 
-/** 未提供登录页面时只显示可验证的账号状态，不猜测登录参数或回落到空入口。 */
+/** 音源没提供自定义登录页时，这里只展示当前账号状态，不硬造登录表单。 */
 @Composable
 internal fun SupplementalDefaultAccount(state: SupplementalState, model: SupplementalSourceModel, onBack: () -> Unit) {
     val member = rememberSourceMembership(model.entry)

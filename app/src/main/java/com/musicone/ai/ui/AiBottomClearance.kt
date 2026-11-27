@@ -9,11 +9,11 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 
-/** 外层已消费输入法和导航栏，剩余避让只补到播放控件上沿。 */
+/** 外层已经处理了输入法和导航栏的避让，这里只需要补出播放条多出来的那截高度。 */
 internal fun aiBottomClearance(playerBottom: Int, imeBottom: Int, navigationBottom: Int): Int =
     (playerBottom - maxOf(imeBottom, navigationBottom)).coerceAtLeast(0)
 
-/** 在测量阶段读取输入法动画帧，避免组合阶段的显隐开关造成末段落到播放条后面。 */
+/** 在布局测量阶段实时读输入法高度，避免输入法收起动画时最后一条消息短暂被播放条挡住。 */
 @Composable
 internal fun rememberAiBottomClearance(bottomInset: Dp): () -> Dp {
     val density = LocalDensity.current

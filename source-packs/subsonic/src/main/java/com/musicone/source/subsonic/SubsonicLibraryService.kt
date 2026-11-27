@@ -141,7 +141,7 @@ internal class SubsonicLibraryService(
         membership.targets(server.key)?.map { it.collection(server, urls) }
     }
 
-    /** CACHE_FIRST 只读本地索引；REFRESH 按 changed:songCount 只重拉变过的歌单。 */
+    /** CACHE_FIRST 模式下只查本地索引；REFRESH 模式下对比歌单的 changed 和歌曲数，只重新拉发生变化的歌单。 */
     override suspend fun containedTracks(collection: SourceCollection, tracks: List<SourceTrackDetails>,
         policy: SourceFetchPolicy): Set<String>? {
         val ref = collection.ownedPlaylist()
@@ -166,7 +166,7 @@ internal class SubsonicLibraryService(
         require(title.isNotEmpty()) { "请输入歌单名称" }
         require(edit.artworkUri == null) { "Subsonic 协议不支持上传歌单封面" }
         val before = playlists(server).mapTo(hashSetOf()) { it.id }
-        // 1.14 起返回新歌单；旧服务器不返回时按名称和新增编号找回。
+        // Subsonic 1.14 起会直接返回新建的歌单；旧版服务器不返回时，再按名字和新增 ID 找出来
         val created = client.get(server, "createPlaylist", listOf("name" to title)).optJSONObject("playlist")?.playlist()
             ?: playlists(server).firstOrNull { it.id !in before && it.name == title }
             ?: throw SourceOperationException("COLLECTION_CREATE_UNCONFIRMED", "歌单可能已创建，请刷新列表确认")
@@ -227,7 +227,7 @@ internal class SubsonicLibraryService(
                 if (indexes.isNotEmpty()) client.post(server, "updatePlaylist",
                     listOf("playlistId" to ref.id) + indexes.map { "songIndexToRemove" to it.toString() })
             }
-            // 删除按编号移除全部重复项，所以索引里直接整体增减。
+            // 删除时会把歌单里同一首歌的所有重复项都移除，所以本地索引直接按集合增减即可
             membership.applyWrite(server.key, ref.id, ids.toSet(), add)
             snapshots.remove("${server.key}|${ref.kind}|${ref.id}"); Unit
         }

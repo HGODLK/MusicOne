@@ -152,19 +152,19 @@ class UsbAudioStream(
     }
 
     /**
-     * 发送原子中断信号；必须等写线程退出后才可清理或释放。
+     * 发送中断信号；需等写线程退出后再清理或释放。
      */
     fun stop() {
         if (nativeHandle == 0L) return
         nativeUsbAudioStop(nativeHandle)
     }
 
-    /** 写线程退出旧写入后取消并回收传输，再恢复同规格会话。 */
+    /** 等写线程退出后取消并回收在途 URB，再按相同规格恢复会话。 */
     fun flush() {
         check(nativeHandle != 0L && nativeFlush(nativeHandle)) { "USB 清理失败" }
     }
 
-    /** 仅由写线程调用，回收已完成请求并检查残余 PCM 和在途音频。 */
+    /** 仅在写线程中调用，回收已完成 URB 并检查残留 PCM 和在途帧。 */
     fun pollPending(): Boolean {
         check(nativeHandle != 0L) { "USB 会话已释放" }
         val pending = nativePollPending(nativeHandle)
@@ -172,12 +172,12 @@ class UsbAudioStream(
         return pending != 0
     }
 
-    /** 提交不足常规批次的尾音，并等待音频请求完成。 */
+    /** 提交不足一批的尾段数据，并等待在途音频传输完成。 */
     fun finish() {
         check(nativeHandle != 0L && nativeFinish(nativeHandle)) { "USB 曲末传输失败或已中断" }
     }
 
-    /** 停止写线程后取消并回收请求；不能将取消视为正常播放完成。 */
+    /** 停止写线程后取消并回收在途 URB；取消不能当成正常播完。 */
     fun drainUrbs(): Int {
         if (nativeHandle == 0L) return 0
         return nativeDrainUrbs(nativeHandle).also { check(it >= 0) { "USB 请求回收失败" } }

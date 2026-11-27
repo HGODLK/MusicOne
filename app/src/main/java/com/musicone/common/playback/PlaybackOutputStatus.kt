@@ -15,7 +15,7 @@ internal data class PlaybackOutputSnapshot(
     val note: String = "系统未提供 DAC 最终规格",
 )
 
-/** 区分实际使用的应用输出与硬件最终输出，不能拿文件元数据冒充输出规格。 */
+/** 记录真实的音频输出链路状态，不拿音频文件本身的元数据充数。 */
 internal object PlaybackOutputStatus {
     private val mutableSystem = MutableStateFlow<PlaybackOutputSnapshot?>(null)
     val system = mutableSystem.asStateFlow()

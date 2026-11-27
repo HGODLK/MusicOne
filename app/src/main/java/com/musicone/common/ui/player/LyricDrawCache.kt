@@ -8,7 +8,7 @@ import androidx.compose.ui.node.DelegatingNode
 import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.platform.InspectorInfo
 
-/** 歌词节点可随常驻内容迁移；脱离时同时作废录制，不能重用已释放的图层。 */
+/** 歌词节点随常驻容器迁移、脱离窗口时同步作废缓存，防止误用已释放的 GraphicsLayer。 */
 internal fun Modifier.lyricDrawWithCache(block: CacheDrawScope.() -> DrawResult): Modifier =
     then(LyricDrawCacheElement(block))
 

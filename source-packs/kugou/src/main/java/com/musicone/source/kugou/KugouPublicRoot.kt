@@ -18,7 +18,7 @@ import androidx.lifecycle.Lifecycle
 import com.musicone.source.sdk.*
 import kotlinx.coroutines.flow.MutableStateFlow
 
-/** 包仅保存自己的根页归属；搜索和“我的”的内部导航、状态均由公共整页维护。 */
+/** 酷狗主容器：管理首页、搜索和“我的”三个根页，搜索和“我的”内部状态交给公共页面。 */
 internal class KugouPublicRoot(
     private val owner: KugouPackageState,
     private val home: KugouHomeController,
@@ -64,7 +64,7 @@ internal class KugouPublicRoot(
         SideEffect {
             if (active) {
                 rootPage = if (visible == "my") "my" else "home"
-                // 公共“我的”自带标题，不能再叠一份宿主根标题。
+                // 公共“我的”页面自带顶部标题，隐藏宿主页头避免重复
                 mutablePage.value = SourcePageState(rootPage,
                     atRoot = rootPage != "my" && (openedPage == null || openedPageRoot != rootPage))
             }
@@ -95,7 +95,7 @@ internal class KugouPublicRoot(
             PublicPage(pages, replacement, inset, active) { openedPage = null; home.load() }
         } else {
             Box(Modifier.fillMaxSize()) {
-                // 搜索与来源页使用独立槽位，展开和返回都不销毁原列表及滚动状态。
+                // 搜索页和来源页各自独立渲染，打开或关闭搜索时保留原列表和滚动位置
                 key("root", visible) {
                     if (visible == "my") {
                         val request = remember { SourcePageRequest.My(KUGOU_SOURCE_ID) }
@@ -107,7 +107,7 @@ internal class KugouPublicRoot(
                 }
                 if (search != null) key("search", search) {
                     Box(Modifier.fillMaxSize().pointerInput(search) {
-                        // 只接住子控件未处理的触摸，避免搜索准备和退出时点穿来源卡片。
+                        // 拦截底部未消费的触摸事件，防止搜索页开关动画期间误点穿到下面的卡片
                         awaitPointerEventScope {
                             while (true) awaitPointerEvent(PointerEventPass.Final).changes.forEach { it.consume() }
                         }
@@ -137,7 +137,7 @@ internal class KugouPublicRoot(
         }
         val currentRecent by rememberUpdatedState(recent)
         val currentRecentSnapshot by rememberUpdatedState(data.recent)
-        // 保留来源卡，交给已有根歌单导航消费同一份共享封面过渡。
+        // 保持从首页卡片跳转，复用歌单封面的共享元素过渡动画
         fun openCollection(collection: SourceCollection) {
             recentOpen.setAvailable(false)
             homeCollections.retain(collection)
@@ -177,7 +177,7 @@ internal class KugouPublicRoot(
             actions::playRecommendation)
     }
 
-    /** 在包页面现有 Activity 环境内嵌入公共整页，继续由公共实现维护内部导航。 */
+    /** 嵌入宿主提供的公共页面组件（搜索、“我的”等）。 */
     @Composable private fun PublicPage(pages: SourcePageUi, request: SourcePageRequest,
         bottomInset: Float, active: Boolean, rootUi: SourceRootPageUi? = null, onClose: () -> Unit) {
         val myLifecycle = LocalLifecycleOwner.current.lifecycle

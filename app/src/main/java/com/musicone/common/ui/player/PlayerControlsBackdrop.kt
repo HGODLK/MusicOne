@@ -16,7 +16,7 @@ import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 
-/** 提前准备歌词模糊图层；控件上方自然过渡，控件隐藏后在底边保留模糊尾迹。 */
+/** 为歌词顶部页眉和底部控件区域绘制实时模糊渐变遮罩，控件隐藏后在底边保留一段柔和模糊。 */
 @Composable
 internal fun Modifier.playerControlsBackdrop(
     controlsHeight: () -> Float,
@@ -49,7 +49,7 @@ internal fun Modifier.playerControlsBackdrop(
     val clearPaint = androidx.compose.runtime.remember { Paint() }
     val additivePaint = androidx.compose.runtime.remember { Paint().apply { blendMode = BlendMode.Plus } }
     androidx.compose.runtime.SideEffect {
-        // 正文只保留实时绘制引用；模糊分支各自隔离采样，避免整块扩展视口栅格化及隐式裁剪。
+        // 歌词正文图层使用默认自动合成，由上下模糊分支各自按需采样，避免把整块超大视口离屏栅格化。
         source.compositingStrategy = CompositingStrategy.Auto
     }
     return lyricDrawWithCache {
@@ -76,7 +76,7 @@ internal fun Modifier.playerControlsBackdrop(
                 listOf(if (backdropTurn?.retained == true) maxOf(backdropTurn.sourceTopHeight, topBlurEnd - topBuffer)
                     else topBlurEnd - topBuffer)) else null
         }
-        // 只保留合成指令与实时子图层引用，不缓存歌词画面或新增整窗离屏纹理。
+        // 用单独的 GraphicsLayer 缓存合成指令，只引用实时子图层，不额外分配整窗离屏纹理。
         val composite = obtainGraphicsLayer()
         var recordedStart = Float.NaN
         var recordedEnd = Float.NaN
@@ -101,15 +101,15 @@ internal fun Modifier.playerControlsBackdrop(
         }
         onDrawWithContent {
             val reveal = revealProgress().coerceIn(0f, 1f)
-            // 转向时完全关闭的歌词没有像素输出，端点稳定后再准备原有模糊场景。
+            // 歌词完全关闭且不允许屏外预备时直接跳过绘制。
             if (reveal <= 0f && !prepareClosedSource()) return@onDrawWithContent
-            // 歌词列表会整体入场；遮罩反向补偿列表位移，始终留在屏幕顶部。
+            // 歌词列表整体平移入场时，遮罩反向补偿位移以保持贴在屏幕顶部。
             val windowShift = windowMotionOffset?.invoke()?.coerceAtLeast(0f)
             val topShift = windowShift ?: 0f
             val drawingProgress = drawingWindow.progress()
             val viewport = drawingWindow.viewport(size.height, topShift, drawingProgress)
             if (reveal <= 0f) {
-                // 关闭态仍要录制屏外歌词供预备定位，但不能把它画到播放控件背后。
+                // 关闭态只需把屏外歌词录进 source 图层供定位准备，不要真正画到屏幕上。
                 if (closedRecording.shouldRecord(frameRate?.isIdle == true,
                         frameRate?.lyricFrameNanos ?: Long.MIN_VALUE)) {
                     recordSource(this)
@@ -147,7 +147,7 @@ internal fun Modifier.playerControlsBackdrop(
             val visibleTopEnd = maxOf(0f, localTopEnd)
             val preparedBottomBlur = bottomBlur
             val preparedTopBlur = topBlur
-            // seek 时边界通常固定，只更新源歌词；开合、控件位移或焦点保护变化才重录遮罩。
+            // 只有遮罩边界或模糊强度变化时才重新录制合成层；普通滚动和 seek 只需更新源歌词。
             if (frame.bottomStart != recordedStart || frame.bottomEnd != recordedEnd || strength != recordedStrength ||
                 frame.peak != recordedPeak || localStageTop != recordedTop || localTopEnd != recordedTopEnd ||
                 bottomLimit != recordedBottomLimit) {
@@ -160,7 +160,7 @@ internal fun Modifier.playerControlsBackdrop(
                     topClearMask = lyricBackdropTopMask(false, canBlur, frame.peak, 1f, strength)
                 }
                 composite.record {
-                    // 原顶端裁掉的区域也逐渐恢复清晰正文，不能留到撤下模糊的最后一帧才出现。
+                    // 模糊强度减弱时，让顶部原本被盖住的区域也同步渐显清晰正文，避免最后瞬间闪出来。
                     if (strength < 1f && localStageTop > 0f) drawIntoCanvas { canvas ->
                         val bottom = localStageTop.coerceAtMost(size.height)
                         canvas.saveLayer(Rect(0f, 0f, size.width, bottom), clearPaint)
@@ -180,7 +180,7 @@ internal fun Modifier.playerControlsBackdrop(
                             clearMask = Brush.verticalGradient(listOf(Color.White, Color.White.copy(alpha = 1f - strength)),
                                 startY = 0f, endY = 1f)
                         }
-                        // 两个互补遮罩交接，避免清晰原文从模糊图层的透明像素中透出来。
+                        // 清晰层和模糊层使用互补渐变遮罩叠加，避免清晰文字从模糊层缝隙透出来。
                         clipRect(top = visibleTopEnd) { drawIntoCanvas { canvas ->
                             clipRect(bottom = clearEnd) { drawLayer(source) }
                             canvas.saveLayer(transitionBounds, paint)

@@ -256,4 +256,37 @@ class PlaybackPreloadEntriesTest {
         assertEquals("failed", entries.take("failed", 10_000L))
         assertEquals("done", entries.take("done", 10_000L))
     }
+
+    @Test fun foregroundResumeInvalidatesStaleTicketsAndResetsRetryableFailures() {
+        val entries = entries()
+        entries.work("fresh", 0L)
+        entries.resolved("fresh", "fresh-url", 0L)
+        entries.downloaded("fresh")
+
+        entries.work("stale", 0L)
+        entries.resolved("stale", "stale-url", 0L)
+        entries.downloaded("stale")
+
+        entries.work("exhausted", 0L)
+        entries.resolved("exhausted", "old-url", 0L)
+        entries.failed("exhausted", 1_000L, retryable = true)
+        entries.failed("exhausted", 11_000L, retryable = true)
+        entries.failed("exhausted", 41_000L, retryable = true)
+        assertEquals(PlaybackPreloadEntries.Work.NONE, entries.work("exhausted", 50_000L))
+
+        entries.work("terminal", 0L)
+        entries.failed("terminal", 0L, retryable = false)
+
+        // 模拟息屏休眠越过有效期后回到前台：新鲜票据在较短时长内不受影响。
+        assertEquals(emptySet<String>(), entries.onForegroundResume(10_000L).filterTo(linkedSetOf()) { it == "fresh" })
+        assertEquals("fresh-url", entries.peek("fresh", 10_000L))
+
+        // 休眠满 60 秒后回前台：过期票据失效，可重试失败预算重置，终态失败保持不变。
+        val invalidated = entries.onForegroundResume(60_000L)
+        assertEquals(setOf("fresh", "stale", "exhausted"), invalidated)
+        assertNull(entries.peek("stale", 60_000L))
+        assertEquals(PlaybackPreloadEntries.Work.RESOLVE, entries.work("stale", 60_000L))
+        assertEquals(PlaybackPreloadEntries.Work.RESOLVE, entries.work("exhausted", 60_000L))
+        assertEquals(PlaybackPreloadEntries.Work.NONE, entries.work("terminal", 60_000L))
+    }
 }

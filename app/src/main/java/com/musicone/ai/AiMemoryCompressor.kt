@@ -7,7 +7,7 @@ import org.json.JSONTokener
 internal data class AiMemoryCompression(val summary: String, val preferences: String, val usage: AiUsage = AiUsage())
 internal data class AiPreferenceBatch(val messages: JSONArray, val remaining: JSONArray)
 
-/** 内部摘要只读会话资料，不开放工具；结果由调用方确认成功后持久化。 */
+/** 后台整理摘要时只读聊天记录、不开放工具调用，确认成功后由调用方落盘。 */
 internal class AiMemoryCompressor(private val client: AiProviderClient) {
     suspend fun compress(configuration: AiConfiguration, history: List<JSONObject>, checkpoint: JSONObject,
         previousMemory: String): AiMemoryCompression {
@@ -16,7 +16,7 @@ internal class AiMemoryCompressor(private val client: AiProviderClient) {
         var remaining = checkpoint.optJSONArray("preferenceCandidates") ?: JSONArray()
         var memory = bounded(clean(previousMemory), 2000)
         var totalUsage = AiUsage()
-        // 只有所有批次都完成才返回成功，调用方才能消费本次快照中的全部候选。
+        // 必须全部批次都跑完才算成功，之后调用方才能清掉这批待提炼的偏好。
         while (true) {
             val batch = preferenceBatch(remaining)
             val response = client.chat(config, buildMessages(history, checkpoint, memory, batch.messages), JSONArray())
@@ -25,7 +25,7 @@ internal class AiMemoryCompressor(private val client: AiProviderClient) {
             }
             val parsed = parse(response.text, response.usage)
             totalUsage = sumUsage(totalUsage, parsed.usage)
-            // 没有新的真人输入时，模型不得凭旧摘要重造、增补或改写偏好。
+            // 这批没有新的用户输入时，直接沿用旧偏好，不让模型自己瞎编。
             if (batch.messages.length() > 0) memory = parsed.preferences
             if (batch.remaining.length() == 0) return parsed.copy(preferences = memory, usage = totalUsage)
             remaining = batch.remaining
@@ -99,7 +99,7 @@ preferences（≤600字）：新偏好只能来自 explicitPreferenceStatements 
                     names[call.optString("id")] = call.optJSONObject("function")?.optString("name").orEmpty()
                 }
             } }
-            // 摘录已完成工具响应，只取恢复定位字段，私有 payload、参数和推理内容不发送。
+            // 整理已完成的工具返回时只留进度和游标等必要字段，私有数据和推理过程都不发。
             val excerpt = history.mapNotNull { message ->
                 val content = clean(message.optString("content"))
                 when (message.optString("role")) {
@@ -118,7 +118,7 @@ preferences（≤600字）：新偏好只能来自 explicitPreferenceStatements 
             }
             val records = AiMemoryExcerpt.compact(excerpt)
             payload.put("recentCompletedProtocol", JSONArray(records))
-            // 超出总预算时从最旧的记录开始丢弃，旧偏好和任务概览异常大时同样适用。
+            // 超出大小上限时优先丢掉最老的记录。
             while (bytes(payload.toString()) > 8000 && records.isNotEmpty()) {
                 records.removeAt(0)
                 payload.put("recentCompletedProtocol", JSONArray(records))

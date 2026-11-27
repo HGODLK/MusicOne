@@ -2,7 +2,7 @@ package com.musicone
 
 import org.json.JSONObject
 
-/** 新旧存储格式共用队列容量、顺序与暂停恢复规则。 */
+/** 恢复持久化播放快照的公共逻辑（兼容新旧格式，统一处理队列上限、顺序和暂停状态）。 */
 internal fun restorePlaybackSnapshot(queue: List<MusicTrack>, currentId: String?, order: List<String>,
     shuffle: Boolean = false, repeat: RepeatMode = RepeatMode.ALL, radio: Boolean = false,
     initial: MusicOneUiState = MusicOneUiState()): MusicOneUiState? {

@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.dp
 
 internal val LocalUnifiedBack = staticCompositionLocalOf { false }
 
-/** 唯一返回控件留在录制层之外，子页换页只替换动作，不重建按钮。 */
+/** 公共返回按钮放在背景录制层之外，子页切换时只替换点击回调，不重建按钮。 */
 @Composable
 internal fun UnifiedBackButton(entities: EntityNavigation, settings: SettingsNavigation,
     playlist: RecommendationNavigation, toolbar: PlaylistToolbarOverlayState,

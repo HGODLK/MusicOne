@@ -10,14 +10,14 @@ import com.musicone.source.webdav.internal.WebDavPaths
 import java.text.Collator
 import java.util.Locale
 
-/** 一个目录的完整展示快照；切目录时整份替换，不会出现新路径配旧内容。 */
+/** 单个目录的完整界面状态，切目录时整体替换，避免新路径下闪出旧目录内容。 */
 internal data class WebDavDirectoryView(
     val serverKey: String = "",
     val path: String = "",
     val directories: List<WebDavEntry> = emptyList(),
     val tracks: List<SourceTrackDetails> = emptyList(),
     val coverUri: String? = null,
-    /** 已取得过真实内容；loading 与 loaded 同时为真表示后台刷新。 */
+    /** 是否已经加载过目录内容；loading 和 loaded 同时为 true 时表示正在后台刷新。 */
     val loaded: Boolean = false,
     val loading: Boolean = false,
     val error: String? = null,
@@ -110,7 +110,7 @@ internal fun webDavHostTrackId(track: SourceTrackDetails): String {
     return WEBDAV_SOURCE_ID + ":" + WebDavIdentity.sha256Hex(input)
 }
 
-/** 返回列表中正在播放的包内歌曲 ID；hostIds 为宿主曲目 ID 到包内 ID。 */
+/** 查找当前正在播放的歌曲在包内的 ID；hostIds 是宿主曲目 ID 到包内 ID 的映射表。 */
 internal fun playingWebDavTrackId(player: SourcePlayerState, hostIds: Map<String, String>): String? {
     if (player.sourceId != WEBDAV_SOURCE_ID) return null
     return player.stableTrackId?.let(hostIds::get)

@@ -6,7 +6,7 @@ import com.musicone.source.sdk.SourceArtwork
 import com.musicone.source.sdk.SourceCachedArtworkComponents
 import kotlinx.coroutines.CancellationException
 
-/** 使用现有图片缓存，不向包暴露位图、文件或下载入口。 */
+/** 给音源包用的封面缓存预热接口，只操作宿主自己的图片缓存，不直接把 Bitmap 或文件交给包。 */
 internal class SourcePublicCachedArtworkComponents(private val access: SourcePublicComponentAccess) : SourceCachedArtworkComponents {
     override suspend fun prepareCachedArtwork(artworks: List<SourceArtwork>, maxSidePx: Int) {
         checkActive()

@@ -141,7 +141,7 @@ class SourceRepository(context: Context, private val host: SourceHost) {
         try { persist() } catch (failure: Throwable) { states[id] = old; throw failure }
     }
 
-    /** 本轮立即停用，包与账号保留到下一次进程启动，期间可撤销。 */
+    /** 本次运行立即停用，包文件和账号保留到下次冷启动，期间可以撤销。 */
     @Synchronized fun scheduleRemoval(id: String) {
         check(!registryReadOnly) { "音源注册表损坏，暂不可修改" }
         val old = states.getValue(id)
@@ -169,7 +169,7 @@ class SourceRepository(context: Context, private val host: SourceHost) {
     @Synchronized fun remove(id: String) {
         check(!registryReadOnly) { "音源注册表损坏，暂不可修改" }
         val old = states.getValue(id)
-        // 宿主先完成当前播放来源确认与停止，关闭租约后迟到回调不能写宿主。
+        // 先确认并停止当前播放，再关闭租约，防止迟到回调继续写宿主状态。
         live.remove(id)?.let { runCatching { it.close() } }
         states[id] = old.withoutPackages()
         persist()
@@ -216,7 +216,7 @@ class SourceRepository(context: Context, private val host: SourceHost) {
     private fun loadVersion(state: InstalledSource, reference: SourceInstallRef): SourceInstance =
         loader.load(verifiedVersion(state, reference), dataFile(state.id), host, false)
 
-    /** 旧注册表只从重新验签的现存包补充展示字段，不执行第三方入口。 */
+    /** 迁移旧注册表时，只从重新验签过的现存包里补全展示字段，不执行包内代码。 */
     private fun restoreDescriptorMetadata() {
         var changed = false
         states.keys.toList().forEach { id ->

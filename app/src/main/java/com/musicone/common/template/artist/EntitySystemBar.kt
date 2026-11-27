@@ -54,6 +54,6 @@ internal fun EntitySystemBar(navigation: EntityNavigation, player: PageMotion,
     Box(Modifier.fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars).background(color))
 }
 
-// 参数使用页面进度，准备阶段不提前切换图标；深色播放页接近顶部时改为浅色图标。
+// 按播放页展开进度切状态栏图标颜色：深色播放页快拉到顶时切浅色图标，准备阶段先不切。
 internal fun useDarkStatusIcons(backgroundLuminance: Float, playerProgress: Float): Boolean =
     backgroundLuminance > .4f && playerProgress < .85f

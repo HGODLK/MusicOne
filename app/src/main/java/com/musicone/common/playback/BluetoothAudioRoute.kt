@@ -28,7 +28,7 @@ internal fun isBluetoothAudioDevice(type: Int): Boolean = type in setOf(
     AudioDeviceInfo.TYPE_BLE_SPEAKER, AudioDeviceInfo.TYPE_BLE_BROADCAST,
 )
 
-/** 监听真正用于播放的 AudioTrack 路由，不把仅连接但未使用的蓝牙设备当作输出。 */
+/** 监听 AudioTrack 实际走的输出设备，避免把连着但没出声的蓝牙设备误判成当前输出。 */
 @Suppress("DEPRECATION")
 @androidx.annotation.OptIn(UnstableApi::class)
 internal class RoutingAudioTrackProvider : DefaultAudioSink.AudioTrackProvider by DefaultAudioSink.AudioTrackProvider.DEFAULT {

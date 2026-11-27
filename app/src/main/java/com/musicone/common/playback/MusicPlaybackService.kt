@@ -27,9 +27,6 @@ class MusicPlaybackService : MediaSessionService() {
     private var routingProvider: RoutingAudioTrackProvider? = null
     private var runtime: MusicPlaybackRuntime? = null
     private var notificationDiagnostics: SystemMediaNotificationDiagnostics? = null
-    // 小米超级岛歌词已停用：实测无法使用，澎湃系统按白名单准入，未入白名单的应用不会显示。
-    // private var hyperOsLyrics: HyperOsLyricsCoordinator? = null
-    // private var hyperOsNotifications: HyperOsMediaNotificationProvider? = null
     private var desktopLyrics: DesktopLyricsCoordinator? = null
     private val presentationScope = kotlinx.coroutines.CoroutineScope(
         kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
@@ -45,34 +42,35 @@ class MusicPlaybackService : MediaSessionService() {
         super.onCreate()
         notificationDiagnostics = SystemMediaNotificationDiagnostics(this, foreground = { isPlaybackOngoing })
         val notifications = requireNotNull(notificationDiagnostics)
-        // 超级岛停用后各品牌统一使用默认媒体通知。
-        // if (HyperOsIslandAccess.supported(this)) {
-        //     hyperOsNotifications = HyperOsMediaNotificationProvider(this, notifications)
-        //     setMediaNotificationProvider(requireNotNull(hyperOsNotifications))
-        // } else
         setMediaNotificationProvider(notifications)
         PlaybackOptions.initialize(this)
         LgHiResPreferences.initialize(this)
         DevicePlaybackOptions.initialize(this)
+        AutoMixPreferences.initialize(this)
         val preloadBandwidth = PlaybackPreloadBandwidth()
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            // 工厂专用 UA 会覆盖 DataSpec 的请求头；默认属性允许补充音源携带自己的 UA。
+            // 用 setDefaultRequestProperties 设默认 UA，这样单个请求自带的 UA 不会被覆盖。
             .setDefaultRequestProperties(mapOf("User-Agent" to PlatformHttp.DEFAULT_USER_AGENT))
         val upstreamDataSourceFactory = SupplementalPlaybackRequests.factory(
             MusicDiskCache.get(this).factory(DefaultDataSource.Factory(this,
                 playbackPreloadNetworkFactory(httpDataSourceFactory, preloadBandwidth))),
         )
         val defaultMediaSourceFactory = DefaultMediaSourceFactory(upstreamDataSourceFactory)
-        val mediaSourceFactory = NativeAudioRoutingMediaSourceFactory(
+        val routingMediaSourceFactory = NativeAudioRoutingMediaSourceFactory(
             defaultFactory = defaultMediaSourceFactory,
             dataSourceFactory = upstreamDataSourceFactory,
             targetDsdSampleRate = NativeAudioOutputPolicy.DEFAULT_DSD_PCM_SAMPLE_RATE,
             context = this,
         )
+        // 自然过渡的离线解码与播放共用同一工厂，保证解码器与时间轴一致
+        AutoMixEngine.mediaSourceFactory = routingMediaSourceFactory
+        AutoMixEngine.dataSourceFactory = upstreamDataSourceFactory
+        val mediaSourceFactory = AutoMixMediaSourceFactory(routingMediaSourceFactory)
         val renderersFactory = HiResCompatibleRenderersFactory(this)
         routingProvider = renderersFactory.routingProvider
         val player = ExoPlayer.Builder(this, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
+            .setLoadControl(playbackLoadControl())
             // 在线音源息屏后仍需维持网络接收，避免 USB 写入端因上游断流而停顿。
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
@@ -120,19 +118,13 @@ class MusicPlaybackService : MediaSessionService() {
             )
         }
         mediaSession = sessionBuilder.build()
-        // 在恢复待播放请求之前注册会话，后台通知管理不依赖页面控制器连接时机。
+        // 先注册 MediaSession 再恢复播放，避免后台通知状态依赖页面何时连上服务。
         addSession(requireNotNull(mediaSession))
         playback.attachPlayer(player, preloadBandwidth)
         val presentations = playbackSystemPresentations(this, playback, player).sharedSystemPresentations(presentationScope)
         if (android.os.Build.VERSION.SDK_INT >= 31) {
             desktopLyrics = DesktopLyricsCoordinator(this, presentations, playback::togglePlay).also { it.start() }
         }
-        // if (HyperOsIslandAccess.supported(this)) {
-        //     hyperOsLyrics = HyperOsLyricsCoordinator(
-        //         this, presentations, requireNotNull(hyperOsNotifications),
-        //         loadArtwork = ::loadSystemArtwork,
-        //     ).also { it.start() }
-        // }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
@@ -149,17 +141,12 @@ class MusicPlaybackService : MediaSessionService() {
     override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
         super.onUpdateNotification(session, startInForegroundRequired)
         notificationDiagnostics?.inspectAfterUpdate()
-        // if (android.os.Build.VERSION.SDK_INT >= 26) hyperOsLyrics?.refreshAccess()
     }
 
     override fun onDestroy() {
         android.util.Log.i("MusicPlaybackService", "播放服务销毁")
         notificationDiagnostics?.close()
         notificationDiagnostics = null
-        // if (android.os.Build.VERSION.SDK_INT >= 26) hyperOsNotifications?.close()
-        // hyperOsNotifications = null
-        // if (android.os.Build.VERSION.SDK_INT >= 26) hyperOsLyrics?.close()
-        // hyperOsLyrics = null
         if (android.os.Build.VERSION.SDK_INT >= 31) desktopLyrics?.close()
         desktopLyrics = null
         presentationScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()

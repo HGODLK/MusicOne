@@ -18,7 +18,7 @@ internal fun motionRect(start: Rect, end: Rect, progress: Float): Rect = Rect(
     motionLerp(start.right, end.right, progress), motionLerp(start.bottom, end.bottom, progress),
 )
 
-/** 部分露出的锚点：可见块在宿主内且有面积才可用，完整位置允许超出屏幕。 */
+/** 检查部分露出的锚点是否可用：只要可见区域落在宿主内且有面积即可，完整范围允许超出屏幕。 */
 internal fun partialAnchorUsable(visible: Rect, host: Rect): Boolean = anchorFits(visible, host)
 
 internal fun anchorFits(anchor: Rect, host: Rect): Boolean =
@@ -54,7 +54,7 @@ internal object MiniPlayerSurfaceTint {
 internal fun playerSurfaceCorner(progress: Float): Float =
     if (progress >= 1f) 0f else motionLerp(MiniPlayerSurfaceCorner.dp, MiniPlayerSurfaceCorner.screenDp, progress)
 
-/** 歌词紧凑态用量化补偿维持约 12dp 视觉圆角，减少动画中的形状更新次数。 */
+/** 歌词展开时按缩放比例分段补偿封面圆角，保持视觉上约 12dp，并减少动画中频繁更新裁剪形状。 */
 internal fun phoneArtworkCorner(progress: Float): Float {
     val scale = motionLerp(1f, 62f / 360f, progress)
     val compensated = 12f / scale.coerceAtLeast(62f / 360f)

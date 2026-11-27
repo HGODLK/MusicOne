@@ -2,7 +2,7 @@ package com.musicone.source.qq.internal
 
 import java.util.concurrent.atomic.AtomicLong
 
-/** 同账号的正常续期不改变登录代次，换号、重登、退出仍令旧任务失效。 */
+/** 记录登录会话版本号：同账号正常续期不递增，只有换号、重登或退出时才递增，用来丢弃旧任务。 */
 internal class QqAccountRevision {
     private val value = AtomicLong()
     fun get(): Long = value.get()

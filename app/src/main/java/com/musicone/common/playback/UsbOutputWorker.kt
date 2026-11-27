@@ -2,7 +2,7 @@ package com.musicone
 
 import java.util.ArrayDeque
 
-/** 原生输出仅由工作线程调用；interrupt 只发送可跨线程的中断信号。 */
+/** 底层 USB 输出接口，读写只在工作线程调，interrupt 允许跨线程唤醒。 */
 internal interface UsbOutputTransport {
     val completedFrames: Long
     fun interrupt()
@@ -11,7 +11,7 @@ internal interface UsbOutputTransport {
     fun finish()
 }
 
-/** 队列、正在写入的数据和原生尾部共享同一生命周期，清理完成前不接收新数据。 */
+/** 管理 USB 音频缓冲队列和写线程生命周期，清理彻底完成前不接收新数据。 */
 internal class UsbOutputWorker<T>(
     private val transport: UsbOutputTransport,
     private val write: (T) -> Unit,

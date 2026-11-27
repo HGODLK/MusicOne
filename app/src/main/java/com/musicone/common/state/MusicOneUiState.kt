@@ -51,7 +51,7 @@ internal fun isCurrentPlaybackRequest(
     currentTrackId: String?,
 ): Boolean = requestGeneration == currentGeneration && requestTrackId == currentTrackId
 
-/** 包声明等待交接时，解析完成前不提前切走当前歌词窗口。 */
+/** 如果音源包声明切歌时等解析完再换歌词，解析期间先保持上一首的歌词不动。 */
 internal fun MusicTrack.forPendingPlaybackPresentation(
     waitForSettlement: Boolean = source.lyricBehavior?.waitForSingleSwitchSettlement == true,
 ): MusicTrack = if (waitForSettlement && lyrics.isNotEmpty()) copy(lyrics = emptyList()) else this

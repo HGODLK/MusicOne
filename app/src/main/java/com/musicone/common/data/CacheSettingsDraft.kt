@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 设置会话只暂存选择，真正离开整个设置页面后一次性移交给磁盘缓存。 */
+/** 在设置页调缓存上限时先暂存草稿，退出整个设置页后再一次性生效并触发清理。 */
 internal class CacheSettingsDraft {
     @Volatile var pending: CacheLimits? = null
         private set

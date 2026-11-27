@@ -5,7 +5,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import com.musicone.phonePlayerLandscapePadding
 import com.musicone.source.sdk.SourcePlayerInsets
 
-/** 在宿主窗口读取安全边，沿用原生播放器的朝向映射，独立组合不再猜测窗口方向。 */
+/** 从宿主窗口读系统安全边距并按旋转方向映射好，直接交给自建播放页使用。 */
 @Composable
 internal fun sourcePlayerSafeDrawingInsets(rotation: Int): SourcePlayerInsets {
     val padding = phonePlayerLandscapePadding(rotation)

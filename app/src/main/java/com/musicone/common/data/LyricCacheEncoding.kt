@@ -3,7 +3,7 @@ package com.musicone
 import org.json.JSONArray
 import org.json.JSONObject
 
-// 宿主缓存容器版本独立于各包歌词解析器版本，继续兼容既有第二版格式。
+// 本地缓存包装格式的版本号（独立于各音源包的解析器版本），保持兼容 v2 格式。
 private const val LYRIC_CACHE_FORMAT_VERSION = 2
 
 internal fun encodeCachedLyrics(lyrics: List<TimedLyric>): String = JSONObject()

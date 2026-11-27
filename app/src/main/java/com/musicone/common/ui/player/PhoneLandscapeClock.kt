@@ -42,7 +42,13 @@ internal fun PhoneLandscapeClock(visible: Boolean, canvasWidthDp: Float, artwork
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
     val referenceSize = 170f * canvasWidthDp / 736f
-    val family = remember { FontFamily(Font(R.font.fredoka_medium, FontWeight.Medium)) }
+    val fontMode = ExperiencePreferences.options.fontMode
+    val customConfig = CustomFontStore.config
+    val customRevision = if (fontMode == AppFontMode.CUSTOM) CustomFontStore.revision else 0L
+    val defaultClockFamily = remember { FontFamily(Font(R.font.fredoka_medium, FontWeight.Medium)) }
+    val family = remember(fontMode, customConfig, customRevision, defaultClockFamily) {
+        resolvePhoneLandscapeClockFontFamily(fontMode, customConfig, defaultClockFamily, CustomFontStore::fontFamily)
+    }
     val ink = rememberPhoneClockInk(artwork)
     val animationClock = rememberPhoneClockFrameClock()
     val clockStyle = LocalTextStyle.current.copy(fontSize = referenceSize.sp,
@@ -110,6 +116,32 @@ private fun rememberPhoneClockDigitBottomInset(style: TextStyle): Int {
         val layout = measurer.measure("0123456789", style, maxLines = 1, softWrap = false)
         // 以全部数字的共同下沿为固定基准，保留字形自身下探，换秒不移动整组位置。
         (layout.size.height - layout.firstBaseline - glyphBottom).roundToInt()
+    }
+}
+
+/** 横屏时钟字体仅在全局字体为“自定义”时应用，其余模式始终保留内置 Fredoka。 */
+internal fun resolvePhoneLandscapeClockFontFamily(
+    mode: AppFontMode,
+    config: CustomFontConfig,
+    defaultFamily: FontFamily,
+    fontFamilyOf: (String?) -> FontFamily?,
+): FontFamily {
+    if (mode != AppFontMode.CUSTOM) return defaultFamily
+    return when (val binding = config.clockFont) {
+        CustomClockFontBinding.Default -> defaultFamily
+        CustomClockFontBinding.System -> FontFamily.Default
+        CustomClockFontBinding.FollowUiLatin -> {
+            fontFamilyOf(config.resolveUiFontId(MusicOneScript.LATIN))
+                ?: if (config.fallback == CustomFontFallback.SYSTEM) FontFamily.Default else MusicOneUiFontFamilies.sc
+        }
+        CustomClockFontBinding.FollowLyricLatin -> {
+            fontFamilyOf(config.resolveLyricFontId(MusicOneScript.LATIN)) ?: when (config.fallback) {
+                CustomFontFallback.SYSTEM -> FontFamily.Default
+                CustomFontFallback.SANS_SERIF -> MusicOneUiFontFamilies.sc
+                CustomFontFallback.DEFAULT -> MusicOneDisplayFontFamilies.latin
+            }
+        }
+        is CustomClockFontBinding.Font -> fontFamilyOf(binding.fontId) ?: defaultFamily
     }
 }
 

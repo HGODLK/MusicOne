@@ -15,7 +15,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.*
 
-/** 固定终点排版，仅在绘制阶段裁剪表面与位移文字；来源保存像素而非实时引用。 */
+/** 从来源区域展开成全屏的过渡容器：内容始终按全屏排版，动画期间只做圆角裁剪和位移。 */
 @Composable
 internal fun ExpandingPageSurface(origin: Rect, progress: () -> Float, snapshot: ImageBitmap? = null,
     translateContent: Boolean = true,

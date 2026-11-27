@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.musicone.source.sdk.*
 
-/** 只组织酷狗首页；歌曲货架、歌单卡与后续页面均使用现有公共实现。 */
+/** 酷狗首页布局，内部的歌曲货架、歌单卡片等直接复用公共组件。 */
 @Composable
 internal fun KugouHomePage(
     state: KugouHomeState, components: SourceComponentScope, shelves: SourceHomeShelfComponents,
@@ -71,7 +71,7 @@ internal fun KugouHomePage(
                         val pages = section.tracks.chunked(3)
                         shelves.SongShelf(section.id, section.title, pages,
                             player, showFavorites = true, edgeInsetDp = gutter.value, onClick = { track ->
-                                // 公共货架只回传点击的一首，这里找回它所在的那一页。
+                                // 公共货架点击回调只给了当前那首歌，这里反查它所在的整页列表一起传给播放器
                                 kugouShelfPageOf(pages, track)?.let { (page, index) -> onPlayTrack(page, index) }
                             })
                         KugouHomeRefresh(state.loadingHome, "刷新推荐", onRefreshRecommendations,
@@ -94,7 +94,7 @@ internal fun KugouHomePage(
     }
 }
 
-/** 蓝卡沿用原酷狗渐变和圆角，点击只进入现有私人电台，不另拉一批歌曲作假预览。 */
+/** 私人电台蓝色卡片，点击直接进电台播放。 */
 @Composable
 private fun KugouBlueRadioCard(heightDp: Int, onClick: () -> Unit) {
     Surface(onClick = onClick, shape = RoundedCornerShape(28.dp), color = Color.Transparent,

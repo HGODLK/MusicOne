@@ -10,7 +10,7 @@ import com.musicone.source.runtime.SourceCommitGuard
 import kotlinx.coroutines.*
 import java.util.concurrent.ConcurrentHashMap
 
-/** 包传回真实资源，宿主统一执行容量准入、写入、完整性检查与取消。 */
+/** 音源包只管返回音频资源，容量检查、写盘、完整度校验和取消统一由宿主执行。 */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class SourceCacheService(private val context: Context) : SourceCacheHost {
     private data class Task(val job: Job, @Volatile var writer: CacheWriter? = null)

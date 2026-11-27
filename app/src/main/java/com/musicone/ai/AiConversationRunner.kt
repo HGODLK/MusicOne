@@ -7,7 +7,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-/** 聊天协议历史与界面消息分开保存，工具对在暂停、失败和压缩时保持完整。 */
+/** 发给模型的协议历史和界面展示消息分开存；暂停、失败或压缩时都保证工具调用和返回成对保留。 */
 internal class AiConversationRunner(
     private val client: AiProviderClient,
     private val configuration: () -> AiConfiguration,
@@ -52,7 +52,7 @@ internal class AiConversationRunner(
         var previousCalls = ""
         var repeatedCalls = 0
         val retries = AiToolRetry(checkpoint)
-        // 有新分页时持续完成任务；重复请求没有进展才暂停，用户仍可随时停止。
+        // 只要还有下一页就继续跑，直到重复请求也没进展才暂停；期间用户随时可以手动停。
         while (true) {
             currentCoroutineContext().ensureActive()
             var request = AiContext.messages(config.provider, history, checkpoint, capacity, schema, config.personality, config.personalityEnabled, outputReserve = config.maxOutputTokens)
@@ -99,7 +99,7 @@ internal class AiConversationRunner(
             AiContextBudget.record(checkpoint, config, requestEstimate, usage)
             response.validateToolCalls()
             history += response.assistantMessage
-            // 仅展示服务实际返回的网页注解。
+            // 只展示接口实际返回的网页引用。
             citations += response.annotations.objects().mapNotNull { entry ->
                 val citation = entry.optJSONObject("url_citation") ?: entry
                 citation.optional("url")?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
@@ -168,7 +168,7 @@ internal class AiConversationRunner(
         else -> "$before\n\n$after"
     }
 
-    /** 实际用量留在任务后台记录，不生成可见 token 文案。 */
+    /** 只在后台记录真实 token 用量，不在界面上显示。 */
     private fun recordUsage(usage: AiUsage) {
         val total = checkpoint.optJSONObject("actualUsage") ?: JSONObject().also { checkpoint.put("actualUsage", it) }
         mapOf("promptTokens" to usage.promptTokens, "completionTokens" to usage.completionTokens,
@@ -177,7 +177,7 @@ internal class AiConversationRunner(
             "searchPages" to usage.searchPages).forEach { (key, value) -> total.put(key, total.optLong(key) + value) }
     }
 
-    /** 中断后的工具请求永不自动重放，避免重复播放或生成第二个写入计划。 */
+    /** 被中断的工具调用绝不自动重放，避免重复起播或生成重复的修改计划。 */
     fun closeInterruptedTools() {
         val unanswered = linkedSetOf<String>()
         history.forEach { item ->

@@ -16,7 +16,7 @@ internal data class OfflinePlaybackAvailabilityState(
     fun showsBadge(trackId: String): Boolean = !online && trackId in trackIds
 }
 
-/** 所有标题共享网络与缓存索引，只在后台刷新一次，不在歌曲行内逐个扫描磁盘。 */
+/** 全局共享一份网络状态和离线可播歌曲集合，后台统一刷新，不在列表里逐行扫磁盘。 */
 @OptIn(ExperimentalCoroutinesApi::class)
 internal class OfflinePlaybackAvailability private constructor(context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -39,7 +39,7 @@ internal class OfflinePlaybackAvailability private constructor(context: Context)
         index.registerOnSharedPreferenceChangeListener(listener)
         supplementalIndex.registerOnSharedPreferenceChangeListener(listener)
         val cache = MusicDiskCache.get(context)
-        // 首次快照只由音频通道发出一次，图片及无关会话字段不再触发整库读取。
+        // 只监听音频缓存变化，下图片或改会话信息不再触发整库重扫。
         val revisions = launch {
             cache.availabilityRevision.collect { trySend(Unit) }
         }
@@ -65,7 +65,7 @@ internal class OfflinePlaybackAvailability private constructor(context: Context)
     }
 }
 
-/** 索引与网络独立更新；断网无需等待整批媒体重新校验，联网也能立即收起角标。 */
+/** 离线索引和网络状态分开流式更新：断网时立刻生效不用等重扫，联网时也能马上隐藏离线灰态。 */
 @OptIn(ExperimentalCoroutinesApi::class)
 internal fun offlineAvailabilityStates(
     network: Flow<Boolean>, changes: Flow<Unit>,
@@ -74,7 +74,7 @@ internal fun offlineAvailabilityStates(
 ): Flow<OfflinePlaybackAvailabilityState> = combine(
     network,
     namespaces.distinctUntilChanged().flatMapLatest {
-        // 普通变化只保留一次后续；换号取消旧轮并清空旧账号结果。
+        // 缓存频繁变动时合并重扫；一旦换号立刻取消上一轮扫描并清空旧账号数据。
         changes.conflate().map {
             try { readTracks() }
             catch (cancelled: CancellationException) { throw cancelled }

@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
 
-/** 仅在服务端要求验证时使用；必须取得真实登录 Cookie，拦截提示页不能手动冒充成功。 */
+/** 服务端要求风控验证时打开官方登录页；必须拿到真实登录 Cookie 才算成功。 */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 internal fun NeteaseOfficialLoginContent(working: Boolean, error: String?, onCancel: () -> Unit,

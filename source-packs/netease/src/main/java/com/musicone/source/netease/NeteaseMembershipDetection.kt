@@ -10,7 +10,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 
-/** 平台资料中的音乐包与黑胶类型才确认音乐会员，其他结果保持 unknown。 */
+/** 只有接口明确返回音乐包或黑胶会员才算有效会员，其他情况保持未知。 */
 internal fun JSONObject.neteaseConfirmedMusicMembership(): Boolean? {
     val profile = optJSONObject("profile")
     val account = optJSONObject("account")
@@ -53,7 +53,7 @@ internal class NeteaseMembershipDetection(private val state: () -> NeteasePackag
             owner.check(captured.revision)
             if (session(owner) != captured || account != null && account.userId != captured.accountId) return null
             if (account != null) owner.saveSession(captured.credential, account, captured.revision, refreshing = true)
-            // 五分钟核对成功资料，失败只暂存 unknown，避免每首歌重复发账号查询。
+            // 查成功缓存 5 分钟，查失败只缓存 30 秒未知状态，避免切每首歌都重复查账号
             val refreshAt = System.currentTimeMillis() + if (account != null) 5 * 60_000L else 30_000L
             result = Result(captured, account?.confirmedMusicMembership, refreshAt)
         }

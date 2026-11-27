@@ -4,7 +4,7 @@ import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
 import org.json.JSONObject
 
-/** 移除和恢复只改歌单成员关系，版本墓碑阻止覆盖用户后续操作。 */
+/** 移除和撤销只改歌单成员表，靠版本号校验防止覆盖用户的后续改动。 */
 internal fun SQLiteDatabase.aiRemovalMembers(id: String, tracks: List<MusicTrack>): List<JSONObject> = tracks.distinctBy { it.id }.map { track ->
     rawQuery("SELECT members.position,members.added_at,songs.data FROM members JOIN songs ON songs.id=members.song_id WHERE members.playlist_id=? AND members.song_id=?",
         arrayOf(id, track.id)).use { row ->

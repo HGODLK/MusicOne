@@ -13,7 +13,7 @@ import com.musicone.MusicSource
 import com.musicone.PlatformPreferences
 import com.musicone.source.sdk.SourceSessionStatus
 
-/** 只按运行实例与登录边界保留资料库，临时导航仍归页面自己的 Store 管理。 */
+/** 按音源实例和登录账号缓存资料库 ViewModel，换包或换号自动清理重建。 */
 internal class SourcePublicPageScopes<T>(private val create: (String, String) -> T, private val discard: (T) -> Unit) {
     private data class Entry<T>(val instance: Any?, val account: String, val value: T)
     private val entries = mutableMapOf<String, Entry<T>>()

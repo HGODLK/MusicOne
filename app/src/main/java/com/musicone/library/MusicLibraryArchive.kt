@@ -186,7 +186,7 @@ internal class MusicLibraryArchive(private val context: Context, private val sto
                     db.insertWithOnConflict("members", null, row.values().apply {
                         put("position", db.nextPosition(row.getString("playlist_id")))
                         if (!row.has("added_at")) put("added_at", i.toLong() + 1)
-                        // 旧归档只携带平台成员键；导入时转为公开订阅身份，保留已选子项。
+                        // 兼容旧版归档里的平台字段，导入时转成通用的 source_member 字段，保留之前挑好的分P。
                         if (row.optInt("remote_member") != 0 && row.optString("source_member").isBlank()) {
                             db.song(row.getString("song_id"))?.providerData?.get("bilibiliBvid")
                                 ?.takeIf(String::isNotBlank)?.let { put("source_member", it) }

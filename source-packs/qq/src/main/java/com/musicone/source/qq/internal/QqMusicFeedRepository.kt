@@ -32,7 +32,7 @@ internal class QqMusicFeedRepository(context: Context) {
             data.optInt("retcode", 0) != 0) {
             throw PlatformApiException("音乐流加载失败，请稍后重试")
         }
-        // 游标分页先接收官方原始卡位；选定显示批次后再补齐必要字段。
+        // 先拿原始分页数据，等挑出这一批要展示的卡片后再按需补齐字段
         parseQqMusicFeed(data, session.account?.hasVipAccess == true).forFeedPage(page)
     }
 
@@ -175,6 +175,6 @@ private const val QQ_FEED_SEED_LOOKUP_CONCURRENCY = 4
 internal fun normalizeQqMusicFeedSongGroup(card: QqMusicFeedCard.SongGroup): List<QqMusicFeedCard> {
     val tracks = card.tracks.take(3)
     if (tracks.size == 3 && hasQqMusicFeedMixedAlbums(tracks)) return listOf(card.copy(tracks = tracks))
-    // 同专辑或专辑身份未确认时直接丢弃这个服务端卡位，不能用拆成单曲的方式改变官方内容。
+    // 如果三首歌其实是同一张专辑或者查不到专辑信息，直接丢掉这张卡
     return emptyList()
 }

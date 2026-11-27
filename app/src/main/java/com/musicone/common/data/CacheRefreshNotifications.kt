@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
-/** 管理页关注所有缓存变化；离线可用性只关注音频，不因图片或歌单引用重新扫库。 */
+/** 缓存管理页监听所有缓存变动，而离线可播状态只监听音频变动，避免下个封面就触发全库重扫。 */
 internal class CacheRefreshNotifications {
     private val cacheChanges = MutableStateFlow(0L)
     private val audioChanges = MutableStateFlow(0L)
@@ -30,7 +30,7 @@ internal class CacheRefreshNotifications {
                 audioChanged()
                 return
             }
-            // 批次已结束则重试，不能把结束后到达的删除标记遗留到下一批。
+            // 如果批处理刚好结束就重新循环判断，避免漏发或把标记带到下一批。
             if (audioRemovalBatch.compareAndSet(batch, 2)) return
         }
     }

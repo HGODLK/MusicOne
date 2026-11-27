@@ -19,7 +19,7 @@ private class PlayerSurfaceClipCapture {
     var generation = -1
 }
 
-/** 属性阶段更新原生轮廓与正反旋转，绘制阶段只保留稳定的实时子图层引用。 */
+/** 用双层 GraphicsLayer 实现旋转圆角裁剪：在属性阶段更新裁剪轮廓与正反旋转，内容仍实时渲染不冻结像素。 */
 @Composable
 internal fun Modifier.playerSurfaceClipLayer(motion: PageMotion,
     geometry: State<PhonePlayerFlightGeometry>, preparationLayer: PlayerOpeningLayer): Modifier {
@@ -39,10 +39,10 @@ internal fun Modifier.playerSurfaceClipLayer(motion: PageMotion,
             clippedContent.rotationZ = pose.rotation
             fixedContent.pivotOffset = pose.bounds.center
             fixedContent.rotationZ = -pose.rotation
-            // 原生属性自身不通知宿主；沿用已有帧驱动的提交方式，不重录本层指令。
+            // 直接改子 GraphicsLayer 属性不会自动触发宿主重绘，手动调用 invalidate 提交这一帧。
             view.invalidate()
         }
-        // 此节点自身不做变换；逐帧只更新下方原生图层，不改变子树的布局坐标链。
+        // 外层节点本身不做变换，只驱动内部图层，避免影响子树的布局坐标系。
     }.drawWithContent {
         val preparing = motion.phase == MotionPhase.PREPARING
         if (!motion.moving && !preparing) {
@@ -53,7 +53,7 @@ internal fun Modifier.playerSurfaceClipLayer(motion: PageMotion,
         val measured = IntSize(size.width.roundToInt(), size.height.roundToInt())
         val generation = preparation?.generation ?: 0
         if (!capture.ready || capture.size != measured || capture.generation != generation) {
-            // 只引用下一层稳定的 graphicsLayer；切歌、歌词、时钟继续更新原节点，不冻结像素。
+            // 录制对子图层的引用而非静态位图，切歌、歌词和时钟仍会实时更新。
             fixedContent.record { this@drawWithContent.drawContent() }
             clippedContent.record { drawLayer(fixedContent) }
             clippedContent.clip = true
@@ -62,7 +62,7 @@ internal fun Modifier.playerSurfaceClipLayer(motion: PageMotion,
             capture.generation = generation
         }
         if (preparing) {
-            // 准备帧只建立原引用链，正文仍受外层零透明度控制；不能提前显露飞行内容。
+            // 准备阶段先录制好图层引用并上报就绪，此时外层透明度为 0，不会提前露出画面。
             preparation?.record(preparationLayer, measured)
             drawLayer(fixedContent)
             return@drawWithContent

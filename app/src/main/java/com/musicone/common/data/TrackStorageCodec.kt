@@ -4,7 +4,7 @@ import com.musicone.sourceintegration.stripNestedHostPayload
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 通用曲目持久化；平台原始资料作为不透明字符串保留。 */
+/** 歌曲序列化：公开字段直接存，各音源的私有数据按字符串原样透传保存。 */
 internal fun MusicTrack.toStoredTrackJson(): JSONObject = JSONObject()
     .put("source", source.name).put("sourceId", source.id).put("accountId", sourceAccountId)
     .put("remoteKey", remoteKey).put("id", id).put("title", title).put("artists", artists)
@@ -46,7 +46,7 @@ internal fun JSONObject.toStoredTrack(): MusicTrack? = runCatching {
         }
     }
     val payload = storedProviderData().toMutableMap()
-    // 仅兼容读取旧版序列化键；业务含义及类型解析由对应音源包负责。
+    // 兼容旧版平铺的平台字段，读出来塞进 payload 交给对应音源包自己解释。
     listOf("songMid", "bilibiliBvid", "bilibiliCid", "qqAccess").forEach { legacy ->
         if (legacy !in payload && has(legacy) && !isNull(legacy)) payload[legacy] = get(legacy).toString()
     }

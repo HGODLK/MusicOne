@@ -41,7 +41,7 @@ internal data class KugouListeningDevice(val model: String, val system: String, 
 internal data class KugouCsccRequest(val url: String, val method: String, val body: ByteArray?, val headers: Map<String, String>)
 internal data class KugouCsccSession(val cookie: String, val clienttime: String, val serverstr: String, val field2: String)
 
-/** CSCC 只发送真实开始、完成或中断；不复制参考报文中的页面、触摸、会员或设备数据。 */
+/** CSCC 播放事件上报：只传真实的开始、播完和中断事件，不夹带无关的页面和设备埋点。 */
 internal class KugouListeningCscc(
     private val device: () -> KugouListeningDevice,
     private val now: () -> Long = System::currentTimeMillis,
@@ -62,7 +62,7 @@ internal class KugouListeningCscc(
         val currentDevice = device().also { value ->
             require(value.width > 0 && value.height > 0 && value.model.safeCsccField() && value.system.safeCsccField())
         }
-        // 只缓存一个账号的握手，换号或凭证更新即丢弃旧会话。
+        // 只缓存当前账号的握手会话，切号或刷新凭证时清空
         if (owner != cookie) { owner = cookie; active = null }
         try {
             val session = active ?: createSession(account, uuid, currentDevice, check).also { active = it }
@@ -72,7 +72,7 @@ internal class KugouListeningCscc(
             requireKugouCsccSuccess(send(request, check))
         } catch (failure: Exception) {
             active = null
-            // 请求超时可能已经入账；不重试同一播放事件。
+            // 超时可能服务端已经记上了，直接抛错不再重发，避免重复统计
             throw failure
         }
     }

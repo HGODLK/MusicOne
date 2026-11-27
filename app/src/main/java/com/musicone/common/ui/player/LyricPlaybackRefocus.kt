@@ -2,7 +2,7 @@ package com.musicone
 
 import kotlinx.coroutines.CoroutineScope
 
-/** 自动回焦只在真实落位后交回跟随；跨句失去目标时沿用双窗口动画。 */
+/** 手动浏览超时后的自动回焦：目标行在屏内时平滑滚回，在屏外时走双窗口切换，真正到位后恢复跟随。 */
 internal suspend fun refocusLyricPlayback(
     controller: LyricLayerTransitionController,
     pane: LyricWindowPane,

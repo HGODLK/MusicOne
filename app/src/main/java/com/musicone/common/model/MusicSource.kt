@@ -3,7 +3,7 @@ package com.musicone
 import com.musicone.source.sdk.SourceDescriptor
 import java.util.concurrent.ConcurrentHashMap
 
-/** 稳定音源身份独立于包安装状态；缺包时仍可保存、显示和恢复既有曲目。 */
+/** 音源标识不依赖包有没有安装，就算卸载了包也能正常保存、显示和恢复已有歌曲。 */
 class MusicSource private constructor(
     val id: String,
     val name: String,

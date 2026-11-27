@@ -13,7 +13,7 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 
-/** 输入框只有一个实例；覆盖详情时把现有文字图层交回来源页，让详情自然遮住它。 */
+/** 全局只留一个搜索输入框实例；打开歌手/专辑详情时把输入行录进图层交给底页，让详情页自然盖住它。 */
 internal fun Modifier.retainMainSourceSearchInput(motion: MainSourceSearchMotion, full: Boolean,
     obscured: Boolean, visibility: () -> Float): Modifier = composed {
     val layer = rememberGraphicsLayer()

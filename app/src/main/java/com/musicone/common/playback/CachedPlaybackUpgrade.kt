@@ -7,7 +7,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
-/** 缓存先出声；后台准备可用档位，失败、取消或返回同档位都保留现有播放。 */
+/** 先用本地缓存起播，后台再尝试拉取更高音质；如果失败、取消或还是同一档位，就继续播当前的。 */
 internal class CachedPlaybackUpgrade(
     private val scope: CoroutineScope,
     private val settleDelayMs: Long = PLAYBACK_CACHED_UPGRADE_DELAY_MS,
@@ -20,7 +20,7 @@ internal class CachedPlaybackUpgrade(
         cancel()
         if (offlinePlaybackKey(initial.source.url) == null || initial.source.actualQuality == preferred) return
         job = scope.launch {
-            // 错开本地起播、封面与歌词交接，不在点击瞬间并发换票。
+            // 稍微延后一点再请求，错开刚起播时加载封面和歌词的高峰。
             delay(settleDelayMs)
             if (!isCurrent()) return@launch
             val next = try { withTimeoutOrNull(15_000) { resolve(initial.track, preferred) } }

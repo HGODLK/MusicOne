@@ -7,7 +7,7 @@ import androidx.compose.runtime.MonotonicFrameClock
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 
-/** 松手时先建立零时刻，下一次真实动画帧直接推进，保留原弹簧、边界和取消行为。 */
+/** 带手势松手时间戳衔接的 animateTo：把松手瞬间作为第 0 帧，下一系统帧直接推进，减少松手首帧停顿。 */
 internal suspend fun Animatable<Float, AnimationVector1D>.animateToWithGestureHandoff(
     target: Float,
     animationSpec: AnimationSpec<Float>,
@@ -31,7 +31,7 @@ internal suspend fun Animatable<Float, AnimationVector1D>.animateToWithGestureHa
                 seeded = true
                 return onFrame(releaseNanos)
             }
-            // 输入可在本帧起始之后才处理；按实际回调时刻推进，不能再提交一次零进度。
+            // 输入事件时间可能略晚于当前帧开始时间，取较大值确保时间单调前进。
             return upstream.withFrameNanos {
                 previousTime = maxOf(previousTime, it, nowNanos())
                 onFrame(previousTime)

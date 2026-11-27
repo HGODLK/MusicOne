@@ -8,7 +8,7 @@ import androidx.compose.ui.unit.constrainWidth
 import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.graphics.Color
 
-/** 旧窗口保留最后一次真实排版；父页面转向不再使退出文字重新换行或创建字形场景。 */
+/** 冻结退场歌词窗口的几何参数，转屏时不再让退场文字重新换行或重建图层。 */
 internal data class LyricWindowGeometry(
     val typography: LyricTypography,
     val readingBounds: LyricReadingBounds?,
@@ -36,7 +36,7 @@ internal class LyricFrozenWindowLayout {
                 val offset = it.offset()
                 val height = constraints?.maxHeight?.takeIf { value -> value != Constraints.Infinity }?.toFloat()
                 val edges = height?.let { value -> it.edges?.invoke(value, offset) }
-                // 退出窗口冻结本轮遮罩位置，后续切歌位移仍以同一边界继续补偿。
+                // 退场窗口保持冻结时的布局与遮罩边界，不再随父页面变化重排。
                 LyricBoundaryWindow(it.topBuffer, offset = { offset }, partialTop = it.partialTop,
                     edges = if (edges == null || height == null) null else { nextHeight, shift ->
                         LyricBoundaryEdges((edges.top - (shift - offset)).coerceAtLeast(0f),

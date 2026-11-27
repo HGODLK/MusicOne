@@ -2,14 +2,14 @@ package com.musicone
 
 import android.util.Log
 
-/** 只记录请求代次和阶段，不记录音源地址、歌词或账号信息。 */
+/** 记录播放流程各阶段耗时（只打请求编号和阶段名，不打印 URL、歌词或账号信息）。 */
 internal object PlaybackPipelineDiagnostics {
     fun stage(name: String, generation: Long, elapsedMs: Long? = null) {
         Log.i("MusicPlaybackPipeline", "阶段=$name 代次=$generation 耗时毫秒=${elapsedMs ?: -1}")
     }
 }
 
-/** USB 写线程每五秒汇总一次供数间隔和写入耗时，不逐包打印。 */
+/** USB 写线程每 5 秒汇总打印一次写入间隔和耗时，避免逐包刷日志。 */
 internal class UsbPlaybackDiagnostics(private val sampleRate: Int) {
     private var lastReport = System.nanoTime()
     private var previousEnd = 0L

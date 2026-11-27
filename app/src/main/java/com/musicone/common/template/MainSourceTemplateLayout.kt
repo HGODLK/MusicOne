@@ -24,7 +24,7 @@ internal fun normalizeMainSourceHomeCards(cards: List<MainSourceHomeCard>): List
         artwork.isBlank() || title.isBlank() || visuals.add("${playlist.source.id}:$title|$artwork")
     }
 }
-/** 只整理已有卡池，独立推荐货架保持原位，不为凑卡型额外请求。 */
+/** 把已有歌曲卡和歌单卡交错排一下避免同类型扎堆，独立推荐货架不动，不额外发请求。 */
 internal fun interleaveMainSourceHomeCards(cards: List<MainSourceHomeCard>, random: Random = Random.Default): List<MainSourceHomeCard> {
     val indexes = cards.indices.filter { cards[it] is MainSourceHomeCard.Song || cards[it] is MainSourceHomeCard.Playlist }
     val songs = indexes.map(cards::get).filterIsInstance<MainSourceHomeCard.Song>().shuffled(random).toMutableList()

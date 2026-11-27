@@ -62,7 +62,7 @@ class KugouSourceEntry : SourceEntry, SourceMembershipProvider {
     }
     override fun onBack(): Boolean = loginPage.onBack() || root.onBack()
     override fun close() { if (::state.isInitialized) { authenticationService.cancel(); state.close() } }
-    // 首页只在包内组合公开组件，其余页面使用新公开整页入口。
+    // 首页用包内自定义组合，其余页面直接用宿主公共页
     @Composable override fun Content(route: SourceRoute) {
         KugouRequiredLogin(state.preferences, authenticationService, loginPage, route.arguments["active"] != "false") {
             root.Content(route)

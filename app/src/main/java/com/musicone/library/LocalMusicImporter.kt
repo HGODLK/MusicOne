@@ -47,7 +47,7 @@ internal fun isLocalAudioCandidate(name: String, mimeType: String? = null): Bool
     return false
 }
 
-/** 选择器授权只作用于原文件；复制导入的音频由音乐库独立管理。 */
+/** 负责本地音频和目录导入：引用导入靠 SAF 持久授权，复制导入的文件归音乐库私有目录管。 */
 internal class LocalMusicImporter(private val context: Context, private val store: MusicLibraryStore) {
     fun persistAccess(uri: Uri) {
         context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)

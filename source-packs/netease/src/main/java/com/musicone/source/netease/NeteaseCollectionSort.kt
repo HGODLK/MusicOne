@@ -10,7 +10,7 @@ private const val DEFAULT_SORT = "ADDED_DESC"
 private val SORT_OPTIONS = listOf(SourceCollectionSortOption(DEFAULT_SORT, "加入时间：新到旧"),
     SourceCollectionSortOption("ADDED_ASC", "加入时间：旧到新"), SourceCollectionSortOption("NAME", "歌曲名称：升序"))
 
-/** 只保存账号下的真实歌单（数字编号）；每日推荐、已播歌曲等临时歌单仍由宿主保存，否则键带日期会每天重置。 */
+/** 只给数字 ID 的真实歌单生成包内排序 key；日推、最近播放这类临时歌单还是交给宿主存，不然 key 带日期每天都会重置。 */
 internal fun neteaseCollectionSortKey(remoteId: String, collectionAccount: String?, account: String?): String? {
     if (account.isNullOrBlank() || collectionAccount?.let { it != account } == true) return null
     if (remoteId.toLongOrNull()?.let { it > 0 } != true) return null

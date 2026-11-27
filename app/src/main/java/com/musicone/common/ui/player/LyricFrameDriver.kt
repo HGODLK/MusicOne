@@ -2,7 +2,7 @@ package com.musicone
 
 import androidx.compose.runtime.staticCompositionLocalOf
 
-/** 只转发已有歌词帧；同一系统帧的多个动画回调只请求一次宿主绘制。所有入口均在界面线程。 */
+/** 合并同一系统帧里的多次歌词动画回调，每帧只触发一次宿主重绘（仅主线程调用）。 */
 internal class LyricFrameDriver {
     private val hosts = linkedMapOf<Any, (Long) -> Unit>()
     private var lastFrame = Long.MIN_VALUE

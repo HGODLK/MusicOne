@@ -80,7 +80,7 @@ internal class AppUpdateViewModel(application: Application) : AndroidViewModel(a
                 val latest = withContext(Dispatchers.IO) { repository.latest() }
                 preferences.saveLatest(latest)
                 mutableState.update { it.copy(latest = latest, checked = true) }
-                // 迟到结果只更新下载入口，不能在用户已经操作后重新打开提醒窗口。
+                // 晚回来的检查结果只更新“关于”页的红点入口，用户已经开始操作了就不再弹更新框。
                 if (automatic && revision == openingRevision) offerPrompt()
             } catch (cancelled: CancellationException) {
                 throw cancelled

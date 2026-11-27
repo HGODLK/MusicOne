@@ -8,7 +8,7 @@ import java.util.IdentityHashMap
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 协议历史和界面消息按行增量落库，任务断点和执行收据与本轮新增记录原子提交。 */
+/** 协议历史和界面消息按行增量落库，任务断点和执行收据跟着本轮新增记录一起在同一次事务里提交。 */
 internal data class AiConversationSummary(val id: String, val title: String, val updatedAt: Long)
 
 internal class AiSessionStore(context: Context) {
@@ -27,12 +27,12 @@ internal class AiSessionStore(context: Context) {
     val currentConversationId: String
         @Synchronized get() = index().getString("current")
 
-    /** 新建和切换都只更换当前会话，不删除其他会话的协议、记忆和执行收据。 */
+    /** 新建或切换只改当前会话指针，不动其他会话的历史记录、偏好和收据。 */
     @Synchronized fun newConversation(title: String = "新对话"): String {
         val data = index()
         val id = java.util.UUID.randomUUID().toString()
         temporaryTitle = title.ifBlank { "新对话" }
-        // 未发送的会话只保留内存身份，不创建索引记录或数据库。
+        // 还没发过消息的新会话只留在内存里，不建索引也不建库文件。
         registry = JSONObject(data.toString()).put("current", id)
         discardConnection()
         return id
@@ -89,7 +89,7 @@ internal class AiSessionStore(context: Context) {
 
     @Synchronized fun saveMemory(value: String) = memory.save(value)
 
-    /** 仅由后台线程调用；完整协议留在数据库，模型恢复窗口始终受限。 */
+    /** 必须在后台线程调用；完整历史留在数据库里，只加载当前上下文窗口。 */
     @Synchronized fun read(): JSONObject {
         if (!hasSavedConversation()) return JSONObject().put("history", JSONArray()).put("messages", JSONArray())
         val db = database()
@@ -107,7 +107,7 @@ internal class AiSessionStore(context: Context) {
         result.put("hasEarlierMessages", page.hasEarlier)
         messagePositions = page.positions.toMutableMap()
         result.put("messages", messages)
-        // 首次写入时使用值比较承接调用者的解码实例，之后复用不可变消息实例。
+        // 首次缓存解码出来的消息，后续保存时按引用复用未变化的消息对象。
         messageMemo = page.messages.associateBy { it.id }
         metadataMemo = metadata(result).toString()
         return result
@@ -129,7 +129,7 @@ internal class AiSessionStore(context: Context) {
         value.optBoolean("running"), value.optBoolean("canContinue"), value.optional("pendingPlan"), value.optional("lastOperation"),
     )
 
-    /** 参数必须为调用前捕获的稳定快照；协议 JSONObject 加入历史后不得再原地修改。 */
+    /** 传入的必须是稳定的快照，加入历史的 JSONObject 不要再原地修改。 */
     @Synchronized fun writeSnapshot(
         history: List<JSONObject>, checkpoint: JSONObject, messages: List<AiChatMessageUi>,
         running: Boolean, canContinue: Boolean, pendingPlan: String?, lastOperation: String?,
@@ -145,7 +145,7 @@ internal class AiSessionStore(context: Context) {
             .put("pendingPlan", pendingPlan).put("lastOperation", lastOperation)
         var encodedMetadata: String
         val oldMessages = messageMemo
-        // 分页补回的旧消息已有数据库位置，不应被当作新回复重新置顶。
+        // 向上翻页加载出来的旧消息已经有固定行号，不能当成新消息重新排到末尾。
         val sentAt = aiLastUserSentAt(messages, history)
         val positions = messagePositions.toMutableMap()
         var nextUiPosition = nextMessagePosition
@@ -181,7 +181,7 @@ internal class AiSessionStore(context: Context) {
             }
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
-        // 事务成功后才推进缓存，失败重试仍会补齐所有未落库记录。
+        // 事务提交成功后再更新内存缓存，这样失败重试时不会漏掉未落库的记录。
         historyRows = nextRows
         nextHistoryPosition = nextPosition
         messageMemo = messages.associateBy { it.id }

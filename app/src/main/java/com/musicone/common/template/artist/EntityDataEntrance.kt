@@ -3,7 +3,7 @@ package com.musicone
 import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.*
 
-/** 首批网络内容与页面挂载各自有入场进度，已显示的内容不因返回而重播。 */
+/** 控制首批网络数据加载完后的淡入动画，已经显示过的内容在返回时不重播。 */
 @Composable
 internal fun rememberEntityDataEntrance(ready: Boolean): Animatable<Float, androidx.compose.animation.core.AnimationVector1D> {
     val progress = remember { Animatable(if (ready) 1f else 0f) }

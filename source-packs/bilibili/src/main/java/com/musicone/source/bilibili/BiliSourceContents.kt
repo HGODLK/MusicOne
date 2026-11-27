@@ -38,7 +38,7 @@ internal class BiliSourceContents(private val state: () -> BiliPackageState) : S
         require(request.cursor == null) { "收藏夹目录不支持额外游标" }
         val session = requireNotNull(captured.session)
         val folders = if (request.policy == SourceFetchPolicy.CACHE_FIRST) state().cache.folders(session.mid).takeIf { it.isNotEmpty() } else null
-        // 目录只读取元数据；独立封面请求由宿主按可见卡片触发，避免整份目录逐夹等待。
+        // 这里只拉收藏夹目录信息，封面等卡片滚到可见区域时再按需加载，避免一进来等太久
         val previous = state().cache.folders(session.mid).associateBy { it.id }
         val result = folders ?: state().api.getFavoriteFolders(session.mid.toLong(), session.cookie).map { folder ->
             folder.copy(cover = previous[folder.id]?.cover?.takeIf(String::isNotBlank) ?: folder.cover)

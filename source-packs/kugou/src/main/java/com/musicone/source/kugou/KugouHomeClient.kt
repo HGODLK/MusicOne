@@ -3,7 +3,7 @@ package com.musicone.source.kugou
 import org.json.JSONObject
 import org.json.JSONArray
 
-/** 首页内容请求独立于播放解析；协议核对自 KuGouMusicApi 的每日推荐和 top_playlist。 */
+/** 酷狗首页内容请求（参考 KuGouMusicApi 的每日推荐和 top_playlist 接口）。 */
 internal class KugouHomeClient(
     private val send: (String, String, String, Map<String, String>) -> JSONObject = { url, body, cookie, headers ->
         JSONObject(PlatformHttp.postJson(url, body, cookie, headers).text)

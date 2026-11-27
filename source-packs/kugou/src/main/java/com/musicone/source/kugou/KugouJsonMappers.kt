@@ -36,7 +36,7 @@ internal fun JSONObject.parseKugouSearchAlbums(): List<MusicPlaylist> =
 internal fun JSONObject.toKugouTrack(hasVipAccess: Boolean): MusicTrack {
     val qualities = kugouQualityHashes()
     val fallbackHash = qualities.values.firstOrNull().orEmpty()
-    // 保持已有歌曲身份，资源档位补齐不能使收藏和缓存变成另一首歌。
+    // 歌曲主 ID 保持用原始 hash，防止补齐高音质 hash 后导致收藏和缓存对不上
     val identityHash = firstKugouString("FileHash", "filehash", "hash", "Hash")
         .takeIf { value -> qualities.values.any { it.equals(value, ignoreCase = true) } } ?: fallbackHash
     val songId = firstKugouString("MixSongID", "mixsongid", "album_audio_id", "audio_id", "audioid", "ID", "id")
@@ -52,7 +52,7 @@ internal fun JSONObject.toKugouTrack(hasVipAccess: Boolean): MusicTrack {
     val rawAccess = kugouTrackAccessInfo()
     val access = kugouTrackAccess(rawAccess?.purchased == true, rawAccess?.paidOnly == true,
         rawAccess?.needsVip == true, hasVipAccess, rawAccess?.trialAvailable == true)
-    // 云收藏的 ID/fileid 是收藏项编号，不能送入播放接口冒充歌曲编号。
+    // 云歌单里的 ID/fileid 是收藏记录 ID，不能当成歌曲 ID 传给播放接口
     val albumAudioId = firstKugouString("MixSongID", "mixsongid", "album_audio_id", "audio_id", "audioid")
     val albumId = firstKugouString("AlbumID", "album_id", "albumid")
         .ifBlank { optJSONObject("albuminfo")?.opt("id")?.toString().orEmpty() }

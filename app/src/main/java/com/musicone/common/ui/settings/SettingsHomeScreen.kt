@@ -12,7 +12,8 @@ import androidx.compose.ui.unit.dp
 @Composable
 internal fun SettingsHomeScreen(state: PlatformSettingsUiState, onBack: () -> Unit, onOpenSources: () -> Unit,
     bottomInset: androidx.compose.ui.unit.Dp = 0.dp, onOpenCachedMusic: () -> Unit = {},
-    onOpenLibrary: () -> Unit = {}, onOpenSupplemental: () -> Unit = {}, onOpenAiAssistant: () -> Unit = {}) {
+    onOpenLibrary: () -> Unit = {}, onOpenSupplemental: () -> Unit = {}, onOpenAiAssistant: () -> Unit = {},
+    onOpenCustomFonts: () -> Unit = {}) {
     PlaybackSettingsMenuHost {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             LazyColumn(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
@@ -42,7 +43,7 @@ internal fun SettingsHomeScreen(state: PlatformSettingsUiState, onBack: () -> Un
                     }
                 }
                 item { PlaybackSettings(state.selectedSource) }
-                item { DisplaySettings() }
+                item { DisplaySettings(onOpenCustomFonts) }
                 item { AboutSettings() }
             }
         }

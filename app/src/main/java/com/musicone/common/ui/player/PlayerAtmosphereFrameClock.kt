@@ -21,9 +21,9 @@ internal class PlayerAtmosphereFrameClock(
         }
     })
 
-    suspend fun crossfade(block: suspend () -> Unit) {
+    suspend fun <T> crossfade(block: suspend () -> T): T {
         crossfading = true
-        try { block() } finally { crossfading = false }
+        try { return block() } finally { crossfading = false }
     }
 
     override suspend fun <R> withFrameNanos(onFrame: (Long) -> R): R = clock.withFrameNanos(onFrame)

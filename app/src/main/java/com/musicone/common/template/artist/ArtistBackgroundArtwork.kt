@@ -10,7 +10,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 
-/** 首次淡入从详情页可见后开始，缓存命中也不在隐藏准备期提前播完。 */
+/** 等详情页真正显示出来再播封面淡入，哪怕命中内存缓存也不在隐藏阶段提前播完。 */
 @Composable
 internal fun ArtistBackgroundArtwork(url: String, modifier: Modifier = Modifier) {
     val bitmap by rememberArtworkBitmap(url)

@@ -6,7 +6,7 @@ internal fun hasReusableLyrics(track: MusicTrack, lyrics: List<TimedLyric>): Boo
     val version = lyricProvider(track)?.parserVersion ?: 0
     return hasReusableLyrics(lyrics, version)
 }
-/** 未声明解析版本时允许读取旧缓存；已加载的包按自身版本验证。 */
+/** 音源包没声明歌词解析器版本时直接复用旧缓存，声明了就按版本号校验是否过期。 */
 internal fun hasReusableLyrics(lyrics: List<TimedLyric>, parserVersion: Int): Boolean =
     lyrics.isNotEmpty() && validLyricTimeline(lyrics) &&
         (parserVersion == 0 || lyrics.all { it.parserVersion == parserVersion })

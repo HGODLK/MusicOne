@@ -35,7 +35,7 @@ internal fun AiMessageCard(message: AiChatMessageUi, progress: String? = null, o
         value = true
     }
     if (!streaming && !prepared) {
-        // 快速跳到尚未预热的历史项时先排版，不经历原文到富文本的二次变形。
+        // 猛滑到还没预热的历史消息时先显示小菊花，排完直接出富文本，避免从纯文本闪变成富文本。
         Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.CenterStart) {
             CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 1.5.dp)
         }
@@ -52,7 +52,7 @@ internal fun AiMessageCard(message: AiChatMessageUi, progress: String? = null, o
                 AiExecutionSection(progress, message.progressSteps, message.id, hasDetails = receiptDetails, details = {
                         message.receipt?.let { AiChangeDetails(it.groups, it.summary) }
                             ?: message.result?.takeIf { message.isNativeReceipt && it.isNotBlank() }?.let {
-                                // 旧回执保留逐行字段，在执行步骤内展开，不经 Markdown 串行。
+                                // 兼容旧版纯文本回执，直接逐行显示，不走 Markdown 解析。
                                 Text(it, style = MaterialTheme.typography.bodyMedium)
                             }
                     })
@@ -73,7 +73,7 @@ internal fun AiMessageCard(message: AiChatMessageUi, progress: String? = null, o
                         message.playlist?.let { AiPlaylistCard(it, onOpenPlaylist) }
                     }
                 }
-                // 新回复保留底部入场；历史和已进入过视口的卡片直接复用终点画面。
+                // 刚生成的新卡片播一次入场动画，历史消息或已经看过的直接显示，不重复播动画。
                 SideEffect { onCardsEntered() }
                 if (animateThisMount && !ExperiencePreferences.options.reduceMotion) SearchResultEntrance(cards) else cards()
             }

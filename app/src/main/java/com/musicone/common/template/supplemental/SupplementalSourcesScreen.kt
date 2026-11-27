@@ -20,7 +20,7 @@ import com.musicone.source.sdk.supplementalPageProviderOrNull
 import com.musicone.sourceintegration.SourcePackageController
 import com.musicone.sourceintegration.SourceExternalSurface
 
-/** 补充入口来自已激活描述符，新增音源不需要再添加固定平台分支。 */
+/** 动态列出所有已启用的补充音源，以后新增音源不用改这里的代码。 */
 @Composable
 internal fun SupplementalSourcesScreen(bottomInset: Dp = 0.dp, onBack: () -> Unit,
     onLocalBackChange: ((() -> Unit)?) -> Unit, onManageSources: () -> Unit,

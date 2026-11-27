@@ -12,7 +12,7 @@ internal data class MainSourceHomeState(
     val refreshLoading: Boolean = false,
 )
 
-/** 首页只观察实际展示内容，分页请求的开始和结束由独立观察器处理。 */
+/** 首页 UI 只订阅要展示的卡片和状态，触底分页加载由独立的观察器触发。 */
 internal data class MainSourceHomeContent(
     val cards: List<MainSourceHomeCard> = emptyList(),
     val message: String? = null,

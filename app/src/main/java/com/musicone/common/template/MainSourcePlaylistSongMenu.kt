@@ -4,7 +4,6 @@ import androidx.compose.material3.MaterialTheme
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.foundation.BorderStroke
@@ -27,18 +26,15 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.math.abs
 
-/** 歌曲菜单独立持有状态与采样层，不将写入和菜单动画塞进页面主组件。 */
+/** 歌曲菜单宿主：把菜单状态、毛玻璃采样和写入逻辑都收在这里，不塞进页面主 Composable。 */
 @Composable
 internal fun MainSourcePlaylistSongMenuHost(
     playlist: MusicPlaylist,
@@ -112,8 +108,8 @@ internal fun MainSourcePlaylistSongMenuHost(
     }
     var bounds by remember { mutableStateOf(Rect.Zero) }
     SideEffect { menu.backdropLayer = backdrop; menu.backdropBounds = bounds; menu.liveBackdrop = liveBackdrop }
-    var menuSize by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
+    val anchorLock = remember(menu) { SongMenuAnchorLock() }
     val visibility = remember(menu) { MutableTransitionState(false) }
     visibility.targetState = menu.expanded
     val menuVisible = menu.expanded || visibility.currentState || !visibility.isIdle
@@ -141,22 +137,28 @@ internal fun MainSourcePlaylistSongMenuHost(
             val expandedWidth = minOf(if (menu.editing) 420.dp else 360.dp, (usableWidth - 24.dp).coerceAtLeast(1.dp))
             val usableHeight = maxHeight - maxOf(bottomInset, if (menuRotation == 0) keyboardInset else 0.dp)
             val availableHeight = (usableHeight - 84.dp).coerceAtLeast(100.dp)
-            val width = if (menu.editing) expandedWidth else baseWidth
-            val height = if (relatedOnly) with(density) { menuSize.height.toDp() }.takeIf { it > 0.dp }
-                ?: minOf(176.dp, availableHeight) else minOf(320.dp, availableHeight)
-            val targetX = if (menu.editing) leftInset + (usableWidth - width) / 2 else with(density) { localAnchor.right.toDp() - width }
-                .coerceIn(leftInset + 12.dp, (leftInset + usableWidth - width - 12.dp).coerceAtLeast(leftInset + 12.dp))
-            val targetY = if (menu.editing) ((usableHeight - minOf(560.dp, availableHeight)) / 2).coerceAtLeast(12.dp) else with(density) { localAnchor.top.toDp() - height - 8.dp }
-                .coerceIn(60.dp, (usableHeight - height - 12.dp).coerceAtLeast(60.dp))
-            val x by animateDpAsState(targetX, musicMotion(320), label = "歌曲菜单横向变换")
-            val y by animateDpAsState(targetY, musicMotion(320), label = "歌曲菜单纵向变换")
-            // 整体弹出/收起、内容切换和位置追平属于同一次运动，全部结束后才恢复点击。
-            val chromeMoving = visibility.currentState != visibility.targetState ||
-                abs(y.value - targetY.value) > .5f || abs(x.value - targetX.value) > .5f
-            val contentHeight = if (avoidQueueRow) maxHeight else if (relatedOnly) availableHeight else
-                (usableHeight - y - 12.dp).coerceAtLeast(80.dp)
             val availableBounds = with(density) { Rect(leftInset.toPx(), 0f, (leftInset + usableWidth).toPx(), localBounds.height) }
-            val placement = if (avoidQueueRow) Modifier.queueSongMenuPlacement(localAnchor, localBounds, availableBounds) else Modifier.offset(x, y)
+            // 整体弹出/收起期间先不响应点击；子菜单切换时的尺寸锁定由内层 resizing 接管。
+            val chromeMoving = visibility.currentState != visibility.targetState
+            val contentHeight = if (avoidQueueRow) maxHeight else availableHeight
+            val placement = if (avoidQueueRow) {
+                Modifier.queueSongMenuPlacement(localAnchor, localBounds, availableBounds)
+            } else {
+                with(density) {
+                    Modifier.songMenuAnchoredPlacement(
+                        session = menu.openSession,
+                        anchor = localAnchor,
+                        leftLimit = (leftInset + 12.dp).toPx(),
+                        rightLimit = (leftInset + usableWidth - 12.dp).toPx(),
+                        topLimit = 60.dp.toPx(),
+                        bottomLimit = (usableHeight - 12.dp).toPx(),
+                        editingTopLimit = 12.dp.toPx(),
+                        gap = 8.dp.toPx(),
+                        editing = menu.editing,
+                        lock = anchorLock,
+                    )
+                }
+            }
             AnimatedVisibility(visibility,
                 enter = fadeIn(musicMotion(220)) + if (avoidQueueRow) EnterTransition.None else scaleIn(musicMotion(280), initialScale = .84f,
                     transformOrigin = qualityMenuTransformOrigin(localAnchor.center, localBounds)),
@@ -166,12 +168,11 @@ internal fun MainSourcePlaylistSongMenuHost(
                 Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null) { menu.dismiss() }) {
                     MusicOneBackdropGlass(
                         backdropLayer = backdrop, backdropBounds = bounds,
-                        // 外层按当前动画尺寸裁圆角，避免目标尺寸的底部圆角被矩形窗口截平。
-                        modifier = placement.onSizeChanged { menuSize = it }
+                        // 外层只负责裁圆角与点击拦截，尺寸与位置由定位修饰符决定。
+                        modifier = placement
                             .onGloballyPositioned { menu.surfaceBounds = it.boundsInRoot() }
                             .playerMenuSurfaceSnapshot(surface, menuRotation)
                             .clip(RoundedCornerShape(28.dp))
-                            .animateContentSize(musicMotion(320))
                             .clickable(remember { MutableInteractionSource() }, null) {},
                         shape = RoundedCornerShape(28.dp), blurRadius = 24.dp,
                         containerColor = if (relatedOnly || addOnly) MaterialTheme.colorScheme.surface.copy(alpha = .72f) else playlistMenuContainer,
@@ -183,7 +184,7 @@ internal fun MainSourcePlaylistSongMenuHost(
                                 val direction = if (targetState.first || targetState.second || targetState.third) 1 else -1
                                 ((fadeIn(musicMotion(240)) + slideInVertically(musicMotion(320)) { direction * it / 8 }) togetherWith
                                     (fadeOut(musicMotion(160)) + slideOutVertically(musicMotion(240)) { -direction * it / 8 }))
-                                    .using(SizeTransform(clip = true, sizeAnimationSpec = { _, _ -> musicMotion(320) }))
+                                    .using(SizeTransform(clip = true, sizeAnimationSpec = { _, _ -> musicMotion(240) }))
                             }) { phase ->
                             val artworkAlpha = transition.animateFloat(
                                 transitionSpec = { musicMotion(if (targetState == EnterExitState.Visible) 240 else 160) },
@@ -191,7 +192,7 @@ internal fun MainSourcePlaylistSongMenuHost(
                             ) { if (it == EnterExitState.Visible) 1f else 0f }
                             val choosing = phase.first
                             val fling = rememberPlayerVerticalFling(menuRotation)
-                            // 展开或收回的尺寸动画尚未结束，点击会用中间尺寸开页或回退，整块内容先不响应指针。
+                            // 菜单正在缩放动画期间先屏蔽点击，防止用中间态尺寸触发跳转或返回。
                             val resizing = transition.currentState != transition.targetState
                             Column(Modifier.songMenuPointerLock(chromeMoving || resizing)
                                 .width(if (choosing || phase.third) expandedWidth else baseWidth)

@@ -26,7 +26,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 
-/** 监听 USB 与设置变化，并在保留播放位置的前提下重新选择输出链路。 */
+/** 监听 USB 插拔和设置变更，重建输出链路时尽量保留当前播放进度。 */
 internal class UsbAudioServiceCoordinator(
     private val context: Context,
     private val player: ExoPlayer,
@@ -109,7 +109,7 @@ internal class UsbAudioServiceCoordinator(
     }
 
     private fun outputLost() {
-        // 先同步撤销播放意图，阻止晚到的错误或曲末事件切歌。
+        // 先立刻暂停，防止随后到达的报错或播完事件触发自动切歌。
         player.pause()
         onOutputLost()
         silence.setActive(false)

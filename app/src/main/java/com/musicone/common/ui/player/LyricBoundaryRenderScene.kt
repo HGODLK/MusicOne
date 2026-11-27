@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.IntSize
 import kotlin.math.ceil
 import kotlin.math.floor
 
-/** 裁剪指令只准备一次；整条文字带共同渐显，保留逐字重叠时的合成透明度。 */
+/** 按排版行预建裁剪区域，整行统一做透明度渐显，避免逐字叠加时透明度变重。 */
 internal class LyricBoundaryRenderScene(
     scope: CacheDrawScope,
     source: GraphicsLayer,

@@ -32,7 +32,7 @@ internal class EntityFrame(val key: Long, val target: EntityTarget, var sourceMe
     var artistAvatar: ArtistAvatarPresentation? = null
 }
 
-/** 菜单是页面的返回状态，不单独占层；淘汰时切断更早的返回引用。 */
+/** 来源菜单跟着页面帧走，不单独占页面栈；栈超限时顺手清掉被挤掉那一帧的返回引用。 */
 internal class EntityNavigation(private val scope: CoroutineScope) {
     val pages = mutableStateListOf<EntityFrame>()
     private var preparing by mutableStateOf(false)
@@ -98,7 +98,7 @@ internal class EntityNavigation(private val scope: CoroutineScope) {
         val source = frame.sourceKey?.let(artworkSources::get)
         if (source != null) frame.motion.sources[frame.motion.coverKey] = source
         else if (frame.sourceMenu?.expanded != true) {
-            // 菜单仍在时沿用进入时的来源，临时裁剪或重测不能丢失收起路径。
+            // 菜单还开着时保留进入时的起点坐标，避免重测导致返回动画找不到落点。
             frame.motion.sources.clear()
             if (frame.sourceKey != null) frame.origin = Rect.Zero
         }

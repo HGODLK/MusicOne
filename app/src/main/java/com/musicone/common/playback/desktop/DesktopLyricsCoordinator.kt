@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
-/** 仅消费通用播放快照；不持有音源、账号、解析器、媒体会话或第二份队列。 */
+/** 桌面歌词协调器，只消费统一的播放状态快照，不直接接触音源、账号或播放器。 */
 @RequiresApi(31)
 internal class DesktopLyricsCoordinator(
     private val context: Context,
@@ -36,6 +36,7 @@ internal class DesktopLyricsCoordinator(
     fun start() {
         DesktopLyricsOptions.initialize(context)
         ExperiencePreferences.initialize(context)
+        CustomFontStore.initialize(context)
         // 部分系统会限制监听，失败时仍由设置页返回和下次开启重新检查。
         try {
             context.getSystemService(AppOpsManager::class.java)
@@ -58,15 +59,22 @@ internal class DesktopLyricsCoordinator(
         val hasTrack = MutableStateFlow(false)
         try {
             launch {
-                var loadedMode: AppFontMode? = null
+                var loadedKey: Pair<AppFontMode, Long>? = null
                 var typefaces = DesktopLyricTypefaces.system
                 combine(DesktopLyricsOptions.config, snapshotFlow { ExperiencePreferences.options },
-                    desktopLyricsAccents(context)) { config, options, accent -> Triple(config, options, accent)
-                }.distinctUntilChanged().collectLatest { (config, options, accent) ->
+                    snapshotFlow { CustomFontStore.revision },
+                    desktopLyricsAccents(context)) { config, options, customRevision, accent ->
+                    listOf(config, options, customRevision, accent)
+                }.distinctUntilChanged().collectLatest { values ->
+                    val config = values[0] as DesktopLyricsConfig
+                    val options = values[1] as ExperienceOptions
+                    val customRevision = values[2] as Long
+                    val accent = values[3] as Int
                     val mode = if (config.font == DesktopLyricsFont.SANS_SERIF) AppFontMode.SANS_SERIF else options.fontMode
-                    if (mode != loadedMode) {
+                    val key = mode to if (mode == AppFontMode.CUSTOM) customRevision else 0L
+                    if (key != loadedKey) {
                         typefaces = DesktopLyricTypefaces.load(context, mode)
-                        loadedMode = mode
+                        loadedKey = key
                     }
                     window.apply(config, DesktopLyricStyle(window.density, typefaces, config.size.dp, config.align, accent,
                         config.translation, config.ruby, options.verbatimLyricAnimation, marquee = !options.reduceMotion), options.reduceMotion,

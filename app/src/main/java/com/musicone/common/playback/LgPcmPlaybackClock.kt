@@ -4,7 +4,7 @@ import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.audio.AudioSink
 
-/** 媒体时间只随已消费的 PCM 帧推进；提交到队列、暂停或墙上时间经过都不能代替消费。 */
+/** 播放进度严格按实际消耗掉的 PCM 帧数算，只进队列、暂停或按系统时间推算都不算数。 */
 @androidx.annotation.OptIn(UnstableApi::class)
 internal class LgPcmPlaybackClock(private val sampleRate: Int) {
     private var startUs = AudioSink.CURRENT_POSITION_NOT_SET

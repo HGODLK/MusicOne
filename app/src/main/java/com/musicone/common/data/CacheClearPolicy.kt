@@ -6,6 +6,6 @@ internal enum class CacheClearMode(val title: String, val description: String) {
     ALL("清除所有缓存", "包含受保护音频，不删除歌单、收藏或本地音乐原文件。正在使用的缓存会在释放后清理。"),
 }
 
-/** 未知身份不能证明不属于歌单，保留到能够确认归属时再处理。 */
+/** 拿不到归属信息的缓存不能随便当成歌单外文件删掉，先保留。 */
 internal fun outsidePlaylistCacheKeys(resources: Map<String, String?>, members: Set<String>): List<String> =
     resources.filter { (_, identity) -> identity != null && identity !in members }.keys.toList()

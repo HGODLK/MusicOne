@@ -17,7 +17,7 @@ internal sealed interface PlaybackQualityEvent {
     data class Upgraded(override val key: PlaybackRequestKey, val quality: AudioQuality, val source: PlaybackSource) : PlaybackQualityEvent
 }
 
-/** 档位查询、手动切换与缓存升级共享取消边界，换源由统一播放入口提交。 */
+/** 统一管理音质列表查询、手动切换音质和后台升级音质，切歌时一并取消。 */
 internal class PlaybackQualityController(
     private val scope: CoroutineScope,
     private val options: suspend (MusicTrack, (List<AudioQuality>) -> Unit) -> List<AudioQuality>,
@@ -41,7 +41,7 @@ internal class PlaybackQualityController(
     private var optionsInteractive = false
     private val upgrade = CachedPlaybackUpgrade(scope, resolve = resolvePreferred)
 
-    /** 用户正在菜单里等待档位结果；预加载据此让出网络与取票。 */
+    /** 用户正打开音质菜单等结果，后台预加载看到这个标记会先暂停让路。 */
     val waitingForUser: Boolean get() = optionsInteractive && !optionsReady && optionsJob?.isActive == true
 
     fun cancel() {
@@ -57,7 +57,7 @@ internal class PlaybackQualityController(
         upgrade.cancel()
     }
 
-    /** 打开菜单只补齐缺失结果：已完整返回或正在请求时沿用，仍在起播延迟里的查询立即开始。 */
+    /** 打开音质菜单时调用：如果已经查完或正在查就直接复用；如果还在起播延迟等待中，就立刻开查。 */
     fun ensureOptions(track: MusicTrack, key: PlaybackRequestKey) {
         if (key == optionsKey && (optionsReady || (optionsJob?.isActive == true && !optionsDeferred))) {
             if (!optionsReady) optionsInteractive = true
@@ -67,7 +67,7 @@ internal class PlaybackQualityController(
     }
 
     fun loadOptions(track: MusicTrack, key: PlaybackRequestKey, delayMs: Long = 0L, interactive: Boolean = false) {
-        // 后台刷新顶替用户正在等待的同曲查询时，仍保留等待状态。
+        // 后台刷新取消了用户正在等的同首歌查询时，继续保持“用户等待中”的标记。
         val userWaiting = interactive || (key == optionsKey && waitingForUser)
         optionsJob?.cancel()
         val request = ++optionsSequence

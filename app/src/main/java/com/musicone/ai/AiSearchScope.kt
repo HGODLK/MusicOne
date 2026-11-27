@@ -4,7 +4,7 @@ import java.util.Locale
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 选源来自用户原话；模型参数不能建立、清除或扩大任务约束。 */
+/** 搜索范围只以用户原话为准，不允许模型通过参数擅自修改或放宽音源限制。 */
 internal data class AiSearchScope(
     val sourceIds: Set<String> = emptySet(),
     val excludedIds: Set<String> = emptySet(),
@@ -26,7 +26,7 @@ internal data class AiSearchScope(
 
 internal fun aiNormalizeSourceText(value: String): String = value.lowercase(Locale.ROOT).filter(Char::isLetterOrDigit)
 
-/** 完整名称优先；通用后缀只生成候选简称，重名必须由用户消歧。 */
+/** 优先匹配完整音源名；去掉通用后缀的简称仅作候选，重名时必须让用户确认。 */
 internal fun aiSourceNameTokens(names: List<String>): Set<String> {
     val tokens = names.map(::aiNormalizeSourceText).filter { it.length >= 2 }.toMutableSet()
     names.forEach { name ->
@@ -99,7 +99,7 @@ internal fun aiSourceExcluded(request: String, names: List<String>, current: Boo
 private fun aiCurrentSourceOnly(text: String): Boolean =
     listOf("不要跨", "不跨", "不能跨", "别跨", "只用当前", "仅当前", "只在当前", "不要用其他").any(text::contains)
 
-/** 同一任务的追问继承约束；独立新请求或明确放开来源时结束继承。 */
+/** 同一任务的追问继续沿用上一轮的音源限制，开启新话题或用户明确放开时才清除。 */
 internal fun aiNextSearchScope(request: String, previous: AiSearchScope, sources: Map<String, List<String>>, mainId: String): AiSearchScope {
     val text = aiNormalizeSourceText(request)
     val mentions = aiSourceMentions(request, sources)
@@ -122,7 +122,7 @@ internal fun aiNextSearchScope(request: String, previous: AiSearchScope, sources
     }
     val exclusions = (if (followUp) previous.excludedIds else emptySet()) + excluded - selected
     require(selected.isNotEmpty() || genericPermission || inherited.resolutionError == null) { inherited.resolutionError.orEmpty() }
-    // 指定了未知音源时明确失败，不能把未匹配当成自动搜索许可。
+    // 用户指定了不存在的音源时直接报错，不能偷偷退回自动搜全网。
     if (selected.isEmpty() && aiHasSearchAction(text)) {
         val target = request.split(Regex("[，。！？,!?；;]")).firstNotNullOfOrNull { clause ->
             Regex("^(?:请|麻烦|帮我)?(?:只用|仅用|通过|换到|切到|用|在|从)(.{2,40}?)(?:重新搜|搜索|搜|找|检索)")
@@ -143,7 +143,7 @@ internal fun aiUpdateSearchScope(checkpoint: JSONObject, sources: Map<String, Li
     var scope = AiSearchScope.fromJson(stored)
     val requests = checkpoint.optJSONArray("userRequests")?.strings().orEmpty().let { if (it.lastOrNull() == request) it else it + request }
     if (stored?.optString("turnId") != turn || stored.optString("request") != request) {
-        // 从本地用户原话恢复中间轮次，避免没有搜索的聊天让旧约束粘住新任务。
+        // 按本地记录的用户消息补算中间轮次，避免闲聊过后旧的音源限制还粘在新问题上。
         val start = stored?.optInt("requestCount", 0)?.coerceIn(0, requests.size) ?: 0
         requests.drop(start).forEachIndexed { index, text ->
             scope = if (start + index == requests.lastIndex) aiNextSearchScope(text, scope, sources, mainId)
@@ -165,7 +165,7 @@ internal fun aiRequestedSearchSource(scope: AiSearchScope, id: String?, cursor: 
     return id
 }
 
-/** 指定来源独立成最先执行的一组，其他来源只有明确兜底许可才进入候选。 */
+/** 用户指定的音源排在最前面，其他音源只有用户明确允许兜底时才参与搜索。 */
 internal inline fun aiSearchPriority(scope: AiSearchScope, id: String, mainId: String, automaticTier: () -> Int?): Int? = when {
     id in scope.excludedIds || scope.currentOnly && id != mainId -> null
     id in scope.sourceIds -> 0

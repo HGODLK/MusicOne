@@ -3,7 +3,7 @@ package com.musicone.source.qq.internal
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 通用曲目持久化；平台原始资料作为不透明字符串保留。 */
+/** 曲目本地序列化和反序列化，平台私有字段原样保存。 */
 internal fun MusicTrack.toStoredTrackJson(): JSONObject = JSONObject()
     .put("source", source.name).put("sourceId", source.id).put("accountId", sourceAccountId)
     .put("remoteKey", remoteKey).put("id", id).put("title", title).put("artists", artists)
@@ -25,7 +25,7 @@ internal fun MusicTrack.toStoredTrackJson(): JSONObject = JSONObject()
     }
 
 internal fun JSONObject.toStoredTrack(): MusicTrack? = runCatching {
-    // 无source的最早QQ快照保持原兼容规则，不改变既有歌曲与队列身份。
+    // 兼容早期没有 sourceId 字段的 QQ 曲目缓存
     val storedSource = storedOptionalString("sourceId")?.let(MusicSource::fromId)
         ?: storedOptionalString("source")?.let(MusicSource::valueOf) ?: MusicSource.QQ
     val id = optString("id").takeIf { it.isNotBlank() } ?: return null
@@ -37,7 +37,7 @@ internal fun JSONObject.toStoredTrack(): MusicTrack? = runCatching {
         }
     }
     val payload = storedProviderData().toMutableMap()
-    // 仅兼容读取旧版序列化键；业务含义及类型解析由对应音源包负责。
+    // 兼容读取旧版序列化字段，具体含义由各音源包自己解析
     listOf("songMid", "bilibiliBvid", "bilibiliCid", "qqAccess").forEach { legacy ->
         if (legacy !in payload && has(legacy) && !isNull(legacy)) payload[legacy] = get(legacy).toString()
     }

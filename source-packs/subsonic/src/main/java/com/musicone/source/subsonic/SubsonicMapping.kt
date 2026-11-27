@@ -11,10 +11,10 @@ private const val REF_FORMAT = "subsonic.ref"
 
 internal enum class SubsonicCollectionKind { ALBUM, PLAYLIST, STARRED }
 
-/** 从包内载荷还原的集合定位；server 为空表示旧数据或宿主转换后缺失，按当前服务器处理。 */
+/** 从 payload 还原的歌单/专辑定位信息；serverKey 为空（比如旧数据）时默认按当前服务器处理。 */
 internal data class SubsonicCollectionRef(val serverKey: String?, val kind: SubsonicCollectionKind, val id: String)
 
-/** 从包内载荷还原的歌曲定位。 */
+/** 从 payload 还原的歌曲定位信息。 */
 internal data class SubsonicTrackRef(val serverKey: String?, val id: String, val suffix: String,
     val contentType: String, val bitRate: Int)
 
@@ -97,7 +97,7 @@ internal fun SourceCollection.subsonicRef(): SubsonicCollectionRef {
         val kind = runCatching { SubsonicCollectionKind.valueOf(value.optString("kind")) }.getOrNull()
         if (kind != null) return SubsonicCollectionRef(value.optString("server").ifBlank { identity.accountId }, kind, value.optString("id"))
     }
-    // 载荷缺失时退回远端身份，格式与上面写入时一致。
+    // payload 缺失时，退回解析 remoteId（格式和写入时保持一致）
     val remote = identity.remoteId
     return when {
         remote == "starred" -> SubsonicCollectionRef(identity.accountId, SubsonicCollectionKind.STARRED, "")

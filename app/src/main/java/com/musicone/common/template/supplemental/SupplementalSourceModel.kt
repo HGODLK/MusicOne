@@ -23,7 +23,7 @@ internal data class SupplementalState(
     val targetId: String = UNIFIED_PLAYLIST_ID, val targetTitle: String = "综合歌单",
     val destinations: List<SourceLocalCollection> = emptyList(), val error: String? = null, val message: String? = null)
 
-/** 只调用公开业务接口；页面退出取消请求，不关闭进程共享的音源实例。 */
+/** 补充音源页面状态管理：只调公开 SDK 接口；退出页面时取消在途请求，不关掉全局音源实例。 */
 internal class SupplementalSourceModel(context: Context, val instance: SourceInstance) : AutoCloseable {
     val entry get() = instance.entry
     private val host = SourceApplicationHost.get(context)
@@ -117,7 +117,7 @@ internal class SupplementalSourceModel(context: Context, val instance: SourceIns
         val changed = if (modern) accountVersion.update(account) else (account?.revision ?: 0) != accountRevision
         if (changed) {
             accountRevision = account?.revision ?: 0; generation++
-            // 新契约换号或修订后取消所有旧动作，不让导入、订阅等任务继续持有旧会话。
+            // 换号或会话版本变化时取消所有进行中的旧任务，防止导入/订阅继续用旧账号。
             if (modern) cancelSupplementalAccountRequests(scope)
             directoryJob?.cancel(); contentJob?.cancel(); stack.clear(); pageHistory.clear()
             embeddedPageHeader.clear()

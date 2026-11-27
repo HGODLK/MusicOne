@@ -32,7 +32,7 @@ internal data class ExperienceOptions(
     val favoriteButtonBehavior: FavoriteButtonBehavior = FavoriteButtonBehavior.SOURCE_ONLY,
 )
 
-/** 显示偏好独立保存，渲染层读取同一份可观察状态。 */
+/** 界面显示偏好单独存本地，Compose 层直接读这份可观察状态。 */
 internal object ExperiencePreferences {
     var options by mutableStateOf(ExperienceOptions())
         private set
@@ -49,7 +49,7 @@ internal object ExperiencePreferences {
             reduceMotion = store.getBoolean("reduce_motion", false),
             disableCardColors = store.getBoolean("disable_card_colors", false),
             alwaysDark = store.getBoolean("always_dark", false),
-            // 保存键继续表示实际启用状态，界面反向开关不会翻转已有选择。
+            // SharedPreferences 里存的始终是实际开关状态，界面文案怎么写都不反转存储值。
             verbatimLyricAnimation = store.getBoolean("verbatim_lyric_animation", true),
             uiAnimationFrameRate = AnimationFrameRate.fromStored(store.getInt("ui_animation_fps", 0)),
             lyricAnimationFrameRate = AnimationFrameRate.fromStored(store.getInt("lyric_animation_fps", 0)),

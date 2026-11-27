@@ -19,7 +19,7 @@ internal fun qqVerificationCloseCallback(url: String): Boolean {
         uri.path.orEmpty().substringAfterLast('/') in setOf("closeWebView", "closeWebview", "finishWebView")
 }
 
-/** 没有票据的页面关闭只自动续接一次，防止验证页反复自动关闭时陷入循环；用户重新操作后复位。 */
+/** 验证页没回传票据就自己关掉时，最多自动重试一次，防止死循环；用户重新点操作后重置计数。 */
 internal class QqPageCloseRetryGuard {
     private var used = false
     fun tryUse(): Boolean = !used.also { used = true }

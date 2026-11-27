@@ -12,7 +12,7 @@ internal data class PlayerSurfaceFlightFrame(
     val contentGeometry: PlayerFlightContentFrame? = null,
 )
 
-/** 同一组可观察输入只求解一次；各图层仍在绘制阶段读取，不把动画进度带入重组。 */
+/** 用 derivedStateOf 缓存本帧飞行几何，各子图层在绘制阶段读取，不触发重组。 */
 internal fun playerSurfaceFlightState(motion: PageMotion, flight: PhonePlayerFlightRotation?, rotation: Int)
     : State<PlayerSurfaceFlightFrame?> = derivedStateOf {
     val source = playerSourceAnchor(motion, "surface") ?: return@derivedStateOf null

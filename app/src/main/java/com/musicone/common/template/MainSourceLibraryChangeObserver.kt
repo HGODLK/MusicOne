@@ -6,7 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collect
 
-/** 后台核对只通知读取已更新的内容，避免用强制刷新再触发一轮网络核对。 */
+/** 监听音源的歌单变动通知，只刷新有变动的分区，不强刷整个列表引发循环请求。 */
 internal fun CoroutineScope.observeSourceLibraryChanges(service: SourceCollections?, accountId: String,
     current: () -> Boolean, refresh: (Set<SourceLibrarySection>) -> Unit) = launch {
     try {

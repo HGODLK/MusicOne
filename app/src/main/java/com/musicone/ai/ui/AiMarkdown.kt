@@ -20,14 +20,14 @@ import org.commonmark.ext.gfm.tables.TableBlock
 
 private data class AiMarkdownKey(val text: String, val ink: Int, val link: Int, val background: Int, val density: Float)
 
-/** 跨列表回收保留已排版正文，按文本体积限制缓存，不持有页面或 View。 */
+/** 按字符数限制缓存已解析好的 Markdown 块，列表滑出回收再滑回来不用重排，也不持有 View 引用。 */
 private val aiMarkdownBlocks = object : android.util.LruCache<AiMarkdownKey, List<AiMarkdownBlock>>(400_000) {
     override fun sizeOf(key: AiMarkdownKey, value: List<AiMarkdownBlock>): Int = key.text.length.coerceAtLeast(1)
 }
 
 internal data class AiMarkdownBlock(val text: CharSequence, val columns: Int = 0)
 
-/** 与正文使用同一主题键预热，历史消息在富文本就绪后才交付布局。 */
+/** 按当前主题配色提前把 Markdown 解析好，历史消息渲染出来直接就是富文本。 */
 internal class AiMarkdownPreparer internal constructor(
     internal val markwon: Markwon, private val ink: Int, private val link: Int, private val background: Int, internal val density: Float,
 ) {
@@ -115,7 +115,7 @@ private fun AiMarkdownText(text: CharSequence, markwon: Markwon, ink: Int, link:
         view.setTextColor(ink)
         view.setLinkTextColor(link)
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, size)
-        // 无关重组不重复 setText，保留选择并避免 TextView 再次排版。
+        // 文本对象没变就不重复 setText，避免打断选词或触发 TextView 重排。
         if (view.tag !== text) {
             markwon.setParsedMarkdown(view, text as android.text.Spanned)
             view.tag = text

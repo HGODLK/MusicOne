@@ -18,7 +18,7 @@ internal fun neteaseQualityBitrate(quality: NeteaseQuality): Int = when (quality
     NeteaseQuality.DOLBY -> 999_000
 }
 
-/** 先识别实际编码；压缩后的 FLAC 码率不能用于推断位深或采样率。 */
+/** 根据实际返回的编码格式判断音质；FLAC 压缩率不固定，不能光看码率猜位深和采样率。 */
 internal fun neteaseAudioQuality(level: String, format: String, bitRate: Int,
     info: NeteaseFlacInfo? = null): NeteaseQuality {
     val normalizedLevel = level.lowercase()
@@ -60,6 +60,6 @@ internal fun neteasePlaybackSource(value: JSONObject, requested: NeteaseQuality,
         actualFormat = info?.description)
 }
 
-/** 按实际规格验证音质，每档必须拿到同档文件；只有 Hi-Res 文件时 FLAC 档不算可用，不接纳试听。 */
+/** 校验拿到的音频是否真的符合目标音质：必须是完整音频（排除试听），且规格要对应上，比如只返回 Hi-Res 时不能算普通 FLAC 可用。 */
 internal fun verifiedNeteaseQuality(quality: NeteaseQuality, media: NeteasePlaybackAddress): Boolean =
     !media.trial && media.actualQuality == quality

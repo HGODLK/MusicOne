@@ -7,7 +7,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-/** 只约束批量缓存换票；取消等待不会预占后续时隙。 */
+/** 批量缓存下载时的换票限流器，排队时如果被取消不占名额。 */
 internal class QqTicketRequestPacer(
     private val intervalMs: Long = QQ_TICKET_REQUEST_INTERVAL_MS,
     private val clockMs: () -> Long = SystemClock::elapsedRealtime,

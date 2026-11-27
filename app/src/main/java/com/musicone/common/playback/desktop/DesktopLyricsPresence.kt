@@ -9,7 +9,7 @@ import androidx.lifecycle.compose.currentStateAsState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/** 界面只上报“前台且全屏播放页打开”，桌面歌词据此让位；退到后台一律视为不可见。 */
+/** 记录全屏播放页当前是否在前台可见，可见时自动隐藏桌面歌词；应用退后台时视为不可见。 */
 internal object DesktopLyricsPresence {
     private val mutablePlayerVisible = MutableStateFlow(false)
     val playerVisible = mutablePlayerVisible.asStateFlow()

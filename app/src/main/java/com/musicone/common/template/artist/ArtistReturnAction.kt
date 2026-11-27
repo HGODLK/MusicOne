@@ -5,7 +5,7 @@ import androidx.compose.runtime.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-/** 普通返回先恢复头图，使头像锚点重新可见；拖动返回已在顶部，直接衔接。 */
+/** 点返回键时如果头图被滚上去了就先滚回顶部露出头像锚点；顶部下拉返回直接衔接动画。 */
 @Composable
 internal fun rememberArtistReturnAction(menu: MainSourcePlaylistSongMenuState?, search: PlaylistSearchState,
     motion: PageMotion?, wide: Boolean, collapsed: () -> Float, setCollapsed: (Float) -> Unit,

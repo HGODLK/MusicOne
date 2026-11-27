@@ -2,7 +2,7 @@ package com.musicone.source.qq.internal
 
 import org.json.JSONObject
 
-/** 所有列表共用账号权益和歌曲详情，缺失字段才补查，失败保留原限制。 */
+/** 批量补齐歌曲的播放权限和详情字段，查失败时保留原状态。 */
 internal class QqTrackAccessResolver(
     private val membership: (String) -> QqMembership? = QqEntitlements::membership,
     private val details: (List<MusicTrack>, String) -> JSONObject = ::requestQqTrackAccess,
@@ -16,7 +16,7 @@ internal class QqTrackAccessResolver(
         val prepared = tracks.map { track ->
             if (track.source != MusicSource.QQ) return@map track
             val original = track.qqAccess ?: QqTrackAccessInfo(trial = track.trialAvailable)
-            // 强制核对失败时不能继续把旧账号、旧时刻的权限当成本次结果。
+            // 强制刷新时先清掉旧账号和旧时间戳，避免刷新失败后继续拿旧结果当新的用
             val raw = if (forceRefresh) original.copy(permissionAccountId = "", checkedAtMs = 0L) else original
             val info = if (!forceRefresh && fresh && raw.payStatus != null && raw.permissionAccountId.isBlank()) {
                 raw.copy(permissionAccountId = accountId, checkedAtMs = now)

@@ -7,7 +7,7 @@ import com.musicone.sourceintegration.toMusicTrack
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
-/** 缓存目录只保存公开身份与不透明载荷，平台缓存和请求由音源自行管理。 */
+/** 缓存目录只存公开字段和透传数据，具体接口请求和平台缓存归音源包自己管。 */
 internal class SupplementalCachePlaylistDirectory(context: Context) {
     private val controller = SourcePackageController.get(context)
     private val snapshots = CachedPlaylistStore(context)
@@ -75,7 +75,7 @@ internal class SupplementalCachePlaylistDirectory(context: Context) {
     }
 }
 
-/** 缓存读取器根据公开分页信息判断完整性，封面跟随最新可用内容。 */
+/** 按分页结果判断是否拉完整，封面顺手更新成最新可用的一张。 */
 internal fun sourceCacheCollectionSnapshot(collection: SourceRemoteCollection, page: SourcePage<SourceContent>): MusicPlaylist {
     val tracks = page.items.mapNotNull { it.playableTrack?.toMusicTrack() }
     return collection.asSupplementalPlaylist(tracks).copy(

@@ -11,7 +11,7 @@ import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-/** 可选声明只复用真实音乐会员查询，不改变原歌曲权益缓存及播放判断。 */
+/** 向宿主提供当前 QQ 账号的音乐会员状态（复用现有会员查询，不影响歌曲权限判断）。 */
 internal class QqMembershipDetection(
     private val session: () -> Pair<String, Long>?,
     private val query: (String) -> QqMembership? = QqMembershipClient()::query,
@@ -40,7 +40,7 @@ internal class QqMembershipDetection(
         }
         currentCoroutineContext().ensureActive()
         if (session() != captured) return null
-        // 原查询给出刷新时机；失败短暂复用 unknown，合并同屏歌曲的重复查询。
+        // 查询成功按接口建议时间缓存，失败缓存 30 秒未知状态，避免同屏歌曲重复查账号
         result = Result(captured, member, member?.validUntilMs ?: (nowMs() + 30_000L))
         currentMembership
     }

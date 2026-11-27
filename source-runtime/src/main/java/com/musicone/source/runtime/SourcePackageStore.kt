@@ -12,7 +12,7 @@ internal class SourcePackageStore(private val root: File) {
         runCatching { sameSourcePackageContent(incoming, file(sourceId, reference)) }.getOrDefault(false)
 
     fun retain(sourceId: String, version: Long, extension: String, incoming: File, old: InstalledSource?): SourceInstallRef {
-        // 仅复用已有的同内容安装，不覆盖仍在运行或承担回退职责的文件。
+        // 只复用内容一致的已有安装，不覆盖正在运行或留作回退的文件。
         listOfNotNull(old?.pendingPackage, old?.activePackage, old?.rollbackPackage)
             .firstOrNull { it.versionCode == version && sameContent(sourceId, it, incoming) }?.let { return it }
         val reference = SourceInstallRef(version, UUID.randomUUID().toString())

@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
@@ -87,16 +88,21 @@ internal fun ArtworkAtmosphereBlobs(
             (longEdge * motions[index].diameter).roundToInt().coerceAtLeast(1)
         }
         val filters = arrayOfNulls<ColorFilter>(motions.size)
+        // 各色团上次着色的颜色；渐变期间颜色未变就复用滤镜，避免每帧新建九个对象
+        val tinted = LongArray(motions.size)
         var settledFor: AtmosphereSweep? = null
         onDrawBehind {
             val current = sweep()
             val rotation = rotationDegrees()
-            val elapsed = current.elapsed.floatValue
             val settled = current.settled
             if (settled) {
                 // 稳定态复用滤镜，仍逐帧绘制全部九个色团。
                 if (settledFor !== current) {
-                    for (index in filters.indices) filters[index] = ColorFilter.tint(current.colorAt(index, 1f))
+                    for (index in filters.indices) {
+                        val color = current.colorAt(index, 1f)
+                        tinted[index] = color.value.toLong()
+                        filters[index] = ColorFilter.tint(color)
+                    }
                     current.baseAt(top = true, progress = 1f)
                     current.baseAt(top = false, progress = 1f)
                     settledFor = current
@@ -107,8 +113,8 @@ internal fun ArtworkAtmosphereBlobs(
                 // 底色沿屏幕视觉纵向渐变，两端按各自进度换色，与色团扫动一致。
                 val (top, bottom) = atmosphereVisualAxis(size.width, size.height, rotation)
                 drawRect(Brush.linearGradient(listOf(
-                    current.baseAt(top = true, progress = atmosphereSweepProgress(elapsed, 0f, current.direction)),
-                    current.baseAt(top = false, progress = atmosphereSweepProgress(elapsed, 1f, current.direction)),
+                    current.baseAt(top = true, progress = current.progressAt(0f)),
+                    current.baseAt(top = false, progress = current.progressAt(1f)),
                 ), top, bottom))
             }
             val phase = phaseState.phase
@@ -117,9 +123,11 @@ internal fun ArtworkAtmosphereBlobs(
                 if (!settled) {
                     // 每个色团按当前所在的视觉高度错开换色，形成柔和扫动。
                     val depth = atmosphereVisualDepth(center.x, center.y, size.width, size.height, rotation)
-                    filters[index] = ColorFilter.tint(
-                        current.colorAt(index, atmosphereSweepProgress(elapsed, depth, current.direction)),
-                    )
+                    val color = current.colorAt(index, current.progressAt(depth))
+                    if (tinted[index] != color.value.toLong() || filters[index] == null) {
+                        filters[index] = ColorFilter.tint(color)
+                        tinted[index] = color.value.toLong()
+                    }
                 }
                 val side = sides[index]
                 drawImage(

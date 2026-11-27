@@ -4,7 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
-/** 跟随只响应用户的阅读方向，接近底部本身不能撤销向上翻阅的意图。 */
+/** 是否自动滚到底只看用户的滑动方向，用户刚往上翻时就算还离底部很近也不要抢着拉回去。 */
 internal class AiChatFollowIntent {
     var following by mutableStateOf(true)
         private set

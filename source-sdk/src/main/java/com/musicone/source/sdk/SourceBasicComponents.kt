@@ -3,10 +3,10 @@ package com.musicone.source.sdk
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 
-/** 可选的页面玻璃采样句柄，内部图层不进入音源接口。 */
+/** 可选的毛玻璃采样句柄，不向音源暴露内部图层。 */
 interface SourceBackdropState { val sourceId: String }
 
-/** 页面组合用的基础展示控件，保持宿主已有的封面与歌曲角标策略。 */
+/** 页面拼装用的基础控件，复用宿主默认的封面和角标规则。 */
 interface SourceBasicComponents {
     @Composable fun rememberBackdropState(key: String): SourceBackdropState
     @Composable fun Backdrop(state: SourceBackdropState, modifier: Modifier = Modifier, content: @Composable () -> Unit)

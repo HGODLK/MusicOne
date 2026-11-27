@@ -1,9 +1,9 @@
 package com.musicone
 
-/** 浏览入口与歌曲来源分开，补充音源不会自动变成首页或登录入口。 */
+/** 只列出主音源和本地音乐，补充音源不会出现在主音源切换列表里。 */
 internal val MAIN_MUSIC_SOURCES get() = com.musicone.sourceintegration.SourcePackageController.current()
     ?.available(com.musicone.source.sdk.SourceKind.MAIN).orEmpty().map { MusicSource.fromId(it.entry.descriptor.id) } + MusicSource.LOCAL
-/** 是否提供登录入口与是否强制登录分别判断，允许游客的平台仍可登录。 */
+/** 区分“支持登录”和“必须登录”，支持游客模式的音源依然允许用户点登录。 */
 internal val MusicSource.supportsAuthentication get() = com.musicone.sourceintegration.SourcePackageController.current()?.running(id)?.entry?.authentication != null
 internal val MusicSource.requiresAccount get() = com.musicone.sourceintegration.SourcePackageController.current()?.running(id)?.entry?.descriptor?.requiresLogin == true
 /** 已启用且既不提供登录也不强制登录的音源，界面显示“无需登录”而不是登录提示。 */

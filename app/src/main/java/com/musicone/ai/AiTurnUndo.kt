@@ -2,7 +2,7 @@ package com.musicone
 
 import org.json.JSONObject
 
-/** 快捷撤销只属于执行操作的用户轮次，旧记录通过最后一问之后的真实收据迁移。 */
+/** 快捷撤销只挂在执行操作的那一轮回答下面；旧数据通过最后一轮提问后的真实收据来兼容。 */
 internal fun aiUndoForCurrentTurn(operation: String?, checkpoint: JSONObject, messages: List<AiChatMessageUi>): String? {
     if (operation == null) return null
     checkpoint.optional("undoTurnId")?.let { turn ->

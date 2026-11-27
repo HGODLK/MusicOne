@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 识别控制层迟到的文本回声；输入法的光标和组合态始终由本地编辑值保留。 */
+/** 过滤掉 ViewModel 迟到回推的旧文本，防止覆盖掉输入框当前的光标和输入法候选词。 */
 internal class AiInputEchoes {
     private val pending = ArrayDeque<String>()
     fun sent(text: String) { pending.addLast(text) }

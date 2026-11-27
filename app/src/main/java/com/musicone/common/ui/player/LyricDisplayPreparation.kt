@@ -13,7 +13,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
 
-/** 每个隐藏目标只取得一次预算；内部等待继承开合／转向剩余时间，不重新计三秒。 */
+/** 歌词屏外准备的超时预算（默认 3 秒），如果外层开合或转屏已有截止时间则取更早的那个。 */
 internal class LyricPreparationBudget(
     private val now: () -> Long = System::nanoTime,
     private val deadline: Long = now() + PHONE_PLAYER_TURN_PREPARATION_MILLIS * 1_000_000L,
@@ -29,7 +29,7 @@ internal class LyricPreparationBudget(
     }
 }
 
-/** 回执匹配实际窗口、歌曲、宿主挂载、视口与方向，不能用旧绘制放行新准备。 */
+/** 绘制确认凭据：绑定窗口、歌曲、挂载版本、视口尺寸和旋转方向，防止旧绘制误判为新准备就绪。 */
 internal data class LyricDisplayStamp(val pane: LyricWindowPane, val track: String,
     val mount: Int, val viewport: IntSize, val padding: Int, val rotation: Int)
 
@@ -39,7 +39,7 @@ internal fun lyricDisplayStamp(pane: LyricWindowPane, track: String, rotation: I
     return LyricDisplayStamp(pane, track, pane.listHost.revision, info.viewportSize, info.beforeContentPadding, rotation)
 }
 
-/** 只有显示事务、宿主或视口变化才重录引用，正常播放帧及滚动偏移不进入缓存键。 */
+/** 监听窗口、视口尺寸和准备状态变化以触发重录，忽略普通播放帧和滚动偏移。 */
 @Composable
 internal fun ObserveLyricDisplay(epoch: LyricDrawEpoch?, owner: Any, panes: List<LyricWindowPane?>,
     preparation: List<Any?>) {
@@ -66,7 +66,7 @@ internal fun BindLyricPreparation(controller: LyricLayerTransitionController, ep
     }
 }
 
-/** 沿用现有构建诊断开关，仅记录异常阶段与匿名窗口编号，不输出歌词或歌曲资料。 */
+/** 仅在开启追踪构建时记录歌词显示异常的阶段和匿名窗口 ID，不输出歌词或歌曲信息。 */
 internal object LyricDisplayDiagnostics {
     private val reported = LinkedHashSet<Pair<String, Int>>()
     @Synchronized fun recovery(stage: String, window: Any) {

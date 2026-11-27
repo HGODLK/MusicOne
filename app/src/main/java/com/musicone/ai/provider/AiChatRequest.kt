@@ -3,7 +3,7 @@ package com.musicone
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 按用户设置发送思考和输出参数；工具续接完整保留供应商返回的协议历史。 */
+/** 按用户配置拼装思考和输出参数，多轮工具调用时原样带回接口返回的历史消息。 */
 internal fun aiChatRequest(configuration: AiConfiguration, model: AiModel?, messages: JSONArray, tools: JSONArray): JSONObject {
     if (configuration.modelId.isBlank()) throw AiProviderException(AiFailureKind.CONFIGURATION, "请先选择模型")
     require(aiRequestOptionsError(configuration.contextTokens.toString(), configuration.maxOutputTokens.toString(),

@@ -2,7 +2,7 @@ package com.musicone.source.qq.internal
 
 import org.json.JSONObject
 
-/** 对照官方目录写接口，同时携带 dirId 与 tid，不能把公开歌单编号当目录编号。 */
+/** 构造自建歌单增删歌曲请求：必须同时传 dirId 和 tid，不能拿公开歌单 ID 顶替 dirId。 */
 internal fun qqPlaylistSongRequest(cookie: String, playlist: MusicPlaylist, track: MusicTrack, add: Boolean): JSONObject {
     val directory = playlist.qqDirectoryId
         ?: playlist.id.removePrefix(QQ_PROFILE_DIRECTORY_ID_PREFIX).toLongOrNull()
@@ -46,7 +46,7 @@ internal class QqPlaylistSongRepository {
     }
 
     suspend fun change(session: PlatformSession, playlistId: String, track: MusicTrack, add: Boolean): MusicPlaylist {
-        // 写入前重新从当前账号取得目标，不能依靠页面标题或已过期的归属状态授权。
+        // 写入前重新从当前账号的自建歌单列表确认目标，防止操作到已过期或无权限的歌单
         val target = targets(session).firstOrNull { it.id == playlistId }
             ?: throw PlatformApiException("只能修改当前账号创建的歌单")
         val resolved = songs.enrichTrackMetadata(track, session.credential)

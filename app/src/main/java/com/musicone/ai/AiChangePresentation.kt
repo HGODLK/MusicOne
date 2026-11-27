@@ -2,7 +2,7 @@ package com.musicone
 
 import org.json.JSONObject
 
-/** 分组回执只使用事务实际保存的差异，不让模型重新猜测改动或成功数量。 */
+/** 操作回执只按数据库实际保存的改动来展示，不让模型自己瞎猜改了多少。 */
 internal fun aiChangeGroups(data: JSONObject): List<AiChangeGroupUi> {
     val metadata = data.optJSONArray("trackActual") ?: data.optJSONArray("trackChanges")
     return metadata?.objects().orEmpty().map { edit ->

@@ -22,7 +22,7 @@ internal enum class LyricPlaybackStepChange { NONE, ANIMATE, MULTI_STEP, RESET }
 
 internal enum class LyricPlaybackMotionPurpose { PLAYBACK, SEEK, ALIGNMENT }
 
-/** 所有自动歌词位移使用同一临界阻尼风格，仅按距离与用途调整响应速度。 */
+/** 自动滚动歌词统一使用临界阻尼弹簧，按滚动距离和场景（播放/跳转/对齐）调整刚度。 */
 internal fun lyricPlaybackMotionSpec(
     travelPx: Float = 0f,
     purpose: LyricPlaybackMotionPurpose = LyricPlaybackMotionPurpose.PLAYBACK,
@@ -48,7 +48,7 @@ internal fun lyricPlaybackMotionStiffness(
     }
 }
 
-/** 位移和焦点强调共用一个帧循环，各行保留独立的位置、速度和收敛速度。 */
+/** 歌词列表滚动和行内焦点动画（缩放/透明度/模糊/逐字）共用一个帧循环，各行独立维护位移与速度。 */
 internal class LyricPlaybackStepMotion(
     initialIndex: Int,
     private val nowNanos: () -> Long = System::nanoTime,
@@ -75,7 +75,7 @@ internal class LyricPlaybackStepMotion(
     private var turnPositionHeld = false
     private var wordsEntering = false
 
-    /** 跨屏 seek 的目标窗口进场期间调用，首帧可能按旧进度初始化，随后直接校正。 */
+    /** 跨屏跳转的新窗口进场时调用，避免首帧按旧进度亮起后再突然跳变。 */
     fun enterWords(entering: Boolean) {
         if (wordsEntering == entering) return
         wordsEntering = entering
@@ -83,7 +83,7 @@ internal class LyricPlaybackStepMotion(
         wake()
     }
 
-    /** 仅退休的跨曲来源调用；同步撤下帧驱动，保留各行实际显示值而不复位到目标。 */
+    /** 切歌退场窗口专用：立刻停掉动画循环，把各行定格在当前画面不再复位。 */
     fun freezeForTrackFade() {
         trackFadeFrozen = true
         runner?.cancel()
@@ -102,7 +102,7 @@ internal class LyricPlaybackStepMotion(
         updatePositionHold()
     }
 
-    /** 旧画面录制帧同步接管位置，不能等重组后才暂停，逐字时钟仍由原驱动维护。 */
+    /** 转屏录制旧画面时同步冻结列表位移（不能等重组后再停），逐字高亮时钟保持正常推进。 */
     fun holdTurnPosition(held: Boolean) {
         turnPositionHeld = held
         if (!held) {
@@ -134,7 +134,7 @@ internal class LyricPlaybackStepMotion(
     }
 
     fun retain(index: Int, row: LyricPlaybackRowMotion) {
-        // 只在组件提交后登记持有者；若旧组件已先退出，接回界面记住的原对象。
+        // 在组件挂上后增加引用计数，若旧行刚被回收则重新登记回表里。
         rowOwners[row] = (rowOwners[row] ?: 0) + 1
         if (turnRetainedRows[index] === row) turnRetainedRows.remove(index)
         rows[index] = row
@@ -147,7 +147,7 @@ internal class LyricPlaybackStepMotion(
             return
         }
         rowOwners.remove(row)
-        // 转向扩窗可能先移出再放回同一行，准备期不能丢掉其真实明暗和逐字状态。
+        // 转屏调整视口时同一行可能先移出再移回，冻结期间先暂存行状态，防止丢失明暗和逐字进度。
         if (turnPositionHeld && rows[index] === row) {
             turnRetainedRows[index] = row
             return
@@ -187,12 +187,12 @@ internal class LyricPlaybackStepMotion(
     fun emphasize(index: Int, current: Int, animate: Boolean, playback: Boolean) {
         if (trackFadeFrozen) return
         row(index).emphasize(current, animate, playback)
-        // 滚动基线可暂缓交接，新补入的行应按当前显示的焦点初始化。
+        // 即使列表滚动还没到位，新滑入屏幕的行也要按当前焦点句来初始化高亮状态。
         emphasisIndex = current
         wake()
     }
 
-    /** 列表按真实焦点登记；远处行不重组时，新补入的行仍按它初始化。 */
+    /** 记录当前真实焦点行，确保滑入视口的新行能直接拿到正确的焦点状态。 */
     fun presentEmphasis(current: Int) {
         if (!trackFadeFrozen) emphasisIndex = current
     }
@@ -202,7 +202,7 @@ internal class LyricPlaybackStepMotion(
         val previous = presentedIndex
         val interrupted = pendingIndex == targetIndex
         presentedIndex = targetIndex
-        // 播放跟随先登记目标，实际落位才确认；已完成的 seek 则直接确认位置。
+        // 正常播放跟随时先记下目标行，等滚动到位再确认；seek 完成后则直接确认。
         pendingIndex = targetIndex.takeIf { enabled && resumeInterrupted && (previous != it || interrupted) }
         return when {
             !enabled -> LyricPlaybackStepChange.RESET
@@ -219,7 +219,7 @@ internal class LyricPlaybackStepMotion(
 
     fun offsetPx(index: Int): Float = rows[index]?.let { scrollPosition - it.position.value } ?: 0f
 
-    /** 可见 seek 接管只转换位置坐标，焦点立即更新，不清掉尚在运动的行位移。 */
+    /** 屏内跳转接管时保留各行正在进行的位移动画，只换算坐标系并立即更新焦点。 */
     fun takeOverSeek(target: Int) {
         if (trackFadeFrozen) return
         reset()
@@ -239,7 +239,7 @@ internal class LyricPlaybackStepMotion(
         val previousVelocity = if (request?.uniform == true) 0f else scroll.velocity
         request?.finished?.complete(false)
         request = null
-        // 可见接管时只转换坐标，保留图层残量及相对速度；屏外准备才直接清零。
+        // 屏内接管时把各行位移换算到新原点并保留速度，避免画面跳变；屏外准备的新窗口才直接清零。
         rows.values.forEach { row ->
             row.words.cancelTail()
             if (presentedIndex != null) {
@@ -256,7 +256,7 @@ internal class LyricPlaybackStepMotion(
         wake()
     }
 
-    /** 等宽转向只转换位置坐标，保留行间残量与速度；真正重排仍沿原清零路径。 */
+    /** 列宽不变的转屏可保留各行剩余位移和速度（仅换算坐标）；需要重新换行时直接清零。 */
     fun prepareLayout(index: Int, preserveOffsets: Boolean = false) {
         if (trackFadeFrozen) return
         val previousScroll = scrollPosition
@@ -294,7 +294,7 @@ internal class LyricPlaybackStepMotion(
         if (!uniform) emphasisIndex = current
         wake()
         try {
-            // 调用方在等待期间持有列表滚动权，统一帧回调只在同一 UI 线程推进滚动。
+            // 调用方挂起等待期间持有列表滚动权，由统一帧循环在主线程按帧推进滚动。
             return operation.finished.await()
         } finally {
             if (request === operation) {
@@ -352,7 +352,7 @@ internal class LyricPlaybackStepMotion(
     }
 
     private fun advance(elapsed: Long, finish: Boolean) {
-        // 在真实帧回调中复核宿主代次，不能只依赖 LaunchedEffect 的异步取消。
+        // 每帧推进前再检查一次滚动权限，避免协程取消存在一帧延迟。
         if (request?.canScroll?.invoke() == false) {
             val retainedVelocity = if (request?.uniform == true) 0f else scroll.velocity
             request?.finished?.complete(false)
@@ -366,7 +366,7 @@ internal class LyricPlaybackStepMotion(
             val consumed = operation.scrollBy(requested)
             if (operation.uniform) operation.consumed += consumed else scrollPosition += consumed
             if (abs(requested - consumed) > .5f) {
-                // 到达列表边界时，以实际消费量作为终点，不能留下永久的图层补偿。
+                // 滚到列表顶部或底部滚不动时，按实际滚动距离截断终点，防止行图层一直偏着回不来。
                 operation.target = if (operation.uniform) operation.consumed else scrollPosition
                 scroll.snapTo(operation.target)
                 if (!operation.uniform) rows.forEach { (index, row) ->

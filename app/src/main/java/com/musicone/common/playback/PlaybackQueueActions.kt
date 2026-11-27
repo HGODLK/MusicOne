@@ -4,7 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 
-/** 菜单只拿稳定的队列操作，不订阅播放器每次进度和歌词更新。 */
+/** 给菜单用的队列操作回调，单独拆出来避免菜单跟着播放进度和歌词一起频繁重组。 */
 internal class PlaybackQueueActions(
     val insertNext: (MusicTrack) -> Unit,
     val remove: (MusicTrack) -> Unit,

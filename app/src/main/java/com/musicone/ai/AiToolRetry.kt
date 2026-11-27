@@ -7,7 +7,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
 
-/** 重试按本轮操作与参数记账，换调用编号或恢复任务不能重置失败次数。 */
+/** 重试次数按工具名+参数计数，模型换个 callId 重调或恢复任务都不能清零计数。 */
 internal class AiToolRetry(private val checkpoint: JSONObject) {
     suspend fun execute(name: String, arguments: String, cacheSuccess: Boolean = false,
         retrying: suspend (Int, String) -> Unit = { _, _ -> }, action: suspend () -> JSONObject): JSONObject {
@@ -55,7 +55,7 @@ internal class AiToolRetry(private val checkpoint: JSONObject) {
 internal fun aiToolResultFailed(result: JSONObject): Boolean = result.optString("status").lowercase() in
     setOf("error", "failed", "failure") || result.opt("error")?.let { it != JSONObject.NULL && it != false && it.toString().isNotBlank() } == true
 
-/** 参数对象键排序后生成稳定编号，不保存第二份敏感参数。 */
+/** 对 JSON 参数按 key 排序后算哈希当操作键，避免额外明文存一份参数。 */
 internal fun aiToolOperationKey(name: String, arguments: String): String {
     fun canonical(value: Any?): String = when (value) {
         is JSONObject -> value.keys().asSequence().toList().sorted().joinToString(",", "{", "}") { JSONObject.quote(it) + ":" + canonical(value.get(it)) }

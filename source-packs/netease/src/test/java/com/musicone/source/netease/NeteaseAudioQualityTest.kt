@@ -49,7 +49,7 @@ class NeteaseAudioQualityTest {
                 else -> NeteasePlaybackAddress("https://example.com/other", quality, NeteaseQuality.STANDARD, 128000, "mp3", false)
             })
         }
-        // 无损请求只返回 Hi-Res 文件时，FLAC 档不能冒充可用。
+        // 请求无损但接口只返回 Hi-Res 时，不应把普通 FLAC 算作可用
         assertEquals(listOf(NeteaseQuality.STANDARD, NeteaseQuality.EXHIGH, NeteaseQuality.HI_RES), qualities)
         val sq = NeteasePlaybackAddress("https://example.com/sq.flac", NeteaseQuality.LOSSLESS, NeteaseQuality.LOSSLESS, 900000, "flac", false)
         assertTrue(verifiedNeteaseQuality(NeteaseQuality.LOSSLESS, sq))

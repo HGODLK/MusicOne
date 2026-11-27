@@ -7,7 +7,7 @@ import kotlinx.coroutines.ensureActive
 import org.json.JSONObject
 import java.util.Calendar
 
-/** 统计设备会话与音乐登录分离，仅在实际结算时获取或按自然日续期。 */
+/** 听歌时长统计用的独立设备会话，真正上报时才申请，按自然日续期。 */
 internal class QqListenDurationClient(context: Context) {
     private val preferences = context.getSharedPreferences("qq_listen_duration_device", Context.MODE_PRIVATE)
     private val device get() = QqDurationDevice(Build.VERSION.RELEASE.orEmpty(), Build.MODEL.orEmpty())

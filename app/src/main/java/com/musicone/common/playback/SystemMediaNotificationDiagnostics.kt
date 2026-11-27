@@ -15,7 +15,7 @@ import androidx.media3.session.MediaNotification
 import androidx.media3.session.MediaSession
 import com.google.common.collect.ImmutableList
 
-/** 只观察默认通知的生成与系统登记，不改写通知、令牌或封面异步回调结果。 */
+/** 只用来监听和排查媒体通知的创建状态，不改动通知本身和封面加载逻辑。 */
 @androidx.annotation.OptIn(UnstableApi::class)
 internal class SystemMediaNotificationDiagnostics(
     private val context: Context,
@@ -68,7 +68,7 @@ internal class SystemMediaNotificationDiagnostics(
             }.onFailure { Log.w(TAG, "通知系统快照读取失败 类型=${it.javaClass.simpleName}") }
         }
         pendingInspection = inspection
-        // 等 Media3 提交本轮通知后再查系统；只延后诊断，不延后通知或播放。
+        // 延迟 500ms 再查系统通知列表，等 Media3 提交完，不影响正常发通知。
         handler.postDelayed(inspection, 500L)
     }
 

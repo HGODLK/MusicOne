@@ -3,7 +3,7 @@ package com.musicone
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 
-/** 方向准备与控件显隐共用当前实例，源姿态捕获之前不重置隐藏进度。 */
+/** 暂存播放控件的显隐状态，供转屏准备期间平滑交接。 */
 @Composable
 internal fun BindPhonePlayerControlsTurn(presentation: PhonePlayerPresentation?, controls: PlayerControlsVisibilityState) {
     DisposableEffect(presentation, controls) {

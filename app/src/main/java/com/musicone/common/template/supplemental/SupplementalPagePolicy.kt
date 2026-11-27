@@ -31,7 +31,7 @@ internal fun supplementalPublicPageAvailable(entry: SourceEntry, page: SourceSup
     SourceSupplementalPage.SETTINGS -> entry.settings != null
 }
 
-/** 新契约详情、列表和批量转换共用规则；旧包继续强制通过原导入服务。 */
+/** 把补充音源内容转成歌曲列表：新版走统一的详情/子项接口，旧版包继续走原导入服务。 */
 internal suspend fun supplementalTracks(entry: SourceEntry, content: SourceContent,
     selected: List<SourceChildItem>): List<SourceTrackDetails> {
     val modern = entry.supplementalPageProviderOrNull() != null

@@ -24,7 +24,7 @@ internal fun JSONObject.kugouPrivilegeItem(quality: String): JSONObject? {
         data.optJSONArray("relate_goods")?.let { goods ->
             for (index in 0 until goods.length()) goods.optJSONObject(index)?.let(::add)
         }
-        // 部分权限响应以档位名作为对象键，子对象本身不再携带 quality。
+        // 有些接口返回里直接用档位名（128/320/flac/high）当 key，子对象里没有 quality 字段
         listOf("128", "320", "flac", "high").forEach { name ->
             data.optJSONObject(name)?.let { item ->
                 add(JSONObject(item.toString()).put("quality", name))

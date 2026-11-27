@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 平台调用在同一个回调线程串行执行，关闭后不再接受迟到帧。 */
+/** 性能提示会话接口：平台调用统一在反馈线程串行执行，关闭后忽略迟到的帧回报。 */
 internal interface InteractionHintSession {
     fun target(nanos: Long)
     fun report(nanos: Long)
@@ -29,7 +29,7 @@ internal class InteractionHintFeedback(
         if (closed || disabled || !active) return
         val sample = interactionUiFrameSample(deadline, totalDuration, stages)
         safely {
-            // 无可用预算或指标不完整时撤销提示，不延用上一帧的宽松目标。
+            // 帧指标不完整或没有可用预算时关闭当前提示会话，不沿用上一帧的目标。
             if (sample == null) { release(); return@safely }
             if (session == null) {
                 target = sample.target
@@ -66,7 +66,7 @@ internal class InteractionHintFeedback(
 
 internal data class InteractionUiFrameSample(val target: Long, val actual: Long)
 
-/** 从整帧预算中保留未计入 UI 样本的实测耗时，不把这部分伪报成主线程工作。 */
+/** 从整帧预算中扣除主线程以外的耗时，算出主线程的实际可用预算，避免把其他线程耗时算到主线程头上。 */
 internal fun interactionUiFrameSample(deadline: Long, totalDuration: Long, stages: LongArray): InteractionUiFrameSample? {
     if (deadline <= 0L || totalDuration <= 0L) return null
     val actual = interactionUiWorkDuration(stages) ?: return null
@@ -75,7 +75,7 @@ internal fun interactionUiFrameSample(deadline: Long, totalDuration: Long, stage
     return if (remaining > 0L) InteractionUiFrameSample(remaining, actual) else null
 }
 
-/** 只汇总已实测的主线程阶段，不把帧间隔、等待和 GPU 时间冒充主线程工作。 */
+/** 只累加已测得的主线程各阶段耗时，排除等待和 GPU 时间。 */
 internal fun interactionUiWorkDuration(stages: LongArray): Long? {
     if (stages.isEmpty() || stages.any { it < 0L }) return null
     var total = 0L

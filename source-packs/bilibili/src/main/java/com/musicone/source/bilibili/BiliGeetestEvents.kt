@@ -16,7 +16,7 @@ internal enum class BiliGeetestFailure(val message: String) {
 internal fun BiliGeetestResult.isComplete() =
     challenge.isNotBlank() && validate.isNotBlank() && seccode.isNotBlank()
 
-/** 网页只回传固定错误阶段，避免将第三方脚本的原始错误及票据写入日志。 */
+/** 网页端只回传固定的错误阶段码，避免把极验脚本的原始报错和票据打进日志。 */
 internal class BiliGeetestBridge(
     private val onReady: () -> Unit,
     private val onSuccess: (BiliGeetestResult) -> Unit,

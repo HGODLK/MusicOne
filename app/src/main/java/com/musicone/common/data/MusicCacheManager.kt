@@ -30,7 +30,7 @@ internal data class MusicCacheState(
     val directoryRevision: Long = 0,
 )
 
-/** 缓存工作与界面生命周期分离，进度变化不替换歌单目录或重启页面入场。 */
+/** 下载任务独立于页面生命周期，进度刷新不会重置歌单目录或重播入场动画。 */
 @OptIn(FlowPreview::class)
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class MusicCacheManager private constructor(private val context: Context) {
@@ -49,7 +49,7 @@ internal class MusicCacheManager private constructor(private val context: Contex
     private val operationMutex = Mutex()
     private val previewRevision = MutableStateFlow(0L)
     private val previews = CachePlaylistPreviews(directory, offline, mutable, { owners }) { previewRevision.update { it + 1 } }
-    @Volatile private var writer: CacheWriter? = null
+    private val writers: MutableSet<CacheWriter> = java.util.concurrent.ConcurrentHashMap.newKeySet()
     private val settingsDraft = CacheSettingsDraft()
 
     @Synchronized fun stageCapacity(independent: Boolean, capacity: CacheCapacity) {
@@ -195,57 +195,35 @@ internal class MusicCacheManager private constructor(private val context: Contex
                     check(directory.signature() == requestedOwners) { "账号已变化，缓存任务已停止" }
                     updatePlaylist(detail)
                     val resolver = PlatformPlaybackResolver(context, requestOrigin = PlaybackRequestOrigin.BATCH_CACHE)
-                    var failed = 0
-                    for (track in detail.tracks.distinctBy { it.cacheIdentity() }) {
-                        ensureActive()
-                        check(directory.signature() == requestedOwners) { "账号已变化，缓存任务已停止" }
-                        mutable.update { it.copy(busyTrack = track.title) }
-                        try {
-                            if (track.source == MusicSource.LOCAL) { setStatus(track, "本地文件 · 无需缓存"); continue }
-                            if (offline.keys(track).any(offline::complete)) { setStatus(track, offline.status(track)); continue }
-                            disk.blockReason(track)?.let { throw CacheQuotaException(it) }
-                            setStatus(track, "等待缓存")
-                            val preferred = PlaybackQualityPreferences(context).read(track.source)
-                            val resolved = resolver.resolvePreferred(track, preferred)
-                            if (resolved.source.trial) throw PlatformApiException("只有试听音源")
+                    val failed = java.util.concurrent.atomic.AtomicInteger(0)
+                    // 最多 BATCH_CACHE_PARALLEL 首同时下载；每次真正开始下载与上一次相隔随机 3～8 秒，避免集中请求平台
+                    val slots = kotlinx.coroutines.sync.Semaphore(BATCH_CACHE_PARALLEL)
+                    var nextStartAt = 0L
+                    coroutineScope {
+                        for (track in detail.tracks.distinctBy { it.cacheIdentity() }) {
                             ensureActive()
                             check(directory.signature() == requestedOwners) { "账号已变化，缓存任务已停止" }
-                            val key = playbackCacheKey(context, resolved.track)
-                            val url = cacheDownloadUrl(resolved.source)
-                            val upstream = DefaultDataSource.Factory(context, DefaultHttpDataSource.Factory()
-                                .setDefaultRequestProperties(mapOf("User-Agent" to PlatformHttp.DEFAULT_USER_AGENT))
-                                .setConnectTimeoutMs(8_000).setReadTimeoutMs(8_000))
-                            val dataSource = disk.streamingFactory(upstream, strict = true).createDataSource()
-                            val downloadSpec = cacheDownloadSpec(resolved.source, upstream, disk.audio, key) { write ->
-                                ensureActive()
-                                check(directory.signature() == requestedOwners) { "账号已变化，缓存任务已停止" }
-                                write()
+                            if (track.source == MusicSource.LOCAL) { setStatus(track, "本地文件 · 无需缓存"); continue }
+                            if (offline.keys(track).any(offline::complete)) { setStatus(track, offline.status(track)); continue }
+                            disk.blockReason(track)?.let { setStatus(track, it); throw CacheQuotaException(it) }
+                            setStatus(track, "等待缓存")
+                            slots.acquire()
+                            val wait = nextStartAt - android.os.SystemClock.elapsedRealtime()
+                            if (wait > 0) delay(wait)
+                            nextStartAt = android.os.SystemClock.elapsedRealtime() +
+                                kotlin.random.Random.nextLong(BATCH_CACHE_GAP_MIN_MS, BATCH_CACHE_GAP_MAX_MS + 1)
+                            launch {
+                                try { cacheOne(track, resolver, requestedOwners) }
+                                catch (cancelled: CancellationException) { throw cancelled }
+                                catch (quota: CacheQuotaException) { setStatus(track, quota.message.orEmpty()); throw quota }
+                                catch (error: Exception) {
+                                    if (error.stopsSourcePlaybackFallback()) throw error
+                                    failed.incrementAndGet(); setStatus(track, "缓存失败 · ${error.asUserMessage()}")
+                                } finally { slots.release() }
                             }
-                            val currentWriter = CacheWriter(dataSource, downloadSpec, null) { length, bytes, _ ->
-                                ensureActive()
-                                setStatus(track, if (length > 0) "正在缓存 ${(bytes * 100 / length).coerceIn(0, 100)}%" else "正在缓存")
-                            }
-                            writer = currentWriter
-                            try { currentWriter.cache() } finally { writer = null }
-                            ensureActive()
-                            if (resolved.source.verificationPending) {
-                                val duration = cachedAudioDuration(disk.audio, key, url)
-                                val full = duration != null && mediaDurationMatches(duration, track.durationMs)
-                                offline.verify(key, full)
-                                if (!full) { offline.remove(track); throw PlatformApiException("该音源不是完整歌曲") }
-                            }
-                            if (!offline.complete(key)) throw PlatformApiException("音频未完整缓存，请重试")
-                            disk.audioChanged()
-                            setStatus(track, offline.status(track))
-                            // 预热的是音源歌词缓存，AI 歌词层不参与。
-                            try { resolver.sourceLyrics(resolved.track) }
-                            catch (cancelled: CancellationException) { throw cancelled }
-                            catch (_: Exception) { /* 歌词失败不影响已完成的音频。 */ }
-                        } catch (cancelled: CancellationException) { throw cancelled }
-                        catch (quota: CacheQuotaException) { setStatus(track, quota.message.orEmpty()); throw quota }
-                        catch (error: Exception) { if (error.stopsSourcePlaybackFallback()) throw error; failed++; setStatus(track, "缓存失败 · ${error.asUserMessage()}") }
+                        }
                     }
-                    mutable.update { it.copy(message = if (failed == 0) "本次缓存处理完成" else "$failed 首缓存失败，可重试") }
+                    mutable.update { it.copy(message = if (failed.get() == 0) "本次缓存处理完成" else "${failed.get()} 首缓存失败，可重试") }
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (error: Exception) { mutable.update { it.copy(message = error.asUserMessage()) } }
                 finally {
@@ -256,9 +234,50 @@ internal class MusicCacheManager private constructor(private val context: Contex
         }
     }
 
+    /** 批量缓存中的单首：解析首选音质、整首写入、校验完整性并预热歌词；并发调用，写入器各自登记以便取消。 */
+    private suspend fun cacheOne(track: MusicTrack, resolver: PlatformPlaybackResolver, requestedOwners: Any?) = coroutineScope {
+        mutable.update { it.copy(busyTrack = track.title) }
+        val preferred = PlaybackQualityPreferences(context).read(track.source)
+        val resolved = resolver.resolvePreferred(track, preferred)
+        if (resolved.source.trial) throw PlatformApiException("只有试听音源")
+        ensureActive()
+        check(directory.signature() == requestedOwners) { "账号已变化，缓存任务已停止" }
+        val key = playbackCacheKey(context, resolved.track)
+        val url = cacheDownloadUrl(resolved.source)
+        val upstream = DefaultDataSource.Factory(context, DefaultHttpDataSource.Factory()
+            .setDefaultRequestProperties(mapOf("User-Agent" to PlatformHttp.DEFAULT_USER_AGENT))
+            .setConnectTimeoutMs(8_000).setReadTimeoutMs(8_000))
+        val dataSource = disk.streamingFactory(upstream, strict = true).createDataSource()
+        val downloadSpec = cacheDownloadSpec(resolved.source, upstream, disk.audio, key) { write ->
+            ensureActive()
+            check(directory.signature() == requestedOwners) { "账号已变化，缓存任务已停止" }
+            write()
+        }
+        val currentWriter = CacheWriter(dataSource, downloadSpec, null) { length, bytes, _ ->
+            ensureActive()
+            setStatus(track, if (length > 0) "正在缓存 ${(bytes * 100 / length).coerceIn(0, 100)}%" else "正在缓存")
+        }
+        writers += currentWriter
+        try { currentWriter.cache() } finally { writers -= currentWriter }
+        ensureActive()
+        if (resolved.source.verificationPending) {
+            val duration = cachedAudioDuration(disk.audio, key, url)
+            val full = duration != null && mediaDurationMatches(duration, track.durationMs)
+            offline.verify(key, full)
+            if (!full) { offline.remove(track); throw PlatformApiException("该音源不是完整歌曲") }
+        }
+        if (!offline.complete(key)) throw PlatformApiException("音频未完整缓存，请重试")
+        disk.audioChanged()
+        setStatus(track, offline.status(track))
+        // 预热的是音源歌词缓存，AI 歌词层不参与。
+        try { resolver.sourceLyrics(resolved.track) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { /* 歌词失败不影响已完成的音频。 */ }
+    }
+
     fun cacheTrack(track: MusicTrack) = cache(singleTrackPlaylist(track))
     fun removeTrack(track: MusicTrack) = remove(singleTrackPlaylist(track))
-    fun cancel() { writer?.cancel(); batch?.cancel() }
+    fun cancel() { writers.forEach(CacheWriter::cancel); batch?.cancel() }
     private fun singleTrackPlaylist(track: MusicTrack) = MusicPlaylist("cache-track:${track.id}", track.source,
         track.title, "", "", 1, track.artworkStart, track.artworkEnd, track.artworkMark, listOf(track), track.artworkUrl)
 
@@ -318,6 +337,11 @@ internal class MusicCacheManager private constructor(private val context: Contex
     }
 
     companion object {
+        /** 批量缓存最多同时下载的歌曲数。 */
+        private const val BATCH_CACHE_PARALLEL = 3
+        /** 相邻两首开始下载的最小／最大间隔（随机取值）。 */
+        private const val BATCH_CACHE_GAP_MIN_MS = 3_000L
+        private const val BATCH_CACHE_GAP_MAX_MS = 8_000L
         @Volatile private var instance: MusicCacheManager? = null
         fun get(context: Context): MusicCacheManager = instance ?: synchronized(this) {
             instance ?: MusicCacheManager(context.applicationContext).also { instance = it }

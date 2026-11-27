@@ -10,7 +10,7 @@ import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import org.json.JSONObject
 
-/** 仅供云歌单管理使用，不改变原有登录、歌曲解析和播放请求。 */
+/** 云歌单管理专用的网络请求封装。 */
 internal interface KugouCollectionTransport {
     fun post(session: KugouSession, path: String, body: JSONObject,
         extra: Map<String, String> = emptyMap(), encrypted: Boolean = false,
@@ -30,7 +30,7 @@ internal class KugouCloudCollectionTransport : KugouCollectionTransport {
             return JSONObject(PlatformHttp.postJson(KugouProtocol.signedAndroidUrl(base, params, body.toString()),
                 body.toString(), session.cookie, kugouAndroidHeaders(params, router ?: kugouGatewayRouter(base))).text)
         }
-        // 云歌单接口使用独立的六位会话串和 PKCS#1 RSA，不能套用登录的裸 RSA。
+        // 云歌单接口用独立的 6 位随机串和 PKCS#1 RSA 加密，和登录接口的裸 RSA 不同
         val alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
         val random = SecureRandom()
         val aes = buildString { repeat(6) { append(alphabet[random.nextInt(alphabet.length)]) } }
@@ -75,7 +75,7 @@ internal class KugouCloudCollectionTransport : KugouCollectionTransport {
     }
 }
 
-/** 写操作必须由平台明确确认，缺状态或 status=0 都不是成功。 */
+/** 校验写操作响应：必须明确返回成功状态，缺 status 或 status=0 都算失败。 */
 internal fun JSONObject.requireKugouCollectionSuccess() {
     val code = optInt("error_code", optInt("errcode", 0))
     if (optInt("status", -1) != 1 || code != 0) {

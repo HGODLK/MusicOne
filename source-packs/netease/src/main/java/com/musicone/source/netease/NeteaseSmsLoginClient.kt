@@ -10,7 +10,7 @@ internal data class NeteaseSmsRequest(val path: String, val payload: JSONObject,
     )
 }
 
-/** 短信匿名会话独立于播放请求；协议对齐 MeloX，不带旧账号或 RN 设备上下文。 */
+/** 短信登录走独立的匿名会话（协议参考 MeloX），不带旧账号和播放器请求头。 */
 internal class NeteaseSmsLoginClient(
     private val post: (NeteaseSmsRequest) -> NeteaseHttpResponse = { request ->
         NeteaseHttp.postForm(request.url, mapOf("params" to NeteaseCrypto.encryptEapi(request.path,
@@ -34,7 +34,7 @@ internal class NeteaseSmsLoginClient(
         val body = runCatching { JSONObject(response.text) }.getOrElse { throw NeteaseApiException("网易云返回了无法识别的数据") }
         val headers = response.headers.filterKeys { it.equals("Set-Cookie", true) }.values.flatten()
         val merged = neteaseMergeResponseCookies(cookie, body.optString("cookie").split(';') + headers)
-        // HTTP 400 也可能携带完整业务错误和挑战，先分类再处理传输状态。
+        // HTTP 400 响应体里也可能带风控验证信息，先解析业务错误再处理 HTTP 状态码
         body.throwIfNeteaseSecurityVerificationRequired(merged)
         if (response.status !in 200..299) throw NeteaseApiException(
             body.optString("message").ifBlank { body.optString("msg").ifBlank { "网易云请求失败（${response.status}）" } },

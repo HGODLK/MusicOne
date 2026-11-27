@@ -2,7 +2,7 @@ package com.musicone.source.kugou
 
 import com.musicone.source.sdk.SourceMembershipDetector
 
-/** 只向宿主声明已核对的音乐会员状态，查询失败和未查询保持未知。 */
+/** 向宿主提供当前账号的会员状态，查不到或未查询时返回未知。 */
 internal class KugouMembershipDeclaration(
     private val state: () -> KugouPackageState?,
 ) : SourceMembershipDetector {

@@ -2,10 +2,10 @@ package com.musicone.source.sdk
 
 import kotlinx.coroutines.flow.Flow
 
-/** 可选能力，不改变旧音源接口、集合身份或临时集合的分页语义。 */
+/** 可选的资料库扩展能力，兼容旧音源接口和原有分页行为。 */
 interface SourceCollectionFavoritePolicy {
     fun canFavorite(collection: SourceCollection): Boolean = true
-    /** 同一账号内的等价收藏键；宿主只比较交集，不解释平台编号。 */
+    /** 同一账号下用于匹配同一首歌的收藏键；宿主只比对交集，不解析平台 ID。 */
     fun favoriteIdentityKeys(collection: SourceCollection): Set<String> = setOf(collection.stableId)
 }
 
@@ -21,7 +21,7 @@ interface SourceCollectionDetailsEditing {
     suspend fun editDetails(collection: SourceCollection, edit: SourceCollectionDetailsEdit): SourceCollection
 }
 
-/** 云端顺序编辑独立于本地显示排序和播放队列；读取必须完整分页并保持服务器顺序。 */
+/** 调整云端歌单顺序，不影响本地排序和播放队列；读取时需拉完所有分页并保持服务端顺序。 */
 interface SourceCollectionRemoteOrder {
     fun supportsRemoteOrder(collection: SourceCollection): Boolean
     suspend fun orderedTracks(collection: SourceCollection, request: SourceCursorRequest): SourcePage<SourceTrackDetails>

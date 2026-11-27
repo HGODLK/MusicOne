@@ -79,7 +79,7 @@ internal fun MenuArtistArtwork(mid: String, key: String, mark: String, visible: 
         })
 }
 
-/** 不参与菜单录制；源头像与飞行头像只在同一帧交接一次。 */
+/** 歌手真实头像画在菜单截图层外面，和转场飞行头像在同一帧完成交接。 */
 @Composable
 internal fun MenuArtistArtworkOverlay(state: MenuArtistArtworkState, host: Rect, expanded: Boolean, rotation: Int = 0) {
     SideEffect { state.rotation = rotation }
@@ -102,7 +102,7 @@ internal fun MenuArtistArtworkOverlay(state: MenuArtistArtworkState, host: Rect,
                 .graphicsLayer {
                     rotationZ = rotation.toFloat()
                     val frame = navigation?.pages?.lastOrNull()
-                    // 详情转场由保留层接管整个来源菜单，原层不能留下第二份静止头像。
+                    // 进入详情转场后由保留层接管显示，这里把原头像藏起来避免重叠两份。
                     val retainedByPage = frame?.retainsMenuArtwork(state) == true
                     alpha = if (retainedByPage || (frame?.sourceKey == slot.key &&
                         frame.motion.moving && frame.motion.hasSharedCover)) 0f else opacity * (slot.contentAlpha?.value ?: 1f)
@@ -120,7 +120,7 @@ internal fun RetainedMenuArtistArtworkOverlay(state: MenuArtistArtworkState, fra
             Modifier.size(with(density) { bounds.width.toDp() }, with(density) { bounds.height.toDp() })
                 .graphicsLayer {
                     rotationZ = slot.rotation.toFloat()
-                    // 起点固定，宿主位置和进度在绘制阶段共同读取，避免组合阶段旧 host 造成一帧跳动。
+                    // 起点固定，宿主坐标和动画进度都在绘制阶段一起读，避免组合阶段读到旧坐标闪一帧。
                     val progress = frame.motion.value
                     val excluded = frame.sourceKey.takeIf { frame.motion.hasSharedCover }
                     val offset = menuArtistHandoffOffset(bounds, frame.motion.hostBounds,

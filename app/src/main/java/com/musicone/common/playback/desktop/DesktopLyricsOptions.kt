@@ -65,14 +65,14 @@ internal data class DesktopLyricsConfig(
     }
 }
 
-/** 设备级设置，所有音源共用，不参与账号和音乐库同步。 */
+/** 桌面歌词本地设置，所有音源共用，不随账号同步。 */
 internal object DesktopLyricsOptions {
     private var store: SharedPreferences? = null
     private val mutableConfig = MutableStateFlow(DesktopLyricsConfig())
     private val mutableAccessRevision = MutableStateFlow(0L)
     val config = mutableConfig.asStateFlow()
 
-    /** 悬浮窗权限可能在系统设置里变化，变化后由设置页或系统监听推动重新检查。 */
+    /** 悬浮窗权限变化版本号，触发桌面歌词重新检查权限。 */
     val accessRevision = mutableAccessRevision.asStateFlow()
 
     fun initialize(context: Context) {

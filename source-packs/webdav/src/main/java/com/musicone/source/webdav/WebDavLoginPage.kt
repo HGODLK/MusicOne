@@ -263,7 +263,7 @@ private fun ServerRow(server: WebDavServer, current: Boolean, enabled: Boolean, 
     }
 }
 
-/** 公共 FormField 没有密码形态，这里按它的标签、边框和间距补一个。 */
+/** 公共 FormField 组件暂不支持密码输入框，这里按同样的样式自己封装一个。 */
 @Composable
 private fun PasswordField(value: String, enabled: Boolean, onChange: (String) -> Unit) {
     var visible by remember { mutableStateOf(false) }

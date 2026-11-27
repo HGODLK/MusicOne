@@ -5,7 +5,7 @@ import com.musicone.sourceintegration.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** 云端收藏只由包执行，宿主仍按旧账号命名空间保存离线收藏索引。 */
+/** 云端红心操作交给音源包，本地仍按原账号命名空间维护离线收藏索引。 */
 internal class MusicFavoriteRepository(context: Context) {
     private val application = context.applicationContext
     private val controller = SourcePackageController.get(context)

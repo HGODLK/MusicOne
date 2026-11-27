@@ -3,7 +3,7 @@ package com.musicone
 import java.net.HttpURLConnection
 import java.net.URI
 
-/** 只读取文件头；部分系统将 FLAC 报告为 audio/raw，不能据此判成试听。 */
+/** 只读 FLAC 文件头信息；部分机型会把 FLAC 的 MIME 上报成 audio/raw，不能拿这个判断是否试听。 */
 internal fun readFlacMediaDuration(url: String): Long? = readFlacMediaInfo(url)?.durationMs
 
 internal data class FlacMediaInfo(val durationMs: Long, val sampleRate: Int, val bitDepth: Int) {

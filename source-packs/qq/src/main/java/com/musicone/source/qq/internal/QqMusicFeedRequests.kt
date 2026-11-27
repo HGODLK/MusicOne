@@ -3,7 +3,7 @@ package com.musicone.source.qq.internal
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
-/** 沿用 0.2.0 的官方分页重试；不重复准备卡片，取消及未登录直接交还上层。 */
+/** 推荐流分页请求的自动重试包装（协程取消和未登录直接往外抛）。 */
 internal suspend fun <T> loadQqMusicFeedWithRetry(
     wait: suspend (Long) -> Unit = { delay(it) },
     request: suspend () -> T,

@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 
-/** 界面线程转发现有宿主绘制，独立原生子层更新也会经过此处；不申请额外帧。 */
+/** 监听宿主页面重绘并转发给迷你条毛玻璃采样，不主动申请额外帧。 */
 internal class MiniPlayerBackdropUpdates {
     private var revision = 0L
     private val subscribers = linkedMapOf<Any, (Long) -> Unit>()
@@ -26,7 +26,7 @@ internal class MiniPlayerBackdropUpdates {
 
     fun hostDraw() {
         revision++
-        // 回调读取采样几何和显隐资格，不能反向让整页绘制订阅播放页的连续进度。
+        // 只在回调内部按需读取采样状态，避免让整页绘制订阅播放页的连续动画进度。
         Snapshot.withoutReadObservation {
             subscribers.values.forEach { it(revision) }
         }
@@ -67,7 +67,7 @@ internal fun rememberMiniPlayerGlassSampling(source: GraphicsLayer): MiniPlayerG
     return remember(updates, source, allowed) { MiniPlayerGlassSampling(updates, source, allowed) }
 }
 
-/** 配置只保存独立原生录制命令，不保留临时 DrawScope；同一宿主帧只录制一次。 */
+/** 封装底部页面背景的离线录制与重绘通知，同一宿主帧内最多录制一次。 */
 internal class MiniPlayerGlassRecording {
     private var record: (() -> Unit)? = null
     private var configuration: Any? = null

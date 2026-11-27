@@ -11,7 +11,7 @@ import kotlinx.coroutines.CoroutineStart
 
 internal const val PHONE_PLAYER_TURN_PREPARATION_MILLIS = 3_000L
 
-/** 只在转向前暂存一张旧画面，目标仍由原来的播放页实例准备。 */
+/** 横竖屏切换的准备阶段控制器：先截一张旧画面盖在上面，等新方向布局和动画起点都稳定后再揭开。 */
 @Stable
 internal class PhonePlayerTurnPreparation {
     var active by mutableStateOf(false)
@@ -51,7 +51,7 @@ internal class PhonePlayerTurnPreparation {
         captureReading: () -> Boolean = { true },
         prepareMotion: () -> Unit = {},
         changeLayout: () -> Unit): Boolean {
-        // 转向必须等到实际起点就绪；低帧率不能触发超时落到目标端点。
+        // 转向准备不设死超时，必须等新方向布局和起点帧真正就绪。
         deadlineNanos = Long.MAX_VALUE
         val interruptedFade = fading
         active = true
@@ -68,7 +68,7 @@ internal class PhonePlayerTurnPreparation {
         try {
             if (image == null || interruptedFade) {
                 captureFrame = capture@{
-                    // 阅读基线、行残量和几何与旧像素在同一录制帧交付。
+                    // 在录制旧画面快照的同一帧，同步捕获歌词阅读基线和各元素当前姿态。
                     if (!captureReading()) return@capture false
                     turn.refreshEndpoints(keys, turn.targetRotation)
                     turn.captureSourceFrame()
@@ -76,7 +76,7 @@ internal class PhonePlayerTurnPreparation {
                 }
                 try {
                     coroutineScope {
-                        // 两份旧帧同一轮发起，目标布局必须等它们拷贝结束后才改变。
+                        // 并发截取旧画面快照，必须等拷贝全部完成后再切换目标布局。
                         val content = async(start = CoroutineStart.UNDISPATCHED) { captureContent() }
                         (capture ?: { awaitCancellation() }).invoke()
                         content.await()
@@ -87,7 +87,7 @@ internal class PhonePlayerTurnPreparation {
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
-            // 旧帧失败时保留原方向，不能用未经准备的目标替代真实起点。
+            // 截取旧画面失败时放弃本次转向，保持原方向不变。
             return false
         }
         sourceAlpha.snapTo(1f)
@@ -106,7 +106,7 @@ internal class PhonePlayerTurnPreparation {
             }
         }
         awaitStableTarget()
-        // 目标排版与最终补偿起点分别验收；第二阶段仍由旧帧覆盖，歌词位置仍锁定。
+        // 先等目标布局稳定，再把元素补偿到动画起点并验收第二遍（此时旧画面仍盖在上面）。
         prepareMotion()
         turn.stagePreparation()
         revision++

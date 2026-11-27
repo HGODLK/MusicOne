@@ -85,7 +85,7 @@ internal fun packLgPcm(input: ByteBuffer, encoding: Int, outputDepth: Int, outpu
     return source.position() - input.position()
 }
 
-/** 一次补数尽量填满原生队列；只有已接收的完整帧才消费输入，队列满时立即回压。 */
+/** 尽量往原生队列里多塞数据；只有真正写进去的完整帧才推进输入指针，队列满了就停。 */
 internal fun fillLgPcmQueue(input: ByteBuffer, encoding: Int, outputDepth: Int, channels: Int,
     packed: ByteBuffer, enqueue: (ByteBuffer) -> Int, submitted: (Long) -> Unit): Int {
     while (input.hasRemaining()) {

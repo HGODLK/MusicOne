@@ -9,7 +9,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 
-/** 切歌与寻焦共用窗口角色；绘制读取最新事务，不等待低帧率 UI 重组。 */
+/** 切歌窗口的图层变换修饰符：在绘制阶段实时读取最新窗口角色和位移，不依赖 UI 重组。 */
 internal fun lyricTrackWindowStageRole(
     window: LyricWindow,
     current: LyricWindow?,
@@ -22,7 +22,7 @@ internal fun lyricTrackWindowStageRole(
     else -> LyricWindowStageRole.DETACHED
 }
 
-/** 图层和文字边界使用相同的即时位移，准备窗口仍在原位静默录制。 */
+/** 计算切歌窗口当前的纵向位移（屏外准备中的窗口停在原位静默录制）。 */
 internal fun lyricTrackWindowTranslation(
     role: LyricWindowStageRole,
     preparing: Boolean,

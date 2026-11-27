@@ -86,9 +86,6 @@ internal object BiliDashBuilder {
         return "bili-$accountNamespace-$bvid-$cid-track-$streamId-$cleanCodec"
     }
 
-    /**
-     * XML 字符转义。
-     */
     private fun xmlEscape(value: String): String = value
         .replace("&", "&amp;")
         .replace("\"", "&quot;")

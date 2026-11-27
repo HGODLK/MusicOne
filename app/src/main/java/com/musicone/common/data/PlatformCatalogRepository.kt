@@ -9,7 +9,7 @@ import org.json.JSONObject
 
 internal enum class CatalogFetchPolicy { CACHE_FIRST, SERVER_VERIFY }
 
-/** 在线目录只经过已激活音源 SDK；本地缓存由原存储层独立保留。 */
+/** 在线内容全部走已启用的音源 SDK，本地缓存由原有存储层单独管理。 */
 internal class PlatformCatalogRepository(context: Context) {
     private val controller = SourcePackageController.get(context)
     private val pages = mutableMapOf<Pair<String, Int>, SourcePage<SourceHomeSection>>()

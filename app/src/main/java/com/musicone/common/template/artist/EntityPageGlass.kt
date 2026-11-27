@@ -26,7 +26,7 @@ private class EntityGlassCache {
     var scale = 1f
 }
 
-/** 沿用播放页的降采样预模糊，整个返回表面共用一张玻璃底图，文字与头像独立交接。 */
+/** 复用播放页的降采样预模糊，整个转场背景共用一张毛玻璃图，文字和头像单独做交接。 */
 @Composable
 internal fun EntityPageGlass(frame: EntityFrame) {
     val fallbackLayer = LocalPlayerBackdropTexture.current
@@ -67,7 +67,7 @@ internal fun EntityPageGlass(frame: EntityFrame) {
         }
         if (canBlur && cache.ready) {
             scale(1f / cache.scale, 1f / cache.scale, Offset.Zero) { drawLayer(blurred) }
-            // 源端与歌曲菜单的 24dp 模糊、72% 底色一致，终点由原菜单快照接管。
+            // 起始态保持和歌曲菜单一样的 24dp 模糊和 72% 底色，收起末段无缝交给原菜单快照。
             drawRect(surface.copy(alpha = motionLerp(.72f, .16f, frame.motion.value)))
         } else drawRect(fallback)
         if (frame.target is EntityTarget.Album) {

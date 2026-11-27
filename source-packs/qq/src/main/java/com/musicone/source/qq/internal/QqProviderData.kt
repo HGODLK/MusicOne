@@ -2,7 +2,7 @@ package com.musicone.source.qq.internal
 
 import org.json.JSONObject
 
-/** QQ字段由包内解读，公共曲目只保存不透明数据。键名延续旧持久化身份。 */
+/** 从歌曲的 providerData 里读取 QQ 私有字段（key 名保持兼容旧版持久化数据）。 */
 internal val MusicTrack.qqSongMid: String get() = providerData["songMid"].orEmpty()
 
 internal val MusicTrack.qqAccess: QqTrackAccessInfo?

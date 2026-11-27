@@ -30,13 +30,13 @@ internal fun playerGlassCanPrepare(source: GraphicsLayer?, target: GraphicsLayer
         source != null && target != null && source.size.width > 0 && source.size.height > 0 &&
         target.size.width > 0 && target.size.height > 0
 
-/** 缓存就绪是在原画布中登记的；本帧已选的路径不因该登记中途切换。 */
+/** 计算横屏原生毛玻璃背景层本帧的几何参数；不满足原生绘制条件时返回 null，交回普通 Canvas 绘制。 */
 internal fun playerGlassNativeFrameState(motion: PageMotion, flight: PhonePlayerFlightRotation?, rotation: Int,
     prewarming: Boolean, surface: State<PlayerSurfaceFlightFrame?>, density: Density,
     ready: () -> Boolean): State<PlayerGlassNativeFrame?> = derivedStateOf(structuralEqualityPolicy()) {
     if (prewarming || !motion.moving || flight == null || rotation == 0 && !flight.handoffActive)
         return@derivedStateOf null
-    // 即使缓存尚未就绪也订阅进度，下一次运动输入可以使用刚建立的原引用链。
+    // 先读取 motion.value 建立状态订阅，这样缓存一准备好下一帧就能切到原生路径。
     val progress = motion.value
     val alpha = playerGlassAlpha(progress)
     if (progress == 0f || alpha <= 0f || !ready() || motion.targetSnapshot["surface"] == null)
@@ -46,7 +46,7 @@ internal fun playerGlassNativeFrameState(motion: PageMotion, flight: PhonePlayer
         geometry.rotation, with(density) { playerSurfaceCorner(progress).dp.toPx() }, progress, alpha)
 }
 
-/** 持有原四个模糊引用层，沿用原混合规则，不录制像素快照。 */
+/** 封装模糊背景的四个 GraphicsLayer，动画期间只改透明度、裁剪轮廓和旋转角度，不重新录制。 */
 internal class PlayerGlassNativeBackground(
     private val source: GraphicsLayer,
     private val target: GraphicsLayer,
@@ -66,7 +66,7 @@ internal class PlayerGlassNativeBackground(
     fun draw(scope: DrawScope) { scope.drawLayer(clipped) }
 }
 
-/** 背景指令只引用原合成层，连续参数留在属性阶段，不重录这张画布。 */
+/** 原生毛玻璃背景层：在 graphicsLayer 属性阶段更新变换，Canvas 只负责画出合成层。 */
 @Composable
 internal fun PlayerGlassNativeBackgroundLayer(background: PlayerGlassNativeBackground,
     frame: State<PlayerGlassNativeFrame?>, sampleScale: () -> Float) {
@@ -76,7 +76,7 @@ internal fun PlayerGlassNativeBackgroundLayer(background: PlayerGlassNativeBackg
         alpha = if (current == null) 0f else 1f
         if (current != null) {
             background.apply(current, sampleScale())
-            // 手动更新原生子层需要通知宿主；本节点自身保持恒等变换。
+            // 直接修改子 GraphicsLayer 属性不会自动触发父 View 重绘，需手动 invalidate。
             view.invalidate()
         }
     }) { background.draw(this) }

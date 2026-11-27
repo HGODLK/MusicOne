@@ -47,7 +47,7 @@ internal fun SourcePlayerOpening.scaleOf(element: SourcePlayerSharedElement): So
         else -> SourcePlayerSharedScale.STRETCH
     }
 
-/** 逐帧更新的裁剪轮廓；用值类型让图层在矩形或圆角变化时重新生成轮廓。 */
+/** 展开裁剪用的动态圆角矩形 Shape，用 data class 让矩形或圆角变化时自动重算轮廓。 */
 internal data class SourcePlayerClipShape(val rect: Rect, val corner: Float) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
         if (corner > 0f) Outline.Rounded(RoundRect(rect, CornerRadius(corner))) else Outline.Rectangle(rect)

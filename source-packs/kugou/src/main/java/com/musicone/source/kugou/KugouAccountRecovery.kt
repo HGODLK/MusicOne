@@ -1,6 +1,6 @@
 package com.musicone.source.kugou
 
-/** 34351 是账号注销状态，恢复由官方页面完成，不能当成验证码错误重复提交。 */
+/** 错误码 34351 表示账号处于注销冷静期，需要跳官方页面恢复，不能当验证码错误重试。 */
 internal fun kugouAccountRecoveryChallenge(cookie: String): PlatformSecurityChallenge = PlatformSecurityChallenge(
     source = MusicSource.KUGOU,
     kind = PlatformSecurityVerificationKind.WEB,

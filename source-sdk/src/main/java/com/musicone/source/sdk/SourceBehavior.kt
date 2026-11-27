@@ -7,7 +7,7 @@ interface SourcePlaybackBehavior {
     val pauseOnFailure: Boolean get() = false
 }
 
-/** 可选歌词交接和刷新策略，不向已有提供者接口增加抽象成员。 */
+/** 可选的歌词交接和刷新策略，拆成独立接口以兼容旧版提供者。 */
 interface SourceLyricBehavior {
     val waitForSingleSwitchSettlement: Boolean get() = false
     val preserveVerbatimFallback: Boolean get() = false

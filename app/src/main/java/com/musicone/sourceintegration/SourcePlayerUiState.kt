@@ -6,7 +6,7 @@ import androidx.compose.runtime.remember
 import com.musicone.*
 import com.musicone.source.sdk.*
 
-/** 只有明确未支持的形态使用原生页；加载异常不是未支持。 */
+/** 只有音源明确声明不支持当前屏幕形态时才退回原生播放页，加载出错不算不支持。 */
 internal fun SourcePlayerUiDeclaration.supports(form: SourcePlayerForm): Boolean = when (form) {
     SourcePlayerForm.PHONE_PORTRAIT -> supportsPhone
     SourcePlayerForm.PHONE_LANDSCAPE -> supportsPhone && supportsPhoneLandscape

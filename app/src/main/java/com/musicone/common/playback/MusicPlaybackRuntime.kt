@@ -61,6 +61,14 @@ class MusicPlaybackRuntime(private val application: Application) {
     private var playbackRequestGeneration = 0L
     private var playWhenReadyRequested = false
     private val failureRecovery = PlaybackFailureRecovery()
+    private val currentTicket = PlaybackTicketTracker()
+    private val ticketRefresher = PlaybackTicketRefresher(
+        scope = scope,
+        recover = playbackResolver::recover,
+        resolve = playbackResolver::resolve,
+        isCurrent = ::isCurrentRequest,
+        onRenewed = ::onTicketRenewed,
+    )
     private val playbackPresentation = PlaybackPresentationDelay(
         scope = scope,
         stillStopped = { key ->
@@ -96,6 +104,22 @@ class MusicPlaybackRuntime(private val application: Application) {
     private val recentPlayReporter = SourceRecentPlayReporter(application, scope)
     private val playedDuration = PlaybackPlayedDuration()
     private val sourcePlaybackSessions = SourcePlaybackSessionReporter(application)
+    private val autoMix = AutoMixController(application, scope, object : AutoMixHost {
+        private val cachedNext = AutoMixCachedNext(application)
+        override val state get() = _state.value
+        override val generation get() = playbackRequestGeneration
+        override val player get() = playbackSession.player
+        override fun naturalNext(): MusicTrack? = autoMixNaturalNext(_state.value)
+        override suspend fun preparedNext(track: MusicTrack): ResolvedPlayback? =
+            if (track.source == MusicSource.LOCAL) playbackResolver.resolve(track, qualityPreferences.read(track.source))
+            else qualityPreferences.read(track.source).let { preferred ->
+                nextAudioPreloader.peekDownloaded(track, preferred) ?: cachedNext.resolve(track, preferred)
+            }
+        override fun mayTransition(): Boolean = playWhenReadyRequested && playerMatchesCurrentTrack() &&
+            rapidTrackSwitch.presentation.value == null && !trackLoader.isResolving && !ticketRefresher.isRenewing &&
+            !_state.value.qualityChanging && !PlaybackSleepTimer.afterTrack && !PlaybackSleepTimer.expired()
+        override fun commitHandoff(to: ResolvedPlayback) = commitAutoMixHandoff(to)
+    })
     private val queueRemoval = PlaybackQueueRemoval(_state,
         startNext = { track, remaining ->
             failureRecovery.reset()
@@ -136,7 +160,7 @@ class MusicPlaybackRuntime(private val application: Application) {
                 return
             }
             sourcePlaybackSessions.finish(SourcePlaybackSessionEndReason.ERROR, currentPlaybackPosition())
-            // 续播次数用尽后统一跳过，不再按音源声明保留在失败歌曲上。
+            // 重试次数用完后统一跳过，不再停留在播不了的这首歌上。
             if (recoverUnavailableTrack("播放失败")) return
             if (track.source.playbackBehavior?.pauseOnFailure == true) {
                 playWhenReadyRequested = false
@@ -155,7 +179,7 @@ class MusicPlaybackRuntime(private val application: Application) {
                 events.contains(Player.EVENT_PLAYER_ERROR)
             if (!affectsPresentation || !playerMatchesCurrentTrack()) return
             val track = _state.value.currentTrack ?: return
-            // 同批旧停止回调可能晚于新媒体装载，统一读取批次结束时的真实状态。
+            // 同一批事件里，旧歌的停止回调可能比新歌加载还晚到，这里直接读播放器最终的真实状态。
             _playbackActivity.value = PlaybackActivity(track.id, player.isPlaying)
             playedDuration.record(playbackRequestGeneration, player.isPlaying)
             val position = currentPlaybackPosition()
@@ -222,6 +246,7 @@ class MusicPlaybackRuntime(private val application: Application) {
             }
         }
         scope.prefetchPlayerArtwork(state)
+        autoMix.start()
         nextAudioPreloader.observe({ _state.value }, { rapidTrackSwitch.presentation.value != null },
             { playbackSession.player }, qualityQueryWaiting = { qualityController.waitingForUser })
         scope.launch {
@@ -241,9 +266,9 @@ class MusicPlaybackRuntime(private val application: Application) {
     }
 
     fun configureSource(source: MusicSource) {
-        // 浏览入口切换不接管或替换当前混合队列，包括正在解析的曲目。
+        // 仅仅切换浏览页面时，不要动当前正在播（或正在解析）的队列。
         if (_state.value.currentTrack != null) return
-        // 页面重建时沿用服务当前请求，不能取消后台正在解析的下一首。
+        // 页面重建时直接复用服务里现有的播放状态，别取消后台正在解析的歌曲。
         if (_state.value.currentTrack?.source == source &&
             (playerMatchesCurrentTrack() || trackLoader.isResolving || rapidTrackSwitch.presentation.value != null)) return
         stopRadio()
@@ -265,6 +290,9 @@ class MusicPlaybackRuntime(private val application: Application) {
                 playWhenReadyRequested = live.playWhenReady
                 updateProgress(live.positionMs, live.state.currentTrack?.id)
                 _playbackActivity.value = PlaybackActivity(live.state.currentTrack?.id, live.playing)
+                live.state.currentTrack?.let { restored ->
+                    currentTicket.record(generation, restored, SupplementalPlaybackRequests.resource(restored.previewUrl))
+                }
             }
             val track = _state.value.currentTrack
             if (resolvedPlaybackRequiresDolby(track?.previewUrl.orEmpty()) && !DolbyPlaybackPolicy.eligibility.allowed) {
@@ -539,20 +567,23 @@ class MusicPlaybackRuntime(private val application: Application) {
             _state.update { it.copy(playbackMessage = current.unavailableReason ?: "文件已失联，请重新关联") }
             return
         }
-        // 浏览目标尚未正式提交时只更新播放意图，不能重新加载仍留在正式状态里的旧歌。
-        if (rapidTrackSwitch.presentation.value != null || trackLoader.isResolving) {
+        // 快速切歌还没落定，或者正在加载/刷新地址时，只记下用户的播放/暂停意图，别去重新加载旧歌。
+        if (rapidTrackSwitch.presentation.value != null || trackLoader.isResolving || ticketRefresher.isRenewing) {
             playWhenReadyRequested = shouldPlay
             playbackPresentation.present(playbackPresentationKey(current), shouldPlay)
             return
         }
+        val staleTicket = shouldPlay && currentTicketNeedsRenewal(current)
         if (shouldPlay &&
-            (current.previewUrl.isBlank() || !playerMatchesCurrentTrack() || playbackSession.player?.playerError != null)
+            (current.previewUrl.isBlank() || !playerMatchesCurrentTrack() || playbackSession.player?.playerError != null || staleTicket)
         ) {
+            val previous = if (staleTicket) SupplementalPlaybackRequests.resource(current.previewUrl)?.takeIf { it.sourceResource != null } else null
             startTrack(
-                current,
+                if (staleTicket) current.copy(previewUrl = "") else current,
                 snapshot.queue,
-                initialPositionMs = _progressMs.value,
+                initialPositionMs = if (playerMatchesCurrentTrack()) currentPlaybackPosition() else _progressMs.value,
                 preserveRadio = snapshot.radioActive,
+                recoverFrom = previous,
             )
             return
         }
@@ -736,8 +767,18 @@ class MusicPlaybackRuntime(private val application: Application) {
             event is PlaybackQualityEvent.Upgraded
         val position = if (replaceSource) currentPlaybackPosition() else 0L
         _state.update { it.withQualityEvent(event) }
-        if (replaceSource) _state.value.currentTrack?.let {
-            startPlayback(it, position, event.key.generation)
+        if (replaceSource) _state.value.currentTrack?.let { updated ->
+            val source = when (event) {
+                is PlaybackQualityEvent.Upgraded -> event.source
+                is PlaybackQualityEvent.Selected -> event.url?.let(SupplementalPlaybackRequests::resource)
+                is PlaybackQualityEvent.Loading,
+                is PlaybackQualityEvent.Options,
+                is PlaybackQualityEvent.OptionsFailed,
+                is PlaybackQualityEvent.Changing,
+                is PlaybackQualityEvent.ChangeFailed -> null
+            }
+            currentTicket.record(event.key.generation, updated, source)
+            startPlayback(updated, position, event.key.generation)
         }
     }
 
@@ -777,7 +818,7 @@ class MusicPlaybackRuntime(private val application: Application) {
     private fun beginRapidTrackBrowsing() {
         nextAudioPreloader.stop()
         sourcePlaybackSessions.pause(currentPlaybackPosition())
-        // 首击可能仍在解析，进入浏览后取消它，避免旧结果在连续歌词动画中途起播。
+        // 第一次点切歌的请求可能还在跑，进入连续切歌浏览后先取消它，防止旧歌突然播出来。
         ++playbackRequestGeneration
         cancelPendingTrackWork()
         playbackSession.clearPendingSeek()
@@ -789,7 +830,7 @@ class MusicPlaybackRuntime(private val application: Application) {
     private fun commitRapidTrackSwitch(track: MusicTrack, direction: TrackTransitionDirection) {
         val snapshot = _state.value
         if (snapshot.queue.none { it.id == track.id }) return
-        // 浏览期间已暂停并取消首击请求，绕回同一首也必须重新交付最终播放。
+        // 连续切歌期间已经把之前的请求停掉取消了，哪怕最后滑回同一首也要重新起播。
         if (direction == TrackTransitionDirection.NEXT) {
             playbackHistory.remember(snapshot.currentTrack?.id, track.id)
         } else if (snapshot.shuffle) {
@@ -814,6 +855,7 @@ class MusicPlaybackRuntime(private val application: Application) {
         val previous = _state.value.currentTrack
         sourcePlaybackSessions.prepare(track, currentPlaybackPosition(), continuing = recoverFrom != null ||
             (previous?.id == track.id && previous.source == track.source && initialPositionMs > 0))
+        autoMix.interrupt("重新装载歌曲")
         if (!preserveRapidSwitch) rapidTrackSwitch.cancel()
         nextAudioPreloader.stop()
         if (!preserveRadio) stopRadio()
@@ -827,7 +869,7 @@ class MusicPlaybackRuntime(private val application: Application) {
         playbackSession.whenReady(Player::pause)
         val startingPosition = initialPositionMs.coerceIn(0L, track.durationMs.coerceAtLeast(0L))
         _state.update {
-            // QQ 歌词窗口等本地缓存解析完成后再交接，快速掠过未缓存歌曲时保留当前窗口。
+            // 歌词窗口等本地缓存解析完再切换，快速滑过未缓存的歌时先保留当前歌词不闪。
             val presentedTrack = track.forPendingPlaybackPresentation()
             it.forTrackTransition(presentedTrack, queue, playWhenReady, direction)
                 .copy(queueOrder = (when {
@@ -840,7 +882,7 @@ class MusicPlaybackRuntime(private val application: Application) {
         playbackPresentation.present(PlaybackPresentationKey(track.id, requestGeneration), playWhenReady)
         playbackSession.resetProgressBucket(startingPosition)
         playbackSession.save(_state.value, _progressMs.value)
-        // 允许手动歌词的音源先装载资料库覆盖，无覆盖时仍可使用在线提供者。
+        // 支持手动歌词的音源先加载本地保存的歌词，没有再走在线拉取。
         if (track.source.supportsManualLyrics) loadLyrics(track, requestGeneration)
         resolveAndStart(track, requestGeneration, _progressMs.value, playWhenReady,
             lyricsHandedOff = preserveRapidSwitch, recoverFrom = recoverFrom)
@@ -851,7 +893,7 @@ class MusicPlaybackRuntime(private val application: Application) {
     private fun onRadioEvent(event: SourceRadioEvent) {
         _state.update { it.withSourceRadioEvent(event) }
         when (event) {
-            // 每次新会话前控制器都会先结束旧会话，续页在这里作废。
+            // 开新电台前都会先关掉旧会话，这里顺手清掉旧的分页状态。
             is SourceRadioEvent.Mode -> if (!event.active) radioRepository.resetSession()
             is SourceRadioEvent.Started -> {
                 playbackHistory.clear()
@@ -871,6 +913,8 @@ class MusicPlaybackRuntime(private val application: Application) {
 
     private fun cancelPendingTrackWork() {
         trackLoader.cancel()
+        ticketRefresher.cancel()
+        currentTicket.clear()
         lyricsLoader.cancel()
         qualityController.cancel()
     }
@@ -897,6 +941,7 @@ class MusicPlaybackRuntime(private val application: Application) {
                     return
                 }
                 if (!resolved.source.trial) qualityCache.write(resolved.track, resolved.source.actualQuality)
+                currentTicket.record(generation, resolved.track, resolved.source)
                 _state.update { it.withResolvedPlayback(event) }
                 startPlayback(resolved.track, event.positionMs, generation)
                 qualityController.followCachedPlayback(resolved, event.key, event.effective, event.preferred)
@@ -909,7 +954,7 @@ class MusicPlaybackRuntime(private val application: Application) {
                 _state.update { it.withPlaybackMetadata(event) }
                 val updated = _state.value.currentTrack ?: return
                 playbackSession.refreshMetadata(updated, event.key, ::isCurrentRequest)
-                // 信息流补齐身份后重试档位探测和已播上报，保留当前音源与歌词。
+                // 歌曲详情补全后再重新查一次可选音质并上报播放记录，不影响当前播放和歌词。
                 if (event.original.durationMs <= 0L || updated.qualityIds.isEmpty()) loadQualityOptions(updated, generation)
                 if (playbackSession.player?.isPlaying == true) reportRecentPlay(updated, generation)
             }
@@ -980,6 +1025,7 @@ class MusicPlaybackRuntime(private val application: Application) {
             restartWithoutDolby()
             return
         }
+        autoMix.interrupt("重新装载播放源")
         playbackSession.start(track, PlaybackRequestKey(track.id, requestGeneration), positionMs, { playWhenReadyRequested },
             ::isCurrentRequest, started = { player, startingPosition ->
                 playbackSession.remember(_state.value, track.id)
@@ -996,6 +1042,7 @@ class MusicPlaybackRuntime(private val application: Application) {
         val track = snapshot.currentTrack ?: return
         val position = currentPlaybackPosition()
         sourcePlaybackSessions.pause(position)
+        autoMix.interrupt("切换兼容音质")
         val shouldPlay = playWhenReadyRequested
         val current = snapshot.qualityTarget ?: SupplementalPlaybackRequests.resource(track.previewUrl)?.actualQuality
             ?: snapshot.activeQuality
@@ -1024,13 +1071,89 @@ class MusicPlaybackRuntime(private val application: Application) {
             android.os.SystemClock.elapsedRealtime())
     }
 
+    /** 自然过渡交接点：播放器其实已经在播下一首了，这里只把界面状态、队列位置和播放记录切过去，不重新加载音频。 */
+    private fun commitAutoMixHandoff(prepared: ResolvedPlayback) {
+        val snapshot = _state.value
+        val from = snapshot.currentTrack ?: return
+        sourcePlaybackSessions.finish(SourcePlaybackSessionEndReason.COMPLETED, currentPlaybackPosition())
+        val preferred = qualityPreferences.read(prepared.track.source)
+        val effective = PlaybackOptions.effective(application, preferred, prepared.track.source).playbackEquivalent()
+        val resolved = nextAudioPreloader.take(prepared.track, preferred)?.takeIf { it.source.url == prepared.source.url } ?: prepared
+        nextAudioPreloader.stop()
+        playbackHistory.remember(from.id, resolved.track.id)
+        val generation = ++playbackRequestGeneration
+        favoritePreparation.prepare(resolved.track, generation)
+        playbackSession.clearPendingSeek()
+        cancelPendingTrackWork()
+        seekPreview.clear()
+        val key = PlaybackRequestKey(resolved.track.id, generation)
+        _state.update {
+            it.forTrackTransition(resolved.track.forPendingPlaybackPresentation(), it.queue, true)
+                .withResolvedPlayback(PlaybackTrackEvent.Ready(key, resolved, preferred, effective, 0L, true))
+        }
+        if (!resolved.source.trial) qualityCache.write(resolved.track, resolved.source.actualQuality)
+        currentTicket.record(generation, resolved.track, resolved.source)
+        playbackSession.adoptAutoMixHandoff(generation, resolved.track.id, _state.value)
+        val position = currentPlaybackPosition()
+        updateProgress(position, resolved.track.id)
+        playbackSession.resetProgressBucket(position)
+        playbackSession.save(_state.value, position)
+        _playbackActivity.value = PlaybackActivity(resolved.track.id, playbackSession.player?.isPlaying == true)
+        playbackPresentation.present(PlaybackPresentationKey(resolved.track.id, generation), true)
+        loadLyrics(resolved.track, generation)
+        loadQualityOptions(resolved.track, generation, PLAYBACK_QUALITY_DELAY_MS)
+        reportRecentPlay(resolved.track, generation)
+        if (snapshot.radioActive) prefetchRadioIfNeeded()
+    }
+
     private fun reportRecentPlay(track: MusicTrack, generation: Long) = recentPlayReporter.report(track, generation,
         playedDuration.record(generation, playbackSession.player?.isPlaying == true && playerMatchesCurrentTrack()))
 
     private fun playbackPresentationKey(track: MusicTrack): PlaybackPresentationKey =
         PlaybackPresentationKey(track.id, playbackRequestGeneration)
 
+    internal fun onForegroundChanged(visible: Boolean) {
+        nextAudioPreloader.foregroundChanged(visible)
+        if (visible) refreshExpiredCurrentTicketIfNeeded()
+    }
+
     internal fun preloadForegroundChanged(visible: Boolean) { nextAudioPreloader.foregroundChanged(visible) }
+
+    private fun currentTicketNeedsRenewal(track: MusicTrack): Boolean =
+        application.hasMusicNetwork() &&
+            currentTicket.needsRenewal(playbackRequestGeneration, track) &&
+            !isTrackAudioFullyCached(application, track)
+
+    private fun refreshExpiredCurrentTicketIfNeeded() {
+        val snapshot = _state.value
+        val track = snapshot.currentTrack ?: return
+        if (playWhenReadyRequested || playbackSession.player?.isPlaying == true) return
+        if (snapshot.qualityChanging || rapidTrackSwitch.presentation.value != null || trackLoader.isResolving) return
+        if (!playerMatchesCurrentTrack() || playbackSession.player?.playerError != null) return
+        if (!currentTicketNeedsRenewal(track)) return
+        val previous = SupplementalPlaybackRequests.resource(track.previewUrl)
+        val fallbackQuality = PlaybackOptions.effective(application, qualityPreferences.read(track.source), track.source)
+            .playbackEquivalent()
+        val recoverQuality = previous?.actualQuality ?: snapshot.activeQuality ?: fallbackQuality
+        ticketRefresher.renewIfIdle(
+            track = track,
+            key = PlaybackRequestKey(track.id, playbackRequestGeneration),
+            recoverQuality = recoverQuality,
+            fallbackQuality = fallbackQuality,
+            previous = previous,
+        )
+    }
+
+    private fun onTicketRenewed(key: PlaybackRequestKey, resolved: ResolvedPlayback) {
+        val snapshot = _state.value
+        if (!isCurrentRequest(key) || snapshot.qualityChanging || rapidTrackSwitch.presentation.value != null) return
+        if (!DolbyPlaybackPolicy.permits(resolved.source.actualQuality)) return
+        val position = currentPlaybackPosition()
+        currentTicket.record(key.generation, resolved.track, resolved.source)
+        _state.update { it.withRenewedPlayback(resolved) }
+        val updated = _state.value.currentTrack ?: return
+        startPlayback(updated, position, key.generation)
+    }
 
     internal fun attachPlayer(player: Player, bandwidth: PlaybackPreloadBandwidth) {
         nextAudioPreloader.attachPlayer(player, bandwidth)
@@ -1043,6 +1166,7 @@ class MusicPlaybackRuntime(private val application: Application) {
         val position = currentPlaybackPosition()
         sourcePlaybackSessions.finish(SourcePlaybackSessionEndReason.STOPPED, position)
         playbackSession.save(_state.value, position)
+        autoMix.interrupt("播放器断开")
         ++playbackRequestGeneration
         cancelPendingTrackWork()
         rapidTrackSwitch.cancel()
@@ -1058,6 +1182,7 @@ class MusicPlaybackRuntime(private val application: Application) {
     }
 
     internal fun release() {
+        autoMix.stop()
         nextAudioPreloader.stop()
         playbackPresentation.cancel()
         val position = currentPlaybackPosition()

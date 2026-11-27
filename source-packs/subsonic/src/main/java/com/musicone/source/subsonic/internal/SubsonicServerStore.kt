@@ -17,7 +17,7 @@ internal class SubsonicServerStore(context: Context) {
     fun snapshot(): Snapshot = snapshot
     fun server(key: String): SubsonicServer? = snapshot.servers.firstOrNull { it.key == key }
 
-    /** 保存或替换同一身份的服务器，并切换为当前服务器。 */
+    /** 保存或更新对应服务器配置，并切为当前活跃服务器。 */
     fun saveAndSelect(server: SubsonicServer) = update { state ->
         val others = state.servers.filterNot { it.key == server.key }
         Snapshot(others + server, server.key, state.revision + 1)

@@ -59,7 +59,7 @@ internal fun WebDavPathBar(
         val folders = WebDavPaths.breadcrumbs(path, rootLabel).map { (label, target) ->
             WebDavCrumb("dir:$target", label) { controller.open(target) }
         }
-        // 书签页保留当前目录一层，点按原样返回，不重新读取。
+        // 进书签页时保留当前目录的面包屑，点它直接返回原目录不重新拉取
         if (bookmarks) listOf(folders.last().copy(onClick = controller::closeBookmarks), WebDavCrumb("bookmarks", "书签与订阅") {})
         else folders
     }
@@ -146,7 +146,7 @@ internal fun WebDavFolderTitle(
     }
 }
 
-/** 与宿主歌单播放按钮同一套尺寸；排序放在歌曲标题行，这里第三枚换成加入歌单。 */
+/** 按钮尺寸和宿主歌单页保持一致；排序放到歌曲标题栏了，这里第三个按钮换成“加入歌单”。 */
 @Composable
 internal fun WebDavPlayActions(
     enabled: Boolean,

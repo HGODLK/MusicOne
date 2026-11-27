@@ -62,7 +62,7 @@ internal class DesktopLyricsView(
         framePosted = false
         if (!running()) return@FrameCallback
         if (!frames.accept(nanos, fps)) requestFrame() else {
-            // 帧时间换算到播放时钟所用的单调时钟，补间间隔不受回调延迟影响。
+            // 把帧时间戳换算到和播放进度一致的单调时钟，避免回调延迟导致插值跳动。
             frameTime = SystemClock.elapsedRealtime() - (System.nanoTime() - nanos).coerceAtLeast(0L) / 1_000_000L
             refresh(frameTime)
             schedule()
@@ -96,7 +96,7 @@ internal class DesktopLyricsView(
         requestFrame()
     }
 
-    /** 播放内容消失：停在最后一帧等窗口淡出。 */
+    /** 停止更新内容，保留最后一帧画面等窗口淡出。 */
     fun suspendContent() {
         snapshot = null
         stopFrames()

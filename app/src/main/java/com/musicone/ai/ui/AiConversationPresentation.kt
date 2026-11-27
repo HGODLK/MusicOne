@@ -30,7 +30,7 @@ internal fun aiVisibleMessages(messages: List<AiChatMessageUi>): List<AiChatMess
     return visible
 }
 
-/** 已显示前缀只核对对象身份，流式更新只重新投影改变的尾部。 */
+/** 前面没变的消息直接按引用复用，流式输出时只重算末尾变了的那几条。 */
 internal class AiVisibleMessagesCache {
     private var source: List<AiChatMessageUi> = emptyList()
     private var visible: List<AiChatMessageUi> = emptyList()

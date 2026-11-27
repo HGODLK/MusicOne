@@ -10,7 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 
-/** 同一窗口在当前和退出角色之间保留组件，避免寻焦时重复排版、录制和上传来源文字。 */
+/** 渲染同曲跳转的新旧两个歌词窗口：用 pane.id 作为 key 复用组件，避免切到退场角色时重新排版。 */
 @Composable
 internal fun LyricWindowStages(
     controller: LyricLayerTransitionController,
@@ -29,7 +29,7 @@ internal fun LyricWindowStages(
     }
 }
 
-/** 窗口节点保留绘制内容；寻焦只更新原位移和透明度，就绪回调在节点外观察。 */
+/** 为歌词窗口应用跳转位移和透明度，并在绘制完成后上报首帧就绪。 */
 @Composable
 internal fun Modifier.lyricWindowStage(
     controller: LyricLayerTransitionController,
@@ -38,7 +38,7 @@ internal fun Modifier.lyricWindowStage(
 ): Modifier {
     val stage = remember(controller, pane) {
         Modifier.graphicsLayer {
-            // 独立歌词时钟可能先于 UI 重组发布新目标，旧节点此时仍须按最新身份绘制。
+            // 动画帧可能早于 UI 重组，这里实时查询最新角色以保证位移和透明度正确。
             val role = lyricWindowStageRole(pane.id, controller.currentPane.id, controller.outgoingPane?.id)
             val preparing = controller.state == LyricLayerTransitionState.PREPARING
             translationY = controller.paneTranslation(pane)

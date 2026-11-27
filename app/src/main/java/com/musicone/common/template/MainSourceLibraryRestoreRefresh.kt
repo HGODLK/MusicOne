@@ -7,7 +7,7 @@ internal data class MainSourceLibraryRefreshRequest(
     val forceArtworkIds: Set<String> = emptySet(),
 )
 
-/** 缓存恢复期间只合并刷新意图；发布缓存后再核对，旧会话不能消费新会话的请求。 */
+/** 读本地缓存期间先把期间来的刷新请求攒起来，等缓存显示完再统一发网查，同时隔离旧会话。 */
 internal class MainSourceLibraryRestoreRefresh {
     private var restoration: Any? = null
     private var pending: MainSourceLibraryRefreshRequest? = null

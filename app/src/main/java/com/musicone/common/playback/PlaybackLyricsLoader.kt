@@ -16,7 +16,7 @@ internal data class PlaybackLyricsUpdate(
     val lyrics: List<TimedLyric>? = null,
 )
 
-/** 歌词任务独立取消，迟到结果同时校验播放身份与本次加载序号。 */
+/** 负责当前歌曲的歌词加载，切歌时取消旧任务，并校验歌曲和请求序号防止旧歌词覆盖新歌。 */
 internal class PlaybackLyricsLoader(
     private val scope: CoroutineScope,
     private val load: suspend (MusicTrack) -> List<TimedLyric>,
@@ -40,7 +40,7 @@ internal class PlaybackLyricsLoader(
         retryAfterPlayback: Boolean = true) {
         val alreadyStarted = playbackStarted.value == key
         cancel()
-        // 记录派发而非运行状态，命中缓存或已完成的请求也不应重复提交。
+        // 记下已派发的 key，哪怕命中缓存或已完成，同一首歌也不重复发请求。
         submittedKey = key
         if (alreadyStarted) playbackStarted.value = key
         val request = sequence
@@ -58,7 +58,7 @@ internal class PlaybackLyricsLoader(
         job = scope.launch {
             lyricDiagnostic(track, "开始加载", track.lyrics, "代次=${key.generation}，序号=$request")
             if (track.lyrics.isEmpty()) emit(LyricLoadState.LOADING)
-            // 起步避让不占网络超时预算；失败后最多等实际起播补试一次。
+            // 开头的延迟等待不计入网络超时；如果首次失败，等歌曲真正出声后再补试一次。
             if (startDelayMs > 0L) delay(startDelayMs)
             repeat(if (retryAfterPlayback) 2 else 1) { attempt ->
                 if (attempt > 0) {

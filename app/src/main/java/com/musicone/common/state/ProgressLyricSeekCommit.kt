@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 在预览清空之前保存进度条的最终目标；确认只属于同一次操作。 */
+/** 松手清空拖动预览前先记下目标进度，确保歌词只响应这次确认的跳转。 */
 internal data class ProgressLyricSeekCommit(
     val trackId: String,
     val generation: Long,

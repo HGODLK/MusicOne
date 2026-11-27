@@ -31,7 +31,7 @@ internal class WebDavAuthManager {
     fun hasCredentials(server: WebDavServer): Boolean =
         server.username.isNotEmpty() || server.password.isNotEmpty()
 
-    /** 根据已缓存协商结果构造预认证头；未协商且提供凭据时先不盲发或优先 Basic。 */
+    /** 按缓存的鉴权方式生成预认证请求头；还没协商过时先不带或默认走 Basic。 */
     fun preemptiveHeader(server: WebDavServer, method: String, requestUri: String): String? {
         if (!hasCredentials(server)) return null
         return when (schemes[server.key]) {
@@ -189,10 +189,10 @@ internal class WebDavAuthManager {
                 while (i < len && input[i] != '=' && input[i] != ',') i++
                 if (i >= len || input[i] != '=') break
                 val key = input.substring(keyStart, i).trim().lowercase(Locale.ROOT)
-                i++ // 跳过 '='
+                i++
                 while (i < len && input[i] == ' ') i++
                 val value = if (i < len && input[i] == '"') {
-                    i++ // 跳过起始引号
+                    i++
                     val sb = StringBuilder()
                     while (i < len && input[i] != '"') {
                         if (input[i] == '\\' && i + 1 < len) {

@@ -14,13 +14,13 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 远端私有引用只存本机，模型只能看到公开摘要及随机句柄。 */
+/** 远程音源的私有引用只存本地，只给模型公开摘要和随机句柄。 */
 internal class AiSourceTools(context: Context, private val libraryTools: AiLibraryTools, private val checkpoint: JSONObject) {
     private val controller = SourcePackageController.get(context.applicationContext)
     private val platforms = PlatformPreferences(context.applicationContext)
     private val refs = context.applicationContext.getSharedPreferences("musicone_ai_source_refs", Context.MODE_PRIVATE)
 
-    /** 查询按本轮首次搜索时的主音源路由，切换界面音源不使在途请求失效。 */
+    /** 本轮搜索固定使用发起时的主音源，中途切界面不影响正在跑的请求。 */
     private fun searchMainId(): String = aiSearchMainSource(checkpoint) { platforms.selectedSource().id }
 
     fun validateTracks(tracks: List<MusicTrack>) {
@@ -31,7 +31,7 @@ internal class AiSourceTools(context: Context, private val libraryTools: AiLibra
         }
     }
 
-    /** 解析模型选源不触发所有音源的会员请求，sourceId自身不能产生用户授权。 */
+    /** 解析模型传的 sourceId 时不要去查所有音源的会员状态，而且模型自己传 sourceId 不算获得用户授权。 */
     suspend fun requestedSearchSource(id: String?, cursor: String?): String? {
         controller.awaitStartup()
         val scope = searchScope()
@@ -230,7 +230,7 @@ internal class AiSourceTools(context: Context, private val libraryTools: AiLibra
             .put("message", if (items.isEmpty()) "该音源未找到歌单" else "已返回音源真实歌单")
     }
 
-    /** 原生歌单卡和播放共用真实歌单身份；逐页读取，不伪造搜索结果歌单。 */
+    /** 歌单卡片和播放都用真实歌单 ID，完整分页读取，不拿搜索结果拼假歌单。 */
     suspend fun resolvePlaylist(playlistRef: String): MusicPlaylist = withContext(Dispatchers.IO) {
         val reference = load(playlistRef)
         require(reference.optString("kind") == "playlist") { "歌单引用无效" }
@@ -320,7 +320,7 @@ internal class AiSourceTools(context: Context, private val libraryTools: AiLibra
 
     private suspend fun searchSource(id: String): SourceInstance = source(id)
 
-    /** 一级无结果后才进入并列二级；每个音源的后续游标仍绑定原实例与账号。 */
+    /** 第一优先级没搜到结果才搜第二优先级；翻页游标继续绑定原来的音源实例和账号。 */
     private suspend fun routeSearch(query: String, playlists: Boolean, request: String): JSONObject {
         val main = searchMainId()
         val candidates = mutableListOf<Pair<SourceInstance, Int>>()
@@ -395,7 +395,7 @@ internal class AiSourceTools(context: Context, private val libraryTools: AiLibra
         require(scope.sourceIds.isEmpty() || id in scope.sourceIds || scope.allowFallback) { "用户已明确指定其他音源，请按指定音源搜索" }
     }
 
-    /** 明确授权只来自用户原话或已绑定音源、查询及账号的宿主分页引用。 */
+    /** 只有用户原话指定了该音源，或者拿着之前合法生成的分页引用继续翻页，才算有明确授权。 */
     private fun explicitSearchAuthorization(source: SourceInstance, ref: String?, purpose: String): Boolean {
         if (source.entry.descriptor.id in searchScope().sourceIds) return true
         if (ref.isNullOrBlank()) return false

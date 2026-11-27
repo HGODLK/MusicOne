@@ -42,7 +42,7 @@ internal fun playbackQueueRemovalPlan(state: MusicOneUiState, selected: List<Mus
     return PlaybackQueueRemovalPlan(state.copy(queue = remaining, queueOrder = order), removedCurrent, next)
 }
 
-/** 队列规则与播放器生命周期分离，切曲及清空交给已有会话执行。 */
+/** 负责从播放队列移除歌曲，涉及切歌或清空时交给播放会话执行。 */
 internal class PlaybackQueueRemoval(
     private val states: MutableStateFlow<MusicOneUiState>,
     private val startNext: (MusicTrack, MusicOneUiState) -> Unit,

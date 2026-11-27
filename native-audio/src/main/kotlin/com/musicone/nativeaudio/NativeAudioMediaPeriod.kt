@@ -106,7 +106,7 @@ internal class NativeAudioMediaPeriod(
     }
 
     override fun discardBuffer(positionUs: Long, toKeyframe: Boolean) {
-        // 队列只保存尚未交付给渲染器的样本，不能把仍需播放的整块 PCM 当历史缓冲丢弃。
+        // 队列里都是还没送给渲染器的数据，不能把待播放的 PCM 当历史缓存丢掉。
         currentPositionUs = positionUs
     }
 
@@ -155,7 +155,7 @@ internal class NativeAudioMediaPeriod(
 
     override fun reevaluateBuffer(positionUs: Long) {
         currentPositionUs = positionUs
-        // Media3 仍有加载意图时不会重复调用 continueLoading，消费到低水位后需主动唤醒。
+        // Media3 还在等待加载时不会重复调 continueLoading，缓冲降到低水位后需要主动触发。
         if (!isDisposed && prepareError == null && !isEndOfStreamReached && pendingSeekPositionUs == null &&
             !loader.isLoading && !loadingRequestPending && sampleStream != null &&
             bufferedPositionUs - positionUs < targetBufferDurationUs / 2 &&

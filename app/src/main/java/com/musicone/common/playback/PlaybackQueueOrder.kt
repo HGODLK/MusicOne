@@ -2,7 +2,7 @@ package com.musicone
 
 import kotlin.random.Random
 
-/** 播放列表就是实际播放顺序，另存原始身份顺序供退出随机模式时恢复。 */
+/** 维护队列顺序：随机播放时额外保存一份原始顺序，退出随机时再恢复。 */
 data class PlaybackQueueOrder(
     val originalIds: List<String> = emptyList(),
     val nextAfterId: String? = null,
@@ -21,7 +21,7 @@ data class PlaybackQueueOrder(
         copy(originalIds = restore(queue).map(MusicTrack::id))
 
     fun insert(queue: List<MusicTrack>, current: MusicTrack?, selected: MusicTrack): PlaybackQueueOrder =
-        // 原始顺序只按实际队列淘汰的歌曲收敛，不能再按原始末尾淘汰一次。
+        // 原始顺序只同步删除实际队列里被挤掉的歌，不再单独做一次末尾截断。
         copy(originalIds = insertTrackAfterCurrent(restore(queue), current, selected,
             capacity = Int.MAX_VALUE).map(MusicTrack::id))
 }
@@ -36,7 +36,7 @@ internal fun MusicOneUiState.withPlaybackMode(
     val nextQueue = when {
         willShuffle && !wasShuffle -> {
             val current = queue.firstOrNull { it.id == currentTrack?.id }
-            // 当前曲继续播放，后续曲目只在进入随机模式时洗牌一次。
+            // 当前这首保持在第一位，后面的歌在刚切到随机模式时打乱一次。
             listOfNotNull(current) + queue.filterNot { it.id == current?.id }.shuffled(random)
         }
         !willShuffle && wasShuffle -> order.restore(queue)

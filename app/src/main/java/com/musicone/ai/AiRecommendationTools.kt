@@ -1,6 +1,9 @@
 package com.musicone
 
-/** 临时歌单只存会话引用，不创建音乐库歌单或改写原歌曲资料。 */
+/** 临时歌单只保存在当前会话里，不建本地歌单，也不改原歌曲信息。 */
+internal val MusicPlaylist.isAiTemporaryPlaylist: Boolean
+    get() = id.startsWith("ai-temporary:") || id.startsWith("ai-turn-")
+
 internal fun aiTemporaryPlaylist(id: String, title: String, reason: String, tracks: List<MusicTrack>): MusicPlaylist {
     val first = tracks.firstOrNull()
     return MusicPlaylist(id, MusicSource.LOCAL, title, "AI 临时歌单 · ${tracks.size} 首", reason, tracks.size,
@@ -8,7 +11,7 @@ internal fun aiTemporaryPlaylist(id: String, title: String, reason: String, trac
         artworkUrl = first?.artworkUrl)
 }
 
-/** 卡片和实际播放使用同一份预检状态，不通过试播探测歌曲。 */
+/** 卡片展示和实际播放共用同一份可播检查结果，不靠试播来探测。 */
 internal fun aiTracksWithAvailability(tracks: List<MusicTrack>, validation: AiPlaybackValidation): List<MusicTrack> {
     val available = validation.playableTracks.associateBy(MusicTrack::id)
     val blocked = (validation.skipped + validation.unknown).associateBy { it.optString("id") }

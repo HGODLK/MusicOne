@@ -6,7 +6,7 @@ import android.hardware.usb.UsbDeviceConnection
 import android.util.Log
 import kotlin.math.ceil
 
-/** 能力、实际端点和时钟控制绑定到同一配置，不以最高采样率推断中间档位。 */
+/** 把采样率能力、端点和时钟控制绑在同一配置下，不靠最高采样率反推中间档位。 */
 internal class UsbAudioPcmCapabilities(private val connection: UsbDeviceConnection, private val device: UsbDevice,
     private val streamingInterfaceId: Int) {
     val descriptors = UsbAudioPcmDescriptors(connection.rawDescriptors ?: byteArrayOf())
@@ -37,7 +37,7 @@ internal class UsbAudioPcmCapabilities(private val connection: UsbDeviceConnecti
             if (maxPacket < required || required * (packetsPerSecond / 1000).coerceIn(1, 8) > 4096) continue
             val feedback = endpoints.firstOrNull { it.type == UsbConstants.USB_ENDPOINT_XFER_ISOC &&
                 it.direction == UsbConstants.USB_DIR_IN && ((it.attributes shr 4) and 3) == 1 }
-            // 异步 OUT 必须有显式反馈，本实现不猜测其他接口的隐式反馈。
+            // 异步 OUT 端点必须有显式反馈端点，不猜测其他接口的隐式反馈。
             if (async && feedback == null) continue
             if (feedback != null && (feedback.maxPacketSize and 0x7ff) < if (busIntervals == 1000) 3 else 4) continue
             val controls = descriptors.clocks[key]?.controls ?: continue

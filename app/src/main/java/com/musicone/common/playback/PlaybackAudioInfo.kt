@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.asStateFlow
 internal data class PlaybackAudioSnapshot(val codec: String?, val sampleRate: Int, val bitDepth: Int,
     val bitrate: Int, val summary: String)
 
-/** 已解析的格式先显示，解码器参数到达后补齐；迟到结果只更新自己的缓存。 */
+/** 先展示解析阶段拿到的音质信息，等解码器出参数后再补全；如果回调来晚了只更新它自己那首歌的缓存。 */
 internal object PlaybackAudioInfo {
     private data class Details(val header: String? = null, val mergeDecoded: Boolean = false,
         val hintedBitrate: Int = 0, val codec: String? = null, val sampleRate: Int = 0,
@@ -20,7 +20,7 @@ internal object PlaybackAudioInfo {
     private val mutable = MutableStateFlow<Pair<String, String>?>(null)
     val current = mutable.asStateFlow()
     private val mutableSnapshot = MutableStateFlow<PlaybackAudioSnapshot?>(null)
-    /** 与 current 同步的结构化参数，供音源播放页读取。 */
+    /** 当前播放音频的详细参数，供播放页展示。 */
     val snapshot = mutableSnapshot.asStateFlow()
 
     @Synchronized fun activate(url: String?) {

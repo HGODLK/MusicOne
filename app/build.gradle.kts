@@ -107,8 +107,8 @@ android {
         buildConfigField("boolean", "MUSICONE_TRACE", musiconeTrace.toString())
         buildConfigField("boolean", "MUSICONE_LYRIC_RESOURCE_PREPARE", musiconeLyricResourcePrepare.toString())
         buildConfigField("boolean", "MUSICONE_RESIDENT_LYRIC_REFRESH", musiconeResidentLyricRefresh.toString())
-        versionCode = 6
-        versionName = "0.4.0-鲜花饼"
+        versionCode = 7
+        versionName = "0.4.1-橙味芬达"
         manifestPlaceholders["musiconeTrace"] = musiconeTrace.toString()
         vectorDrawables.useSupportLibrary = true
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -184,6 +184,10 @@ android {
     testBuildType = providers.gradleProperty("musiconeTestBuildType").getOrElse("debug")
 
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    // 本工程原生库只出 arm64-v8a / x86_64；LiteRT 自带的 32 位库不打包，避免 32 位设备装上后缺库崩溃。
+    packaging.jniLibs.excludes += listOf("lib/armeabi-v7a/**", "lib/x86/**")
+    // 保留 arm64-v8a 与 x86_64 双架构（兼容真机与 WSA），同时压缩 .so 显著降低 APK 体积。
+    packaging.jniLibs.useLegacyPackaging = true
 }
 
 // 首次启动分发的仍是独立签名音源包；宿主不链接平台模块的类或资源。
@@ -236,6 +240,8 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.10.1")
     implementation("androidx.media3:media3-exoplayer-dash:1.10.1")
     implementation("androidx.media3:media3-session:1.10.1")
+    // 自然过渡的人声检测（YAMNet 嵌入）在设备端用 LiteRT 推理。
+    implementation("com.google.ai.edge.litert:litert:1.4.0")
     implementation("org.yaml:snakeyaml:2.5")
     // 非应用商店安装也能在首次运行后把内置 Profile 交给 ART。
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
@@ -248,6 +254,7 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling:1.11.4")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test:rules:1.6.1")

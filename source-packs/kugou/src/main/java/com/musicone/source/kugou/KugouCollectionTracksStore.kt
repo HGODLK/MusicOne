@@ -20,7 +20,7 @@ internal interface KugouCollectionTracksStore {
     }
 }
 
-/** 原子文件逐行读写完整快照；生产路径不创建整单字符串或整单 UTF-8 字节数组。 */
+/** 按行流式读写歌单缓存文件（先写临时文件再替换），避免一次性把整张歌单加载成大字符串。 */
 internal class KugouAtomicTracksStore(private val file: File) : KugouCollectionTracksStore {
     private val atomic = AtomicFile(file)
     private fun exists() = file.exists() || File(file.path + ".bak").exists()

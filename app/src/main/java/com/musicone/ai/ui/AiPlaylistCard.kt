@@ -21,7 +21,7 @@ internal fun AiPlaylistCard(playlist: MusicPlaylist, onOpenPlaylist: (MusicPlayl
     val artwork = requested ?: ArtworkRepository.peek(playlist.artworkUrl, LocalMainSourceFeedArtworkSizes.current.thumbnail)
     Surface(onClick = {
         if (motion?.mounted != true && transition?.busy != true) {
-            // 与最近播放卡相同，在导航前冻结当前封面及混合快照。
+            // 和最近播放卡一样，跳转前先冻结当前封面，交给共享元素转场。
             if (transition == null) onOpenPlaylist(playlist)
             else transition.open(playlist.id, artwork, {}, { onOpenPlaylist(playlist) })
         }

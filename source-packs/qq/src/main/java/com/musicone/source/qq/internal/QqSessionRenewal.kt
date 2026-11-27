@@ -29,7 +29,7 @@ internal class QqSessionRenewal(
     fun recentlyForced(credential: String): Boolean =
         forced?.let { it.first == credential && nowMs() - it.second < forcedCooldownMs } == true
 
-    /** 宿主定期校验：核实账号，票快到期时顺带续期，失败抛给调用方。 */
+    /** 校验当前账号登录态，如果票据快到期了就顺便续期，失败直接抛给调用方。 */
     suspend fun validate() {
         lock.withLock {
             val previous = session()

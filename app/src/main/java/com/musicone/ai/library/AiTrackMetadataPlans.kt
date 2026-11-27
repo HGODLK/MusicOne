@@ -6,7 +6,7 @@ import org.json.JSONObject
 
 internal val aiMetadataFields = mapOf("title" to "title_override", "artists" to "artist_override", "album" to "album_override")
 
-/** 只修改本地显示覆盖值；每个字段单独记账，撤销不会覆盖后续用户编辑。 */
+/** 只改本地显示的覆盖字段，按字段分别记版本号，撤销时不会覆盖用户后面自己改过的内容。 */
 internal class AiTrackMetadataPlans(private val validateTracks: (List<MusicTrack>) -> Unit) {
     fun prepare(db: SQLiteDatabase, edits: List<Pair<MusicTrack, Map<String, String>>>): List<JSONObject> {
         require(edits.isNotEmpty()) { "请选择歌曲" }
@@ -69,7 +69,7 @@ internal class AiTrackMetadataPlans(private val validateTracks: (List<MusicTrack
     fun apply(db: SQLiteDatabase, edits: List<JSONObject>): List<JSONObject> = edits.map { edit ->
         val id = edit.getString("songId")
         val fields = edit.getJSONArray("fields").objects()
-        // 仅确认阶段为未保存的真实歌曲建本地显示记录，不加入任何歌单，也不覆盖已有资料。
+        // 如果歌曲还没进本地库，在确认写入时补建一条歌曲记录（不加进任何歌单），避免覆盖已有数据。
         if (!edit.optBoolean("existed", true)) {
             require(db.song(id) == null) { "歌曲已被其他入口保存，请重新生成计划" }
             db.upsertSong(edit.getJSONObject("track").toStoredTrack() ?: error("歌曲资料无效"))

@@ -23,7 +23,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 // 仅横屏歌词使用；竖屏展开为 160，页眉为 180，见 moveToTarget。
 internal const val PHONE_LYRICS_OPEN_STIFFNESS = 300f
 
-/** 歌词和页眉保存各自的实际位置与速度，反向操作只更换目标。 */
+/** 管理手机播放页歌词和顶部页眉的展开/收起进度与速度，中途反向时无缝衔接。 */
 @Stable
 internal class PhoneLyricsMotion(initiallyVisible: Boolean, private val scope: CoroutineScope? = null,
     private val frameDriver: LyricFrameDriver? = null,
@@ -62,7 +62,7 @@ internal class PhoneLyricsMotion(initiallyVisible: Boolean, private val scope: C
     val headerProgress get() = dragged?.header ?: header.value
     val visibleLyricsVelocity get() = lyricsVelocity
     val visibleHeaderVelocity get() = headerVelocity
-    // 入场对齐跟随窗口实际行程，页眉占位期间不能继续反向补滚列表。
+    // 按歌词窗口的实际移动行程算入场进度，避免页眉还没让出空间时列表就提前补滚。
     val entranceProgress get() = phoneLyricsEntranceProgress(windowOffsetPx, dragTravelPx)
     val windowOffsetPx get() = phoneLyricsSpatialWindowOffset(dragTravelPx, lyricsProgress,
         headerProgress, if (spatialTravel.compactHeightPx > 0f) {
@@ -139,7 +139,7 @@ internal class PhoneLyricsMotion(initiallyVisible: Boolean, private val scope: C
         header.snapTo(if (visible) 1f else 0f)
     }
 
-    /** 横屏与竖屏共用实际歌词进度、速度；只为不可见的竖屏页眉准备目标。 */
+    /** 横屏歌词开合：复用歌词的进度和速度，不可见的竖屏页眉直接同步到目标值。 */
     suspend fun moveLandscape(visible: Boolean, travel: Float, animate: Boolean = true) = withLyricMotionFrames(frameDriver) {
         if (lyricsProgress != (if (visible) 1f else 0f)) onMotionStart()
         val currentJob = currentCoroutineContext()[Job]
@@ -214,7 +214,7 @@ internal class PhoneLyricsMotion(initiallyVisible: Boolean, private val scope: C
         gestureRevision++
     }
 
-    /** 抬手事件内交接位置、速度和零时刻；页面状态通知不再重复启动同一次收尾。 */
+    /** 松手瞬间立刻启动收尾动画并接管速度和时间戳，避免外部状态回调再重复触发一次。 */
     fun settleDrag(visible: Boolean, velocityY: Float, releaseTimeNanos: Long = System.nanoTime()) {
         finishDrag(velocityY, releaseTimeNanos)
         val animationScope = scope ?: return
@@ -236,9 +236,9 @@ internal class PhoneLyricsMotion(initiallyVisible: Boolean, private val scope: C
         if (animationJob !== currentJob) animationJob?.cancel()
         animationJob = currentJob
         if (!fromGesture) directGestureRevision = -1
-        // 只有从完全关闭态启动时才等待退场就绪，中途手势释放不能被旧对齐阻塞。
+        // 只有从完全关闭状态展开时才等待退场对齐，手势中途松手不阻塞。
         if (lyricsProgress == 0f) exitAlignment?.await()
-        // 完全隐藏时先准备当前歌词；中途反向和手势释放保留实际位置。
+        // 从完全关闭态打开时先等屏外歌词准备好；中途反向或手势释放则直接从当前位置继续。
         val prepared = if (prepareOpening && visible && lyricsProgress == 0f && dragged == null)
             prepareEntrance() else true
         captureSpatialTravelAtRest()
@@ -274,7 +274,7 @@ internal class PhoneLyricsMotion(initiallyVisible: Boolean, private val scope: C
             lyricsVelocity = 0f
         }
         launch {
-            // 完全关闭与中途重开都从实际位置、速度立即让位，不等待歌词接触封面。
+            // 页眉立即从当前位置和速度开始移动，不用等歌词滑到封面附近再动。
             header.animateToWithGestureHandoff(
                 target,
                 musicSpring(stiffness = 180f,
@@ -286,7 +286,7 @@ internal class PhoneLyricsMotion(initiallyVisible: Boolean, private val scope: C
         }
     }
 
-    /** 渐变被新动作接管时从当前透明度恢复，取消旧任务不能把有效窗口永久留成透明。 */
+    /** 超时淡入被新动画打断时，确保把透明度平滑恢复回 1，避免窗口一直透明。 */
     private fun recoverEntrance(scope: CoroutineScope) {
         entranceRecovery?.cancel()
         entranceRecovery = if (entranceAlpha.value < 1f) scope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -328,7 +328,7 @@ internal fun rememberPhoneLyricsMotion(
     }
     LaunchedEffect(visible, exitAlignment, motion.gestureRevision, pageVisible, prepareOpening, preparingTurn, fadingTurn) {
         if (preparingTurn) return@LaunchedEffect
-        // 开关请求和对应的列表对齐对象使用同一任务；反向时会一起取消。
+        // 开关请求与对应的列表对齐逻辑绑定在同一个 LaunchedEffect 里，反向时一起取消。
         if (!pageVisible) motion.resetWhileHidden(visible && retainSelection)
         else if (fadingTurn) motion.resetWhileHidden(visible)
         else if (!motion.dragging && !motion.settlingGesture(visible)) {

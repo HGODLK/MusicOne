@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 只使用当前媒体正文在 HTTP read 内的耗时，连接、磁盘、解码及消费者停顿不进入分母。 */
+/** 只统计 HTTP 实际 read 音频正文的耗时来估算网速，建连、读缓存、解码和暂停等待都不算。 */
 internal class PlaybackPreloadBandwidth {
     private data class Read(val bucket: Long, var endNs: Long, var durationNs: Long, var bytes: Long)
     private class Transfer(val uri: String) {
@@ -42,7 +42,7 @@ internal class PlaybackPreloadBandwidth {
     }
     @Synchronized fun newMedia() { mediaLoads.clear(); resetMeasurements() }
 
-    /** 未知码率、多路传输、没有正文数据或不足两秒的读取证据，一律不判带宽不足。 */
+    /** 码率未知、样本不足或累计读取不到 2 秒时，不贸然判定为带宽不足。 */
     @Synchronized fun insufficient(nowNs: Long, requiredBitsPerSecond: Long): Boolean {
         if (requiredBitsPerSecond <= 0L) return false
         val active = transfers.values.filter { it.uri in mediaLoads.values }

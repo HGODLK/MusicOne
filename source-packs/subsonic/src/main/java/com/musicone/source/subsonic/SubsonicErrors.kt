@@ -6,7 +6,7 @@ import com.musicone.source.subsonic.internal.SubsonicTransportException
 import org.json.JSONException
 import kotlin.coroutines.cancellation.CancellationException
 
-/** 宿主只认识公开错误类别；消息可直接展示，不含带凭据的地址或响应正文。 */
+/** 转成宿主可识别的公开异常；错误文案可以直接展示给用户，不包含带凭据的 URL 或响应原文。 */
 internal fun Exception.toSubsonicSdkFailure(): Exception = when (this) {
     is CancellationException, is SourceOperationException -> this
     is SubsonicApiException -> when (code) {

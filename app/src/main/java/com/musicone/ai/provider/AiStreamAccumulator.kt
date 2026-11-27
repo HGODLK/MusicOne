@@ -3,7 +3,7 @@ package com.musicone
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 按索引拼接流式函数名和参数，保留后续工具轮次所需的推理历史。 */
+/** 按 index 拼接流式返回的工具名和参数，同时保留下一轮工具调用要带回的思考内容。 */
 class AiStreamAccumulator {
     private val content = StringBuilder()
     private val reasoning = StringBuilder()

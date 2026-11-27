@@ -5,7 +5,7 @@ import com.musicone.source.sdk.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-/** 包内背景资料只通过公开 URI 状态分享，宿主无需了解文件名或设置键。 */
+/** 只把背景图片 URI 暴露给宿主，具体的本地文件路径和存储 key 由网易云包自己管。 */
 internal class NeteaseSourceVisuals(private val owner: () -> NeteasePackageState) : SourceVisuals {
     override val supportsCustomBackground = true
     private val states = linkedMapOf<SourceRoute, MutableStateFlow<SourceVisualState>>()

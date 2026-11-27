@@ -3,7 +3,7 @@ package com.musicone
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 会话整理器的精简摘录：只保留续接任务需要的进度和定位字段，路由、资格等主对话专用信息不发送。 */
+/** 给摘要整理器用的精简记录：只留续接任务需要的进度和游标字段，其余内部字段不发。 */
 internal object AiMemoryExcerpt {
     private val FIELDS = listOf("status", "count", "totalCount", "complete", "collectionComplete", "planId")
     private val LOCATORS = listOf("handle", "cursor", "nextCursor")
@@ -11,7 +11,7 @@ internal object AiMemoryExcerpt {
     /** 系统注入的偏好资料已由 previousMusicPreferences 提供，不再重复摘录。 */
     fun injected(text: String) = text.startsWith("MusicOne保存的音乐偏好资料")
 
-    /** 搜索范围只保留实际生效的限定，空列表、默认值和轮次标识全部丢弃。 */
+    /** 搜索范围只留实际生效的条件，空列表、默认值和轮次 ID 都去掉。 */
     fun searchScope(raw: String): JSONObject? {
         val scope = runCatching { JSONObject(raw) }.getOrNull() ?: return null
         val result = JSONObject()

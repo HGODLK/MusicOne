@@ -8,7 +8,7 @@ import androidx.media3.common.util.UnstableApi
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 
-/** 系统控件复用业务播放意图与队列，状态和监听事件仍由真实播放器提供。 */
+/** 包装 ExoPlayer 给系统媒体控制栏用：切歌、播放/暂停走业务队列逻辑，状态仍透传真实播放器。 */
 @androidx.annotation.OptIn(UnstableApi::class)
 internal class SystemMediaPlayer(
     delegate: Player,
@@ -20,7 +20,7 @@ internal class SystemMediaPlayer(
 ) : ForwardingSimpleBasePlayer(delegate) {
     override fun getState(): State {
         val state = super.getState()
-        // 业务队列由运行对象持有，不能根据 ExoPlayer 的单项时间线隐藏切歌按钮。
+        // 队列在业务层管理，ExoPlayer 里通常只有当前一首歌，所以这里手动补上上一首/下一首指令，防止系统隐藏切歌按钮。
         val commands = state.availableCommands.buildUpon()
         if (getPlayer().currentMediaItem != null) {
             commands.addAll(

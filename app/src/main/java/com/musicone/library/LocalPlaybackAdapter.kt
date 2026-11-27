@@ -25,7 +25,7 @@ internal class LocalPlaybackAdapter(private val context: Context) : PlatformPlay
             store.unavailable(listOf(track.id))
             throw PlatformApiException("文件访问已失效，请重新关联原文件或目录")
         }
-        // 已导入歌曲仍可能保存旧转换规格，展示由当前播放策略计算，不改动源文件。
+        // 兼容旧版存下来的 DSD 转换描述，按当前播放策略动态算展示文案，不改库里原记录。
         val storedFormat = current.mediaId
         val formatDesc = if (storedFormat.startsWith("DSD") && storedFormat.contains(" → PCM ")) {
             com.musicone.nativeaudio.NativeAudioOutputPolicy.dsdPcmDescription(storedFormat.substringBefore(" →"))

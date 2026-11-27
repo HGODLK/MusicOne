@@ -23,10 +23,13 @@ internal fun playerTimelineSnapshot(
     preview: RapidTrackSwitchPresentation?,
 ): PlayerTimelineSnapshot {
     val track = playback.currentTrack
+    // 自然过渡期间直接读过渡给出的两首各自位置：交接前是上一首，交接后是下一首的真实位置（不归零）。
+    val autoMix = if (preview == null) track?.let(::autoMixTimelinePosition) else null
     return PlayerTimelineSnapshot(
         track?.id.orEmpty(), track?.durationMs ?: 0L,
-        progress.positionMs.takeIf { progress.trackId == track?.id } ?: 0L,
-        activity.advancing && activity.trackId == track?.id,
+        autoMix ?: progress.positionMs.takeIf { progress.trackId == track?.id } ?: 0L,
+        activity.advancing && (activity.trackId == track?.id ||
+            autoMix != null && activity.trackId == AutoMixSession.active.value?.plan?.from?.id),
         preview != null,
     )
 }

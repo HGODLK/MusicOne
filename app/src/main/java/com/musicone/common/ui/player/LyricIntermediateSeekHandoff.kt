@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 只保护中间态拖动的预览到正式进度交接，不改变普通 seek 的通知节奏。 */
+/** 保护开合中途拖动进度条松手后、播放器正式进度尚未追上之前的过渡期，防止歌词闪回旧进度。 */
 internal class LyricIntermediateSeekHandoff {
     private var generation: Long? = null
     private var trackId: String? = null
@@ -20,7 +20,7 @@ internal class LyricIntermediateSeekHandoff {
             (generation != latest.generation || trackId != latest.trackId)) clear()
         if (!enabled) return false
 
-        // 实时预览可能已清空，但页面尚在处理拖动通知，这一帧也必须接到正式目标。
+        // 松手瞬间实时预览可能已清空，但旧通知还在路上，这一帧仍要进入保护期。
         if (intermediate && (latestPreview != null || observedPreview != null)) {
             generation = latest.generation
             trackId = latest.trackId
@@ -35,14 +35,14 @@ internal class LyricIntermediateSeekHandoff {
             latestCommit.generation == latest.generation &&
             (newCommit && (intermediate || generation != null) ||
                 pendingCommit?.revision == latestCommit.revision)) {
-            // 只接收新提交或补齐本次确认；迟到预览不能重新挂起已经交接完的旧提交。
+            // 只接管新的 seek 提交或更新当前待确认的提交，忽略迟到的旧事件。
             generation = latest.generation
             trackId = latest.trackId
             pendingCommit = latestCommit
             acceptedCommit = latestCommit
         }
         if (generation == null) return false
-        // 本次提交完成后才能确认；页面正式进度必须确实追上且收到确认，不能在旧进度相等时提前解除。
+        // 必须等播放器正式进度确实追上本次提交的目标且收到确认后，才解除保护。
         val pending = pendingCommit
         val progressCaughtUp = pending == null || lyricSeekCommitProgressCaughtUp(observed, pending)
         val confirmed = latestPreview == null && observedPreview == null && observed == latest && progressCaughtUp &&
@@ -61,7 +61,7 @@ internal class LyricIntermediateSeekHandoff {
     }
 }
 
-/** 向后 seek 时旧进度也可能大于目标；只接受提交后合理推进的正式采样。 */
+/** 判断播放器正式采样是否已追上本次 seek（仅接受提交之后的采样，且位置落在合理误差内）。 */
 internal fun lyricSeekCommitProgressCaughtUp(observed: PlaybackProgressSnapshot,
     pending: ProgressLyricSeekCommit): Boolean {
     val confirmed = pending.confirmed ?: return false

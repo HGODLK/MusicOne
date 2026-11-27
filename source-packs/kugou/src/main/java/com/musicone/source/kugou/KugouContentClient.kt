@@ -8,10 +8,10 @@ import org.json.JSONObject
 
 internal const val KUGOU_ALBUM_PAGE_SIZE = 50
 
-/** 歌手专辑的发行时间倒序序号，接口不接受其他取值来倒排。 */
+/** 酷狗歌手专辑接口的排序参数：1 表示按发行时间倒序。 */
 internal const val KUGOU_ARTIST_ALBUM_SORT = 1
 
-/** 仅用于内容浏览，不参与播放解析、歌词和账号写入。 */
+/** 内容浏览接口（歌手、专辑等）的通用请求模型。 */
 internal data class KugouContentRequest(
     val path: String,
     val router: String? = "openapi.kugou.com",
@@ -53,11 +53,11 @@ internal class KugouContentClient(
 ) {
     suspend fun load(request: KugouContentRequest, cookie: String, requireData: Boolean = true): JSONObject {
         currentCoroutineContext().ensureActive()
-        // 公开资料请求无需转发账号会话；账号与媒体鉴权仍由原服务负责。
+        // 公开内容接口不需要带登录态
         val result = try {
             transport.execute(request, if (request.publicCatalog) "" else cookie)
         } catch (failure: Exception) {
-            // 同步网络中断可能抛出 IO 异常；任务已取消时恢复协程取消语义。
+            // 协程被取消时底层同步请求可能抛 IOException，这里重新检查一次确保正常传播 CancellationException
             currentCoroutineContext().ensureActive()
             throw failure
         }
@@ -80,7 +80,7 @@ internal class KugouContentClient(
             .put("page", page).put("pagesize", size), tid = "255")
     }
 
-    /** 歌手专辑列表固定按发行时间倒序；sort=3 是热度序，2 是其他平台的混排序。 */
+    /** 构造歌手专辑列表请求：固定用 sort=1 按发行时间倒序（sort=3 是热度排序）。 */
     fun artistAlbumsRequest(id: String, page: Int, size: Int): KugouContentRequest {
         require(id.isNotBlank() && id.all(Char::isDigit) && id.any { it != '0' }) { "酷狗歌手编号无效" }
         require(page > 0 && size > 0) { "酷狗歌手专辑分页无效" }

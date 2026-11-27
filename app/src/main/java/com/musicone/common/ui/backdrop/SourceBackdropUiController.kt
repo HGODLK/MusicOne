@@ -26,7 +26,7 @@ internal class SourceBackdropUiController(
     val dialogContent: @Composable () -> Unit,
 )
 
-/** 由可选公开视觉服务管理背景选择和裁剪，根节点只持有通用控制器。 */
+/** 背景选择与裁剪由音源提供的视觉服务负责，根页面只持有通用控制器。 */
 @Composable
 internal fun rememberSourceBackdropUiController(source: MusicSource): SourceBackdropUiController {
     val context = LocalContext.current

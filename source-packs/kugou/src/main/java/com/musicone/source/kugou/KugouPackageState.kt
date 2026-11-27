@@ -31,7 +31,7 @@ internal class KugouPackageState(val environment: SourceEnvironment,
     fun check(value: KugouAccountRequest) { check(!closed && revision.get() == value.generation && cookie() == value.cookie) { "酷狗账号已变化，旧请求已取消" } }
     suspend fun <T> request(block: suspend (KugouAccountRequest) -> T): T {
         val captured = capture()
-        // 本包已声明强制登录，保存队列、缓存恢复等直接调用也不能绕过认证取源。
+        // 酷狗音源要求强制登录，任何取流和接口调用前都先检查登录态
         requireKugouAuthenticatedRequest(captured.cookie, account()?.userId)
         return withContext(Dispatchers.IO) {
             try { check(captured); block(captured).also { currentCoroutineContext().ensureActive(); check(captured) } }
@@ -70,7 +70,7 @@ internal fun requireKugouAuthenticatedRequest(cookie: String, accountId: String?
     }
 }
 
-/** 只核对已有完整凭证和本地账号，不联网验票；认证页与业务门禁使用相同条件。 */
+/** 本地校验凭证和账号 ID 是否完整（不联网），登录页和接口拦截共用这个判断。 */
 internal fun kugouAuthenticatedAccountId(cookie: String, accountId: String?): String? {
     val values = cookie.cookieValues()
     return accountId?.takeIf { user -> user.toLongOrNull()?.let { it > 0 } == true &&

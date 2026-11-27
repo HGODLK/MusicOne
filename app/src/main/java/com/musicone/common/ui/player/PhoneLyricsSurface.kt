@@ -26,7 +26,7 @@ internal data class PhoneLyricsSurfaceRequest(val owner: Any, val slot: PhoneLyr
     val lyrics: PlayerLyricsRequest, val spec: PlayerLayoutSpec, val moving: Boolean,
     val displayed: Boolean, val color: Color, val rotation: Int, val touchPadding: Dp)
 
-/** 横竖布局只登记空槽，歌词及其裁剪、输入节点始终留在同一宿主。 */
+/** 手机歌词统一宿主：横竖屏布局只提供占位空槽，真正的歌词列表始终留在同一个节点里不重建。 */
 internal class PhoneLyricsSurface {
     val gestures = PhoneLyricsSurfaceGestures()
     val turnFocus = PhoneLyricsTurnFocus()
@@ -43,13 +43,13 @@ internal class PhoneLyricsSurface {
             (pending ?: request)?.owner?.let { owner -> placements[owner]?.let { place(owner, it) } }
         }
     fun publish(value: PhoneLyricsSurfaceRequest) {
-        // 新请求先等实际宿主，不能先换正文身份，再用上一份尺寸把整片歌词置为透明。
+        // 切换槽位时先等新槽位完成布局，不要拿旧尺寸把歌词提前变透明。
         pending = value
         placements[value.owner]?.let { place(value.owner, it) }
         if (pending === value) LyricDisplayDiagnostics.recovery("等待歌词宿主", value.owner)
     }
     fun place(owner: Any, value: LayoutCoordinates) {
-        // 放置先于请求发布时也保留登记，不能漏掉唯一一次有效坐标而永久透明。
+        // 即使布局回调早于请求发布到达，也先记录下坐标，避免漏掉唯一一次回调导致永久透明。
         placements[owner] = value
         val next = (pending ?: request)?.takeIf { it.owner === owner } ?: return
         val root = coordinates ?: return

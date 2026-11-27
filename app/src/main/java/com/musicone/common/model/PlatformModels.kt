@@ -31,7 +31,7 @@ internal data class PlatformSettingsUiState(
     val sessionRevision: Long = 0L,
     // 提供设置页的主音源，主音源页标题旁显示齿轮。
     val settingsSourceIds: Set<String> = emptySet(),
-    // 首页使用实际会话代次，资料刷新仍沿用原有全局通知。
+    // 首页只在真正切号或登录态变化时才刷新，单纯改昵称头像不重刷首页。
     val homeSessionRevision: Long = 0L,
     val phone: String = "",
     val countryCode: String = "86",
@@ -59,4 +59,5 @@ internal enum class SettingsDestination {
     SUPPLEMENTAL,
     SOURCE_MANAGEMENT,
     AI_ASSISTANT,
+    CUSTOM_FONTS,
 }

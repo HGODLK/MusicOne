@@ -15,7 +15,7 @@ internal interface BiliFolderCacheStore {
     fun saveContent(account: String, folder: Long, content: BiliFolderSnapshot)
 }
 
-/** 收藏夹按账号独立落盘，列表快照与分页游标一起保存，不缓存搜索结果。 */
+/** 按账号缓存收藏夹列表和分页进度到本地，搜索结果不缓存。 */
 internal class BiliFolderCache(context: Context) : BiliFolderCacheStore {
     private val directory = File(context.filesDir, "bili_folder_cache")
     private fun file(account: String, name: String) = AtomicFile(File(directory, "${account.filter(Char::isDigit)}-$name.json"))

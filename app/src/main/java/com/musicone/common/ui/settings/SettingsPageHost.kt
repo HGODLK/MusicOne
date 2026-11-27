@@ -70,7 +70,9 @@ internal fun SettingsPageHost(navigation: SettingsNavigation, state: PlatformSet
                     when (displayed) {
                         SettingsDestination.SETTINGS -> SettingsHomeScreen(state,
                             navigation::back, navigation::openSources, bottomInset, navigation::openCachedMusic,
-                            navigation::openLibrary, navigation::openSupplemental, navigation::openAiAssistant)
+                            navigation::openLibrary, navigation::openSupplemental, navigation::openAiAssistant,
+                            navigation::openCustomFonts)
+                        SettingsDestination.CUSTOM_FONTS -> CustomFontSettingsScreen(navigation::backPage, bottomInset)
                         SettingsDestination.AI_ASSISTANT -> aiController?.let {
                             AiAssistantRoute(it, navigation::backPage, bottomInset)
                         }

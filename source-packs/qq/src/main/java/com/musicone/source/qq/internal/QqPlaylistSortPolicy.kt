@@ -1,6 +1,6 @@
 package com.musicone.source.qq.internal
 
-/** 排序键沿用旧账号与目录身份，展示标题改变不会生成新偏好。 */
+/** 生成歌单排序偏好的存储 key（绑定账号和歌单 ID，改歌单名不会丢失排序）。 */
 internal fun qqPlaylistSortKey(playlist: MusicPlaylist, accountId: String?): String? {
     if (playlist.source != MusicSource.QQ || playlist.isQqSearchAlbum) return null
     val owner = accountId?.takeIf { it.isNotBlank() } ?: return null

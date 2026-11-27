@@ -33,7 +33,7 @@ internal data class FavoriteTogglePlan(
     val unifiedTarget: Boolean? = null,
 )
 
-/** 计算红心展示状态集合：单写音源模式仅把无远端收藏能力音源的综合歌单曲目并入，避免串扰。 */
+/** 计算哪些歌要亮红心：只写音源模式下，只有不支持云端红心的音源才把综合歌单里的歌算进来，避免串扰。 */
 internal fun displayedFavoriteIds(
     remoteIds: Set<String>,
     unifiedTracks: List<MusicTrack>,

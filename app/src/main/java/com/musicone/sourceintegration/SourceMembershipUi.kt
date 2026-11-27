@@ -13,7 +13,7 @@ import com.musicone.source.sdk.SourceEntry
 import com.musicone.source.sdk.currentMembership
 import com.musicone.source.sdk.detectMembership
 
-/** 页面只在主动提供检测器时核验；未声明与未知保留不同值。 */
+/** 只有音源提供了会员检测器时才去查，区分“没提供”和“暂时未知”。 */
 @Composable
 internal fun rememberSourceMembership(entry: SourceEntry?): Boolean? {
     val context = LocalContext.current

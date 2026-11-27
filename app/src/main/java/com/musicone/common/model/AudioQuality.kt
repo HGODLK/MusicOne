@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 标准常量保持原身份，自定义档以音源和原始 id 共同标识。 */
+/** 标准音质沿用固定常量名，音源自定义音质用 (音源ID, 自定义ID) 联合区分。 */
 class AudioQuality private constructor(
     val name: String, val label: String, val compactLabel: String,
     val bitRate: Int, val providerLevel: String, val ordinal: Int,
@@ -66,7 +66,7 @@ internal data class PlaybackSource(
     val cacheKey: String? = null,
     val mimeType: String? = null,
     val expiresAtEpochMs: Long? = null,
-    // 仅供当前进程失败恢复；不持久化包的地址和恢复载荷。
+    // 只在当前进程里给播放失败恢复用，不落盘。
     val sourceResource: com.musicone.source.sdk.SourcePlaybackResource? = null,
 )
 
@@ -137,7 +137,7 @@ internal fun AudioQuality.displayDescription(): String = if (isCustom) descripti
     else -> description
 }
 
-/** 自定义档只按声明的回退关系比较，能力映射不能合并两个真实档位。 */
+/** 自定义音质按音源声明的回退链比较高低，不拿标准映射强行等同。 */
 internal fun AudioQuality.isHigherThan(other: AudioQuality): Boolean {
     if (this == other) return false
     if (!isCustom && !other.isCustom) return ordinal > other.ordinal

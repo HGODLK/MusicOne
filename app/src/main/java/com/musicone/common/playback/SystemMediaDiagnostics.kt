@@ -5,12 +5,12 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 
-/** 区分会话发布、外部连接与指令到达；不记录歌名、音源地址或完整媒体标识。 */
+/** 记录 MediaSession 连接和外部控制指令日志（不打印歌名、地址等敏感信息）。 */
 @androidx.annotation.OptIn(UnstableApi::class)
 internal class SystemMediaDiagnostics : MediaSession.Callback, Player.Listener {
     override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
         Log.i(TAG, "连接请求 来源=${controller.packageName} 受信任=${controller.isTrusted}")
-        // 保留 Media3 默认授信策略，不能因厂商包名不同而拒绝系统控制器。
+        // 沿用 Media3 默认连接策略，不要因为各厂商系统包名不同而拒接控制请求。
         return MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
     }
 

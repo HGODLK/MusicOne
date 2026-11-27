@@ -82,7 +82,7 @@ class QqPlaylistPagingTest {
     }
 
     @Test fun observedWebShapeKeepsTrackTypeZeroForDeletionInsteadOfSongtypeThirteen() {
-        // 只复现设备已确认的字段形态，歌曲身份为合成数据，不保存真实响应。
+        // 用构造的测试数据模拟线上接口字段结构
         val song = JSONObject().put("mid", "0039MnYb0qxYhV").put("id", 456).put("name", "测试歌曲")
             .put("type", 0).put("songtype", 13)
         val data = JSONObject().put("dirinfo", JSONObject().put("title", "测试歌单"))

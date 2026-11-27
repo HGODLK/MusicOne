@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 
-/** 方向与关联页返回时序独立保存，页面主组件只接线。 */
+/** 管理手机播放页的横竖屏方向、转向动画及关联详情页返回状态，避免塞进页面主 Composable。 */
 @Stable
 internal class PhonePlayerPresentation(private val scope: CoroutineScope) {
     var rotationDegrees by mutableIntStateOf(0)
@@ -66,7 +66,7 @@ internal class PhonePlayerPresentation(private val scope: CoroutineScope) {
 
     suspend fun updateCustomPresentation(rotation: Int, mounted: Boolean) {
         reset()
-        // 监听方向继续保留给下次开页，隐藏播放页不能把普通页面和队列一起转向。
+        // 播放页关闭时强制归正为 0 度，防止影响到普通页面和播放队列；传感器方向仍留在后台供下次打开用。
         rotationDegrees = if (isPhone && mounted) rotation else 0
     }
 
@@ -75,7 +75,7 @@ internal class PhonePlayerPresentation(private val scope: CoroutineScope) {
         relatedPages = open
     }
 
-    /** 普通页点击直接使用当前观看方向展开，开合中仍只记录最新方向。 */
+    /** 准备打开播放页：按当前手机朝向初始化方向和共享锚点。 */
     fun prepareOpen() {
         if (!isPhone) return
         if (customPlayer) {
@@ -103,7 +103,7 @@ internal class PhonePlayerPresentation(private val scope: CoroutineScope) {
         }
     }
 
-    /** 用户实际抓取后由本次手势决定去留，旧的按钮返回请求不再排队执行。 */
+    /** 用户开始手动拖动时，取消之前排队的按钮关闭请求。 */
     fun cancelPendingDismissForGesture() {
         closingRequested = false
     }
@@ -114,8 +114,7 @@ internal class PhonePlayerPresentation(private val scope: CoroutineScope) {
         settlingJob?.cancel()
         settlingJob = null
         if (!customPlayer && !flight.handoffActive && (rotationDegrees != 0 || bodyMoving || preparation.active)) {
-            // 按钮返回也封存当前真实姿态，沿原收起曲线直接回到底部控件。
-            // 不建立手势侧条位移，来源仍是物理底部的原播放控件。
+            // 点击返回按钮时同样接管当前实际姿态，直接沿收起动画回到迷你播放条。
             flight.beginTurnDrag(turn)
             turn.releasePreparation()
             preparation.reset()
@@ -147,7 +146,7 @@ internal class PhonePlayerPresentation(private val scope: CoroutineScope) {
             if (!canStartRotation(target) || rotationDegrees == target && !preparation.active) return@launch
             settlingJob?.cancel()
             settlingJob = null
-            // 选择形态必须在开合结束后读取，不能沿用等待前的歌词开关状态。
+            // 等歌词开合结束后再读一次当前是否开着歌词，不要用等待前的旧状态。
             val keys = setOf("cover", "title", "artist", "favorite", "play", "previous", "next",
                 "quality", "mode", "elapsed", "remaining", "fixedActions") +
                 if (portraitLyrics.value) setOf("lyrics") else if (target != 0) setOf("clock") else emptySet()
@@ -164,7 +163,7 @@ internal class PhonePlayerPresentation(private val scope: CoroutineScope) {
             if (ready) {
                 turn.releasePreparation()
                 preparation.release()
-                // 只锁定几何枢轴，正文继续按同一列宽独立推进。
+                // 释放阅读位置锁，只保留几何枢轴用于转向动画，歌词正文恢复正常播放滚动。
                 lyricsAnchor.releaseForMotion()
                 lyricsHandoff.clear()
                 animateRotation(target)
@@ -172,16 +171,16 @@ internal class PhonePlayerPresentation(private val scope: CoroutineScope) {
                 preparation.reset()
                 lyricsAnchor.release()
                 lyricsHandoff.clear()
-                // 捕获失败只放弃新方向，原方向尚未结束的主体和按钮仍正常收尾。
+                // 准备失败就放弃切到新方向，让原方向还没播完的动画继续收尾。
                 animateRotation(rotationDegrees)
             }
         }
     }
 
-    /** 菜单暂停按钮朝向，释放后保留角度并清除暂停前旧动量；手势交接仍保留速度。 */
+    /** 弹窗菜单打开时暂停按钮旋转动画并清零初速度，关闭后从当前角度继续。 */
     fun menuMotionChanged(active: Boolean) {
         if (preparation.active) return
-        // 菜单只暂停按钮角度，不能取消负责释放歌词阅读锁的整段转向任务。
+        // 只取消按钮旋转，不要取消整个转向收尾任务（否则歌词阅读锁放不掉）。
         actionJob?.cancel()
         actionVelocity = 0f
         if (!active && rotationJob?.isActive != true &&
@@ -195,9 +194,9 @@ internal class PhonePlayerPresentation(private val scope: CoroutineScope) {
         }
     }
 
-    /** 切歌只补回已中断的收尾任务；仍在运行的转向及其速度完全保留。 */
+    /** 切歌重绑后检查是否需要补跑被中断的转向收尾，正在运行的动画不受影响。 */
     fun contentChanged() {
-        // 收尾独立于按钮方向任务；后者等待菜单或被取消时不能扣住主体与歌词。
+        // 主体转向收尾与按钮旋转分开，防止按钮被菜单暂停时卡住主体和歌词。
         ensureTurnSettlement()
         if (!preparation.active && rotationJob?.isActive != true &&
             (turn.isTurning || actionRotation.value != rotationDegrees.toFloat())) continueRotation()
@@ -264,7 +263,7 @@ internal val LocalPhonePlayerPresentation = staticCompositionLocalOf<PhonePlayer
 @Composable
 internal fun rememberPhonePlayerPresentation(expanded: Boolean, motion: PageMotion,
     queue: PlayerQueueState): PhonePlayerPresentation {
-    // 普通页也记住最近的允许方向，点击时直接准备对应端点；监听仍受前台生命周期约束。
+    // 在普通页面也持续监听手机朝向，点开播放页时就能直接按当前方向展开。
     val orientation = rememberPhonePlayerOrientation(true)
     val scope = rememberCoroutineScope()
     val presentation = remember(scope) { PhonePlayerPresentation(scope) }

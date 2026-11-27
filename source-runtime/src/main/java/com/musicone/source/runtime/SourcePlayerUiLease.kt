@@ -7,7 +7,7 @@ import androidx.compose.ui.Modifier
 import com.musicone.source.sdk.*
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** 自建播放器的所有入口绑定当前实例、账号与挂载周期。 */
+/** 自定义播放器的所有入口都绑定到当前音源实例、账号和页面挂载周期。 */
 internal class SourcePlayerUiContextLease(
     private val original: SourcePlayerUiContext,
     private val sourceId: String,
@@ -38,7 +38,7 @@ internal class SourcePlayerUiContextLease(
     override val safeDrawingInsets get() = read { original.safeDrawingInsets }
     override val transition get() = read { original.transition }
     override val actions: SourcePlayerUiActions get() = read {
-        // 取出时绑定本次曲目动作，迟到回调不能悄悄切换到新歌曲的操作对象。
+        // 获取时就锁定当前曲目的操作对象，防止迟到的回调误操作到新切出来的歌。
         val captured = original.actions
         object : SourcePlayerUiActions, SourcePlayerSeekPreviewActions, SourcePlayerQueueGestureActions,
             SourcePlayerTrackMenuActions, SourcePlayerDismissGestureActions {
@@ -54,7 +54,7 @@ internal class SourcePlayerUiContextLease(
             override fun openQueue() = dispatch { captured.openQueue() }
             override fun toggleFavorite() = dispatch { captured.toggleFavorite() }
             override fun retryLyrics() = dispatch { captured.retryLyrics() }
-            // 新增能力由宿主动作对象实现；同一宿主内运行时与桥接同版本发布，缺失时按不可用处理。
+            // 新增能力由宿主动作对象提供，缺失时按不可用处理。
             override fun previewSeek(trackId: String, generation: Long, positionMs: Long?) = dispatch {
                 (captured as? SourcePlayerSeekPreviewActions)?.previewSeek(trackId, generation, positionMs)
             }
@@ -93,7 +93,7 @@ internal class SourcePlayerUiContextLease(
     // 同一次挂载只包装一次，包可在组合中反复读取同一对象。
     private val lyricsLease = LyricsMotionLease()
     override val lyricsMotion: SourcePlayerLyricsMotion get() = read { lyricsLease }
-    // 宿主数据与背景：包只能看到包装层，必须逐项转发；同一宿主内运行时与桥接同版本发布，缺失时按空数据处理。
+    // 音源只能拿到包装层，宿主数据和背景需要逐项转发，缺失时按空数据处理。
     override val queueSnapshot: SourcePlayerQueueSnapshot get() = read {
         (original as? SourcePlayerQueueAccess)?.queueSnapshot ?: SourcePlayerQueueSnapshot(-1, 0, emptyList())
     }

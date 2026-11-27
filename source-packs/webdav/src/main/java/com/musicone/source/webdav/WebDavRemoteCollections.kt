@@ -8,7 +8,7 @@ import org.json.JSONObject
  * WebDAV 书签（远端集合）、导入与订阅服务：
  * - 书签文件夹映射为 SourceRemoteCollection，宿主订阅刷新通过 collections() 重新定位；
  * - contents() 列出书签文件夹音频并支持关键词过滤，返回带 playableTrack 的 SourceContent；
- * - subscriptions.page() 完整扫描目录后按路径顺序输出，遇到访问失败时抛异常保留旧列表，绝不返回空列表冒充成功。
+ * - subscriptions.page() 完整扫描目录后按路径顺序返回，访问失败时直接抛异常保留旧列表，不返回空列表。
  */
 internal class WebDavRemoteCollections(
     private val auth: WebDavAuthentication,

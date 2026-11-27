@@ -51,7 +51,7 @@ internal class PlatformPreferences(context: Context) {
             val account = value?.let { MusicAccount(source, it.id, it.displayName, it.avatarUrl,
                 com.musicone.sourceintegration.sourceMembershipState(applicationContext, source) == true, it.backgroundUrl, it.signature,
                 it.follows?.toInt() ?: 0, it.followers?.toInt() ?: 0) }
-            // 宿主只持有会话版本标识供旧读者比较，不读取或回写包的私有凭证。
+            // 宿主只拿账号 ID 和版本号拼一个会话标识用来判变化，不碰音源包的私有登录凭证。
             return PlatformSession(source, if (value == null) "" else "source-session:${source.id}:${value.id}:${state.revision}", "", account)
         }
         val credential = preferences.getString(key(source, FIELD_CREDENTIAL), "").orEmpty()

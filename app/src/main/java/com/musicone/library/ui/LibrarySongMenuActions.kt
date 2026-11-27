@@ -55,7 +55,7 @@ internal fun LibrarySongMenuActions(menu: MainSourcePlaylistSongMenuState, playl
     if (track.source.supportsLibraryEditing) SongMenuRow("编辑歌曲资料", !ui.busy && !menu.busy, menu::openEditor)
 }
 
-/** 复用同一套快捷偏移操作，处理期间只禁用点击，不让文字短暂变灰。 */
+/** 歌词时间偏移快捷调整行，写入期间只禁点击不把文字变灰闪一下。 */
 @Composable
 private fun LyricOffsetMenuActions(menu: MainSourcePlaylistSongMenuState, track: MusicTrack) {
     val ui = LocalMusicLibraryUi.current

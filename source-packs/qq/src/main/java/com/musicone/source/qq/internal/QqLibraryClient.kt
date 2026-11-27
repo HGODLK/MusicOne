@@ -12,7 +12,7 @@ internal class QqLibraryClient(
     fun favoritePlaylistPage(cookie: String, userId: String, hasVipAccess: Boolean, offset: Int = 0,
         resolveAccess: Boolean = true): PlaylistTrackPage {
         requireLogin(cookie, userId)
-        // 我喜欢使用固定目录 201 的歌曲分页，资料摘要接口不能可靠读取大收藏。
+        // “我喜欢”固定走目录 201 的分页接口，曲目多时摘要接口拿不全
         val shell = MusicPlaylist(
             id = QQ_FAVORITES_PLAYLIST_ID,
             source = MusicSource.QQ,

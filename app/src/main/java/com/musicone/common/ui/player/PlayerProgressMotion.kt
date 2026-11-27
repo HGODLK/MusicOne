@@ -59,6 +59,16 @@ internal class PlayerProgressMotionState(initialValue: Float) {
         resetJob = scope.launch { progress.animateTo(0f, musicMotion(220)) }
     }
 
+    /**
+     * 自然过渡交接：从上一首的位置平滑接到下一首的真实位置。与归零一样独立于采样任务存活，
+     * 否则每秒的进度回传会打断动画并因偏差过大直接跳变。
+     */
+    internal fun requestHandoff(scope: CoroutineScope, value: Float) {
+        cancelReset()
+        pendingSeek = null
+        resetJob = scope.launch { progress.animateTo(value.coerceIn(0f, 1f), musicMotion(AUTOMIX_HANDOFF_MS)) }
+    }
+
     internal suspend fun awaitReset() { resetJob?.join() }
 
     private fun cancelReset() { resetJob?.cancel(); resetJob = null }
@@ -109,6 +119,7 @@ internal fun rememberPlayerProgressMotion(
     }
 
     LaunchedEffect(trackId, positionMs, durationMs, advancing, switching, active, motion.seekRevision) {
+        val previousTrackId = handoff.currentTrackId
         val action = handoff.update(trackId, switching, active)
         if (action == PlayerProgressHandoffAction.SYNC) {
             // 常驻页恢复时直接对齐当前进度，不能把隐藏期间的换曲补播成归零动画。
@@ -116,7 +127,13 @@ internal fun rememberPlayerProgressMotion(
             if (!active) return@LaunchedEffect
         }
         if (motion.hasPendingSeek() || newLyricSeek) return@LaunchedEffect
-        if (action == PlayerProgressHandoffAction.RESET) motion.requestReset(scope)
+        if (action == PlayerProgressHandoffAction.RESET) {
+            // 自然过渡交接：下一首从中间切入，进度条平滑接到它的真实位置，不播放归零。
+            // 目标取动画结束时 B 将到达的位置，接上后与随后的匀速推进无缝衔接。
+            if (autoMixProgressHandoff(previousTrackId, trackId)) {
+                motion.requestHandoff(scope, playerProgressFraction(positionMs + AUTOMIX_HANDOFF_MS, durationMs))
+            } else motion.requestReset(scope)
+        }
         if (switching) return@LaunchedEffect
         // 归零独立于采样任务存活；用户跳转会撤销它，后续更新不再补播归零。
         motion.awaitReset()
@@ -147,3 +164,5 @@ internal fun playerProgressFraction(positionMs: Long, durationMs: Long): Float =
 
 private const val PROGRESS_SAMPLE_MS = 1_000L
 private const val PROGRESS_DISCONTINUITY_MS = 2_000f
+/** 交接动画时长：比跳转（240ms）稍长，读作“接过去”而不是“跳过去”。 */
+private const val AUTOMIX_HANDOFF_MS = 480

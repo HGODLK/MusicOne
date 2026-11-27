@@ -12,7 +12,7 @@ internal fun needsVerbatimLyricsRefresh(track: MusicTrack): Boolean {
     return needsVerbatimLyricsRefresh(track.lyrics, provider.parserVersion, provider.refreshPlainLyricsForVerbatim)
 }
 
-/** 设置开启时只升级当前稳定播放的歌曲，切歌加载仍由原请求入口负责。 */
+/** 打开逐字歌词开关时，只刷新当前正在播的这首歌；后续切歌仍走正常加载流程。 */
 internal fun CoroutineScope.observeVerbatimLyricsPreference(
     currentTrack: () -> MusicTrack?,
     refresh: (MusicTrack) -> Unit,

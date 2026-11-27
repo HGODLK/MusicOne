@@ -16,10 +16,10 @@ import androidx.compose.ui.unit.dp
 import com.musicone.source.sdk.*
 import com.musicone.source.webdav.internal.*
 
-/** 入口按所有者登记返回处理，旧页面退场时不会清掉新页面的处理。 */
+/** 按页面实例注册返回键拦截，避免旧页面退出动画结束时误清掉新页面的返回处理。 */
 internal typealias WebDavBackBinder = (owner: Any, handler: (() -> Boolean)?) -> Unit
 
-/** 切换动画只看目录身份；内容刷新不触发转场，退场页面保留自己的列表状态。 */
+/** 切换动画只根据目录路径触发，刷新当前目录内容不播转场，退场中的页面保留各自列表状态。 */
 private data class WebDavScreen(val bookmarks: Boolean, val path: String, val trackState: SourceTrackListState) {
     val key: String get() = if (bookmarks) "bookmarks" else "dir:$path"
     val rank: Int get() = if (bookmarks) Int.MAX_VALUE else webDavDepth(path)
@@ -169,7 +169,7 @@ private fun WebDavBrowserContent(
     }
 }
 
-/** 退场中的目录继续显示自己最后一份内容，不会被下一个目录覆盖。 */
+/** 渲染退场动画里的目录页，保持它最后一份数据，不被新目录覆盖。 */
 @Composable
 private fun rememberScreenView(controller: WebDavBrowserController, path: String): WebDavDirectoryView {
     val live = controller.view

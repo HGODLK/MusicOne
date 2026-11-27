@@ -2,7 +2,7 @@ package com.musicone
 
 import androidx.compose.runtime.staticCompositionLocalOf
 
-/** 远程封面默认从占位淡入真实封面；需要保护入场动效的局部内容可额外延后加载或只读缓存。 */
+/** 封面默认加载完后从占位图淡入；入场动画期间可以延迟加载或只读缓存避免掉帧。 */
 internal data class ArtworkEntrancePolicy(val loadingAllowed: Boolean = true, val fadeArtwork: Boolean = true,
     val cacheOnly: Boolean = false)
 

@@ -13,7 +13,7 @@ import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.node.invalidateDraw
 import androidx.compose.ui.platform.InspectorInfo
 
-/** 消费已经放行的歌词帧，同时保证局部图层更新提交到 Android 宿主。 */
+/** 驱动歌词独立动画帧并通知宿主 View 刷新，确保局部图层更新能及时上屏。 */
 @Composable
 internal fun Modifier.lyricWindowFrameDrive(active: Boolean): Modifier {
     if (!BuildConfig.MUSICONE_LYRIC_FRAME_DRIVE && !BuildConfig.MUSICONE_TRACE) return this

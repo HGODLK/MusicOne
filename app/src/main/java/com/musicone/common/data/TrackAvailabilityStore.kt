@@ -14,7 +14,7 @@ internal data class TrackAvailabilitySnapshot(
     val unavailable: Map<String, String> = emptyMap(),
 )
 
-/** 确认结果按账号版本隔离；重新展示时合并同曲核对，未知结果恢复可重试。 */
+/** 歌曲可播状态按账号版本隔离；同一首歌并发核对会合并去重，核对不出结果时恢复为可点击重试。 */
 internal class TrackAvailabilityStore(
     private val scope: CoroutineScope,
     private val verify: suspend (MusicTrack) -> String?,
@@ -45,11 +45,11 @@ internal class TrackAvailabilityStore(
         val request = synchronized(pending) {
             val snapshot = state.value
             val key = snapshot.revision to track.id
-            // 列表里的历史标志只作为未知，避免覆盖已经取到音源的实际结果。
+            // 列表接口带的历史不可播标记只当成待核对，不覆盖已经确认过的结果。
             if (track.id !in snapshot.unavailable && key !in pending) return
             val version = versions[track.id] ?: 0L
             pending[key] ?: scope.async(start = CoroutineStart.LAZY) {
-                // 旧结果不能在本次核对未知或失败时继续锁死点击。
+                // 先清掉旧的不可播标记，防止本次核对超时或失败时一直把歌锁死点不了。
                 synchronized(pending) {
                     if ((versions[track.id] ?: 0L) == version) publish(track, snapshot.revision, null)
                 }
@@ -57,7 +57,7 @@ internal class TrackAvailabilityStore(
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) { null }
                 synchronized(pending) {
-                    // 后发生的实际播放结果优先，迟到核对不能再次把成功播放的歌曲置灰。
+                    // 如果期间这首歌已经实际播起来了，版本号会变，迟到的核对结果不能再把它置灰。
                     if ((versions[track.id] ?: 0L) == version) publish(track, snapshot.revision, reason)
                 }
             }.also { job ->
@@ -71,11 +71,11 @@ internal class TrackAvailabilityStore(
     }
 }
 
-/** 在线列表中的历史标志不能代替本轮确认，完整离线音源仍优先。 */
+/** 综合计算歌曲在界面上是否可点：音源可用且有完整离线缓存优先可播，不盲信列表里的旧不可播标记。 */
 internal fun displayedTrackAvailability(track: MusicTrack, reason: String?, offline: Boolean, online: Boolean = true,
     sourceStatus: QueueSourceStatus = QueueSourceStatus.AVAILABLE): MusicTrack {
     if (track.source == MusicSource.LOCAL) return track
-    // 缺包和用户待删除选择先于离线缓存，不将派生状态写回歌曲资料。
+    // 音源包缺失或被用户标记删除时优先级高于离线缓存，这里只改展示副本，不写回原始数据。
     if (sourceStatus != QueueSourceStatus.AVAILABLE && sourceStatus != QueueSourceStatus.INITIALIZING) {
         return track.copy(playable = false, unavailableReason = sourceStatus.message(track.source))
     }

@@ -12,7 +12,7 @@ internal data class KugouMediaInfo(
     val bitDepth: Int = 0,
 )
 
-/** 酷狗换票成功不代表档位和完整时长正确，播放前以媒体本身再次确认。 */
+/** 酷狗拿到播放链接后，实际文件和时长仍可能不符（比如试听或降档），播放前先校验媒体头。 */
 internal object KugouAudioValidation {
     private val cache = object : LinkedHashMap<String, KugouMediaInfo>(32, .75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, KugouMediaInfo>?): Boolean = size > 32
@@ -53,7 +53,7 @@ internal object KugouAudioValidation {
             return null
         }
         val valid = kugouMediaMatches(info, track.durationMs, quality)
-        // 只记录歌曲标识和媒体规格，避免把签名地址或账号信息写入日志。
+        // 日志只打歌曲 ID 和音频规格，不输出签名 URL 和账号信息
         Log.d(
             "KugouAudioValidation",
             "track=${track.id} expected=${track.durationMs} actual=${info.durationMs} " +

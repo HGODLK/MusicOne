@@ -3,8 +3,7 @@ package com.musicone.source.qq.internal
 import org.json.JSONObject
 
 internal fun qqPlaylistPageRequest(playlist: MusicPlaylist, offset: Int, cookie: String): JSONObject =
-    // 此端点的移动版comm会让同曲返回不同type；读取使用已验证的网页schema。
-    // 保留qq/authst及登录类型等认证字段，移除移动端v，避免与ct19/cv0混用。
+    // 这个接口传移动端 comm 会导致歌曲 type 错乱，改用网页端参数（ct=19, cv=0），保留登录认证字段并去掉移动端 v 字段
     JSONObject().put("comm", qqPlaybackComm(cookie).put("ct", 19).put("cv", 0).apply { remove("v") }).put("playlist", JSONObject()
         .put("module", "music.srfDissInfo.DissInfo").put("method", "CgiGetDiss")
         .put("param", JSONObject()
@@ -19,7 +18,7 @@ internal class QqPlaylistPaging(
             mapOf("Referer" to "https://y.qq.com/", "User-Agent" to "QQMusic 2005000982(android 14)")).text)
     },
 ) {
-    /** 只取一首以获得目录标题，避免为修复标题加载整页歌曲或查询歌曲权限。 */
+    /** 只拉 1 首歌来拿完整歌单标题，省得为了修标题把整页歌曲都拉下来。 */
     fun title(playlist: MusicPlaylist, cookie: String): String? {
         val body = qqPlaylistPageRequest(playlist, 0, cookie)
         body.getJSONObject("playlist").getJSONObject("param").put("song_num", 1)
@@ -56,7 +55,7 @@ internal fun JSONObject.parseQqPlaylistTrackPage(
     val info = optJSONObject("dirinfo") ?: JSONObject()
     val songs = optJSONArray("songlist")
         ?: throw PlatformApiException("QQ 音乐没有返回歌单歌曲")
-    // 复用原详情映射，保留封面、描述解码与歌曲权益规则。
+    // 转成旧版字段结构，复用原来的歌单详情解析逻辑
     val legacy = JSONObject().put("dissname", info.optString("title").ifBlank { info.optString("dissname") })
         .put("nickname", info.optJSONObject("creator")?.optString("nick").orEmpty())
         .put("desc", info.optString("desc")).put("songnum", optInt("total_song_num", fallback.count))

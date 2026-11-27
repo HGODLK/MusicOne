@@ -5,7 +5,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 
-/** 隐藏子树可预先测量观看方向；公开方向仍为零，普通页面和队列不受影响。 */
+/** 计算手机播放页的布局旋转角度：隐藏预热时按当前握持方向提前测量，开合开始后锁定本轮方向。 */
 internal fun retainedPlayerLayoutRotation(activeRotation: Int, upcomingRotation: Int,
     mounted: Boolean, retentionAllowed: Boolean, defaultPhonePlayer: Boolean): Int =
     if (defaultPhonePlayer && retentionAllowed && !mounted) upcomingRotation else activeRotation

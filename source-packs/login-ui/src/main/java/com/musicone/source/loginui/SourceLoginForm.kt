@@ -13,7 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
-/** 短信表单采用 QQ 既有字段分组，小屏自动换行，避免验证码按钮挤占输入区。 */
+/** 短信登录表单，沿用 QQ 的字段布局，小屏下自动换行避免验证码按钮把输入框挤窄。 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SourceLoginSmsForm(country: String, phone: String, code: String, busy: Boolean, resendSeconds: Int,
@@ -47,7 +47,7 @@ internal fun SourceLoginSmsForm(country: String, phone: String, code: String, bu
     }
 }
 
-/** 二维码始终占据固定区域，加载、失效与重试不使下方操作跳动。 */
+/** 固定二维码占位尺寸，避免加载中、失效或重试时把下面按钮顶得上下跳动。 */
 @Composable
 internal fun SourceLoginQrPanel(platform: String, busy: Boolean, hasQr: Boolean, signedIn: Boolean, message: String?, error: String?,
     onRefresh: () -> Unit, interactive: Boolean = true, qrContent: @Composable () -> Unit) {

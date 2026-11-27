@@ -2,7 +2,7 @@ package com.musicone
 
 import android.app.Application
 
-/** 服务持有的播放运行对象与页面适配器共享队列和请求代次。 */
+/** 管理全局唯一的播放运行时实例，让后台服务和前端页面共享同一份队列和播放状态。 */
 internal object MusicPlaybackRuntimeOwner {
     private var lease: PlaybackRuntimeLease<MusicPlaybackRuntime>? = null
 

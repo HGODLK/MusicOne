@@ -12,7 +12,7 @@ import com.musicone.sourceintegration.SourcePackageController
 
 internal val LocalMyPageVisible = compositionLocalOf { false }
 
-/** 音频目标和浏览预览都在封面准备阶段同步；页面仅接入入口。 */
+/** 把播放器、收藏和缓存目录的同步监听统一挂在这里，页面只管调用。 */
 @Composable
 internal fun MusicLibrarySynchronization(viewModel: MusicPlaybackRuntime, favorites: MusicFavoriteViewModel,
     source: MusicSource, sessionRevision: Long, myVisible: Boolean,

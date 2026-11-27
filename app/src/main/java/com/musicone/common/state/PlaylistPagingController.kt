@@ -38,7 +38,7 @@ internal class PlaylistPagingEntry(playlist: MusicPlaylist) {
     }
 }
 
-/** 浏览只推进一页；完整操作复用同一游标与互斥锁，不并发重复拉取。 */
+/** 列表下滑一次只拉一页；“播放全部”等需要全量数据的操作共用同一个游标和锁，避免重复请求。 */
 internal class PlaylistPagingController(
     private val fetch: suspend (MusicPlaylist, PlaylistTrackCursor?) -> PlaylistTrackPage,
 ) {

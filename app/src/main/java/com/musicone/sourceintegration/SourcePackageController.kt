@@ -14,7 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import java.io.File
 
-/** 一个应用进程只激活一次；导入、回退只修改待重启版本。 */
+/** 管理音源包的启动激活、导入和卸载：同一进程只激活一次，导入新版本或回退要重启后生效。 */
 internal class SourcePackageController private constructor(private val context: Context) {
     private val mutableInstalled = MutableStateFlow<List<InstalledSource>>(emptyList())
     val installed = mutableInstalled.asStateFlow()
@@ -95,7 +95,7 @@ internal class SourcePackageController private constructor(private val context: 
         refresh()
     }
 
-    // 页面只读已经发布的实例，不能争抢安装、验签和加载过程中持有的仓库锁。
+    // UI 只读已发布的快照 Map，不去抢安装和验签时占着的锁。
     fun running(id: String): SourceInstance? = activeInstances[id]
     fun available(kind: SourceKind): List<SourceInstance> = activeInstances.values
         .filter { it.entry.descriptor.kind == kind }
@@ -117,7 +117,7 @@ internal class SourcePackageController private constructor(private val context: 
             require(confirmedPlayingRemoval) { "该音源正在播放，须确认停止播放后移除" }
             stopSourcePlayback()
         }
-        // 先撤下可读实例，再关闭租约；通知观察者时必须已经发布新快照。
+        // 先从对外 Map 里删掉实例再关租约，确保观察者收到通知时读到的是新快照。
         val main = repository.installed().first { it.id == id }.kind == SourceKind.MAIN
         activeInstances = activeInstances - id
         try { if (main) repository.scheduleRemoval(id) else repository.remove(id) }

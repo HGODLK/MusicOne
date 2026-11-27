@@ -1,5 +1,6 @@
 package com.musicone
 
+import androidx.compose.ui.geometry.Rect
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -90,5 +91,33 @@ class LyricRubyTest {
     @Test fun cacheKeepsTransliteration() {
         val decoded = decodeCachedLyrics(encodeCachedLyrics(listOf(line("ko\tno\t\tkyo u\t+"))))
         assertEquals("ko\tno\t\tkyo u\t+", decoded.single().transliteration)
+    }
+
+    @Test fun lineHorizontalBoundsStopsBeforeSoftWrapLineEnd() {
+        // 模拟软折行：0..11 在第一行，11 起在第二行（x=0）；行尾词 9..11 只查询 9、10，绝不把下一行 x=0 混入。
+        val text = "青春から全部奪ってったものを"
+        val bounds = lyricLineHorizontalBounds(9, 11, text, lineTop = 0f, lineBottom = 40f) { offset ->
+            assertTrue("不应访问行尾之外的偏移 $offset", offset in 9 until 11)
+            val left = offset * 80f
+            Rect(left, 0f, left + 80f, 40f)
+        }
+        assertEquals(Rect(720f, 0f, 880f, 40f), bounds)
+    }
+
+    @Test fun lineHorizontalBoundsIgnoresZeroWidthJoinerAndSupportsRtl() {
+        val text = "한\u2060글"
+        val joined = lyricLineHorizontalBounds(0, text.length, text, 10f, 50f) { offset ->
+            when (offset) {
+                0 -> Rect(100f, 10f, 140f, 50f)
+                1 -> Rect(0f, 10f, 0f, 50f)
+                else -> Rect(140f, 10f, 180f, 50f)
+            }
+        }
+        assertEquals(Rect(100f, 10f, 180f, 50f), joined)
+
+        val rtl = lyricLineHorizontalBounds(0, 2, "اب", 0f, 30f) { offset ->
+            if (offset == 0) Rect(240f, 0f, 200f, 30f) else Rect(200f, 0f, 160f, 30f)
+        }
+        assertEquals(Rect(160f, 0f, 240f, 30f), rtl)
     }
 }

@@ -3,7 +3,7 @@ package com.musicone
 import androidx.compose.foundation.lazy.LazyListLayoutInfo
 import kotlin.math.abs
 
-/** 长段落把下一句挤出视口时，以已测量邻行推进行程，不改走快速定位或换窗。 */
+/** 计算滚动到目标行的距离：目标行已在屏内直接取其 offset，被长句挤出屏外时按邻行高度估算。 */
 internal fun lyricNaturalStepTravel(layout: LazyListLayoutInfo, target: Int): Float? {
     val item = layout.visibleItemsInfo.firstOrNull { it.index == target }
     if (item != null) return item.offset.toFloat()
@@ -33,7 +33,7 @@ internal suspend fun runLyricNaturalListStep(pane: LyricWindowPane, current: Int
                     pane.playbackStep.completeStep(current)
                     break
                 }
-                // 估计行程结束后仍由同一驱动接续实测余量，不瞬移补齐。
+                // 按估算距离滚完后，如果还没完全对齐，继续循环用实测偏移平滑补齐。
             }
         }
         if (entrance != null) entrance.scrollPlayback(move)
@@ -41,7 +41,7 @@ internal suspend fun runLyricNaturalListStep(pane: LyricWindowPane, current: Int
     } finally { if (!stillFollowing()) pane.playbackStep.reset() }
 }
 
-/** 自然单句由原逐行驱动持有滚动权；其他事务接管时保留画面并转换坐标。 */
+/** 执行自然播放滚动，被打断交接时重置坐标系但保留当前画面。 */
 internal suspend fun runLyricNaturalPlaybackStep(
     motion: LyricPlaybackStepMotion,
     current: Int,
@@ -55,7 +55,7 @@ internal suspend fun runLyricNaturalPlaybackStep(
         try {
             if (motion.move(current, visibleIndices, travel, scrollBy, canScroll)) motion.completeStep(current)
         } finally {
-            // 下一自然句保留运动速度；可见接管只转换坐标，不重置焦点强调。
+            // 不再继续跟随时释放滚动状态，转换剩余行位移坐标。
             if (!stillFollowing()) motion.reset()
         }
     }

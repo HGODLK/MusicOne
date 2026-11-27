@@ -29,7 +29,7 @@ internal class QqPersistentSession(
             account(credential)
         } catch (error: PlatformApiException) {
             if (!error.rejectsQqCredential()) throw error
-            // 续期只是网络、风控或频率失败时按临时故障上报，不能据此判定登录失效。
+            // 续期遇到网络、风控或限流错误时当作临时故障抛出去，不要误判成登录失效
             refreshFailure?.let { if (!it.rejectsQqCredential()) throw it }
             if (attemptedRefresh) throw error
             val renewed = try {
@@ -46,7 +46,7 @@ internal class QqPersistentSession(
         return QqValidatedSession(credential, verifiedAccount)
     }
 
-    /** 服务端已拒绝当前票时使用：不看到期时间，直接换新票并核实账号。 */
+    /** 服务端拒了当前票据时调用：不管过期时间，直接强制换新票并校验账号。 */
     fun renew(session: PlatformSession): QqValidatedSession {
         val renewed = refreshLogged(session, session.credential, "请求被拒后续期")
         return QqValidatedSession(renewed, account(renewed))

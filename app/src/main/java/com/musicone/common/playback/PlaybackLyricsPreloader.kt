@@ -4,7 +4,7 @@ import android.content.Context
 import com.musicone.sourceintegration.*
 import kotlinx.coroutines.CoroutineScope
 
-/** 歌词窗口与音频窗口独立，实际缓存及换号边界复用通用歌词请求。 */
+/** 后台歌词预加载，与音频预加载各自独立，底层复用同一套歌词请求和缓存逻辑。 */
 internal class PlaybackLyricsPreloader(private val context: Context, scope: CoroutineScope,
     private val gate: PlaybackPreloadGate) {
     private val resolver = PlatformPlaybackResolver(context, requestOrigin = PlaybackRequestOrigin.PRELOAD)

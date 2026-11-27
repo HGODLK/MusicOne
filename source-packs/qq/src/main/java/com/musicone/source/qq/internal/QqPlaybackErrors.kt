@@ -114,7 +114,7 @@ private fun JSONObject.qqBusinessFailure(
     val diagnostic = "来源=${origin.diagnosticName}，层级=$level，业务码=$code，验证字段=${verificationField?.first ?: "无"}，提示invalid=$invalidContext"
     qqDiagnostic(diagnostic)
     QqSessionLog.record("业务失败：$diagnostic")
-    // 错误码与对应的可信入口必须同时存在；解析错误本身不改变播放会话。
+    // 必须同时匹配错误码和合法的腾讯验证域名，才触发安全验证
     if (trustedUrl.isNotBlank()) {
         val challenge = PlatformSecurityChallenge(
             source = MusicSource.QQ,

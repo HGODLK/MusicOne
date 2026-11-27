@@ -1,6 +1,6 @@
 package com.musicone.source.kugou
 
-/** 只读取推荐窗口覆盖的分页；歌单详情仍使用完整分页链路。 */
+/** 只拉取首页推荐展示需要的页数，不拉整张歌单。 */
 internal fun collectKugouRecommendationWindow(
     limit: Int, page: Int, load: (PlaylistTrackCursor?) -> PlaylistTrackPage,
 ): List<MusicTrack> {

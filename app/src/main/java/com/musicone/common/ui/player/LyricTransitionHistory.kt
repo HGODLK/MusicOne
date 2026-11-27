@@ -9,7 +9,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** 历史上下文只用于屏外准备和行程测量，可见歌词始终由真实文字边界控制。 */
+/** 保存展开前屏外准备的歌词上下文，只用于计算入场行程，不控制歌词行显隐。 */
 internal class LyricTransitionHistory {
     var preservingCloseWindow by mutableStateOf(false)
         private set

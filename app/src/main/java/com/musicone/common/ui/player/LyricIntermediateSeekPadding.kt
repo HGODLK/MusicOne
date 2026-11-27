@@ -3,7 +3,7 @@ package com.musicone
 import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.*
 
-/** 寻焦持有末尾行程，实际落位后再收回；普通开合继续使用原留白规则。 */
+/** 中间态 seek 期间保留列表底部额外留白，等对齐结束后再收回。 */
 @Composable
 internal fun rememberLyricIntermediateSeekPaddingFraction(
     preparing: Boolean,

@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 
-/** 冷请求和数据回写都让路给页面展开，已开始的 IO 不在每一动画帧重启。 */
+/** 搜索展开动画期间先拦住网络请求和数据回写，等动画落稳再放行，防止动画掉帧。 */
 internal class MainSourceSearchLoadingGate {
     private val ready = MutableStateFlow(false)
     var generation by mutableIntStateOf(0)
@@ -32,7 +32,7 @@ internal fun MainSourceSearchLoadingGuard(state: MainSourceSearchState, motion: 
     DisposableEffect(model) { onDispose { model.loadingGate.pause() } }
     LaunchedEffect(model, motion) {
         snapshotFlow {
-            // 同一帧关闭后重开也重新核对，不能因就绪布尔值相同而一直暂停。
+            // 带上 generation 一起监听，防止同一帧关了又开因为 ready 值没变而卡死。
             model.loadingGate.generation to searchLoadingReady(current.opened, current.full, covered,
                 motion.menu.value, motion.menu.isRunning, motion.full.value,
                 motion.fullMoving, motion.resultsReady)

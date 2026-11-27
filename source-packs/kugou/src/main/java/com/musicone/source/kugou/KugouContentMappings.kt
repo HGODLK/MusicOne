@@ -24,7 +24,7 @@ internal fun JSONObject.contentRows(vararg names: String): List<JSONObject> = wh
     else -> throw PlatformApiException("酷狗内容数据格式错误")
 }
 
-/** 先由已有解析器保留歌曲身份与音频字段，再补充可导航的实体资料。 */
+/** 先走通用歌曲解析保留 ID 和音质字段，再补上歌手/专辑跳转用的元数据。 */
 internal fun JSONObject.toKugouContentTrack(vip: Boolean): MusicTrack {
     val audio = optJSONObject("audio_info")
     val song = JSONObject(toString()).apply {
@@ -37,7 +37,7 @@ internal fun JSONObject.toKugouContentTrack(vip: Boolean): MusicTrack {
         }
         // 歌手单曲使用顶层 audio_name，专辑单曲则放在 base。
         val base = optJSONObject("base")
-        // 专辑接口的真实编号也在 base；已有顶层编号及其别名始终优先。
+        // 专辑接口的真实专辑 ID 放在 base 里，顶层已经有的话优先用顶层
         if (contentText("AlbumID", "album_id", "albumid").isBlank()) {
             base?.contentText("album_id")?.takeIf(String::isNotBlank)?.let { put("album_id", it) }
         }
@@ -94,7 +94,7 @@ internal fun JSONObject.toKugouContentCollection(account: String?, album: Boolea
     val id = if (album) contentText("AlbumID", "album_id", "albumid", "id")
         else contentText("SpecialID", "SpecialId", "specialid", "special_id")
             .takeIf { value -> value.isNotBlank() && value.all(Char::isDigit) && value.any { it != '0' } }.orEmpty()
-    // MoeKoeMusic 搜索将 gid 作为 global_collection_id 打开；数字全局编号也不能送入旧 special 接口。
+    // 搜索结果里的 gid 对应 global_collection_id，哪怕全是数字也不能传给旧的 specialid 接口
     val globalId = if (album) "" else sequenceOf("global_collection_id", "gid")
         .map { contentText(it) }.firstOrNull { it.isNotBlank() && it != "0" }.orEmpty()
     if ((id.isBlank() || id == "0") && globalId.isBlank()) throw PlatformApiException("酷狗返回了无效集合")
@@ -121,7 +121,7 @@ internal fun JSONObject.toKugouContentCollection(account: String?, album: Boolea
         payload = SourcePayload("kugou.collection", 1, payload.toString()))
 }
 
-/** 歌手专辑行展示资料摘要；完整简介只随专辑详情读取，不塞进公共列表行。 */
+/** 把歌手页的专辑项转成列表展示模型（完整简介点进专辑详情再拉）。 */
 internal fun JSONObject.toKugouArtistAlbumCollection(account: String?): SourceCollection {
     val collection = toKugouContentCollection(account, true)
     val data = JSONObject(collection.payload.encoded).put("album_list_intro", collection.description)
@@ -133,7 +133,7 @@ internal fun JSONObject.toKugouArtistAlbumCollection(account: String?): SourceCo
     return collection.copy(description = summary, payload = collection.payload.copy(encoded = data.toString()))
 }
 
-/** 搜索专辑与歌手专辑使用相同公开集合契约，标题、封面和副标题均可由公共模板直接消费。 */
+/** 把搜索结果的专辑项转成通用的 SourceCollection 模型。 */
 internal fun JSONObject.toKugouSearchAlbumCollection(account: String?): SourceCollection {
     val id = contentText("albumid", "album_id", "AlbumID")
     if (id.isBlank() || !id.all(Char::isDigit) || id.all { it == '0' }) throw PlatformApiException("酷狗搜索专辑缺少有效专辑编号")

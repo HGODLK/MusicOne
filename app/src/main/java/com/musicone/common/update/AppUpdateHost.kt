@@ -35,7 +35,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 internal class AppUpdateLifecycle(private val model: AppUpdateViewModel) : DefaultLifecycleObserver {
-    // 只在应用重新进入可见阶段检查；权限弹窗结束等单纯恢复不会重新建立提醒窗口。
+    // 只在应用从后台回到前台（onStart）时检查更新，系统权限弹窗关闭触发的 onResume 不重新弹窗。
     override fun onStart(owner: LifecycleOwner) = model.openApplication()
     override fun onResume(owner: LifecycleOwner) = model.setForeground(true)
     override fun onPause(owner: LifecycleOwner) = model.setForeground(false)
@@ -67,7 +67,7 @@ internal fun AppUpdateHost(model: AppUpdateViewModel, content: @Composable () ->
                 enter = fadeIn(musicMotion(240)),
                 exit = fadeOut(musicMotion(200)),
             ) {
-                // 内容归属动画生命周期，清空业务提示后仍保留到退场结束。
+                // 关弹窗时先把旧内容留到退场动画播完，避免动画中途内容突然变空。
                 var retained by remember { mutableStateOf(prompt) }
                 if (prompt != null) SideEffect { retained = prompt }
                 val release = prompt ?: retained

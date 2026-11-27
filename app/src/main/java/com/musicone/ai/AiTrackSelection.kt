@@ -2,7 +2,7 @@ package com.musicone
 
 import org.json.JSONObject
 
-/** 整批选择使用已返回的本机结果句柄，逐首选择继续使用真实歌曲引用。 */
+/** 整批选歌用本地结果句柄，单首挑歌用具体的歌曲引用。 */
 internal data class AiTrackSelection(val trackRefs: List<String>, val resultHandles: List<String>) {
     companion object {
         fun parse(arguments: JSONObject): AiTrackSelection {

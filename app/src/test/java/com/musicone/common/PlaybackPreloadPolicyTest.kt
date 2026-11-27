@@ -57,12 +57,10 @@ class PlaybackPreloadPolicyTest {
         assertEquals(listOf(qq), audio(state.copy(queue = listOf(local, qq))))
         assertEquals(listOf(qq), lyrics(state.copy(queue = listOf(local, qq))))
     }
-    @Test fun twentySecondBudgetUsesLongArithmeticWithoutEightMiBLimit() {
-        assertEquals(320_000L * 20 / 8 + 128 * 1024L, playbackPreloadBytes(320_000))
-        assertTrue(playbackPreloadBytes(8_000_000) > 8 * 1024 * 1024L)
-        assertEquals(320_000L * 5 / 8 + 128 * 1024L, playbackPreloadBytes(320_000, 5_000L))
-        assertTrue(playbackPreloadBytes(Int.MAX_VALUE) > 0L)
-        assertEquals(playbackPreloadBytes(128_000), playbackPreloadBytes(0))
+    @Test fun currentPlaybackBufferCoversWholeTrack() {
+        // 二十分钟的上限覆盖绝大多数歌曲；内存封顶不能小于一首五分钟 CD 音质 FLAC（约 35 MB）。
+        assertTrue(PLAYBACK_FULL_TRACK_BUFFER_MS >= 20 * 60_000)
+        assertTrue(PLAYBACK_FULL_TRACK_BUFFER_BYTES >= 48 * 1024 * 1024)
     }
     @Test fun preloadProbeAndDownloadScheduleFollowsConfirmedTiming() {
         assertEquals(listOf(0L, 2_000L, 5_000L, 6_500L, 8_000L), (0..4).map(::playbackProbeDelayMs))

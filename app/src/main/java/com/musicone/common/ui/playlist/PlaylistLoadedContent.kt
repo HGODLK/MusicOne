@@ -16,7 +16,7 @@ import androidx.compose.ui.unit.dp
 
 internal val LocalPlaylistLoadedContent = staticCompositionLocalOf { false }
 
-/** 只衔接普通歌单迟到的文字，沿用内容入场曲线，不重新挂载整页或播放操作。 */
+/** 歌单简介等异步文字加载回来时做淡入衔接，不重建整页和播放按钮。 */
 @Composable
 internal fun PlaylistLoadedValue(value: String, content: @Composable (String) -> Unit) {
     if (!LocalPlaylistLoadedContent.current) {

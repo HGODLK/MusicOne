@@ -6,14 +6,14 @@ import com.decent.usbaudio.UsbAudioStreamProfile
 
 internal data class UsbPcmOutputPlan(val sampleRate: Int, val profile: UsbAudioStreamProfile, val converted: Boolean)
 
-/** 可原规格输出时保留样本；兼容路径固定请求 32bit／192kHz，不能伪造设备能力。 */
+/** 生成 USB 输出候选方案：优先用音频原规格，设备不支持时再回退到 32bit/192kHz 兼容模式。 */
 internal fun usbPcmOutputPlans(sampleRate: Int, bitDepth: Int,
     findProfile: (Int, Int) -> UsbAudioStreamProfile?): Sequence<UsbPcmOutputPlan> = sequence {
     findProfile(sampleRate, bitDepth)?.let { yield(UsbPcmOutputPlan(sampleRate, it, false)) }
     findProfile(192000, 32)?.let { yield(UsbPcmOutputPlan(192000, it, true)) }
 }.distinctBy { it.sampleRate to it.profile }
 
-/** 输出容器不能覆盖输入音轨的有效位深；原生 PCM 的显式标签优先。 */
+/** 确定音源真实位深：以原生 PCM 标注的位深为准，不被解码器输出的容器位深覆盖。 */
 internal fun usbPcmSourceBitDepth(output: Format, sourceBitDepth: Int): Int {
     val containerDepth = when (output.pcmEncoding) {
         C.ENCODING_PCM_16BIT -> 16
@@ -27,7 +27,7 @@ internal fun usbPcmSourceBitDepth(output: Format, sourceBitDepth: Int): Int {
     return minOf(depth, containerDepth)
 }
 
-/** 先停止接口再改时钟；回读不匹配时不能启动独占流并虚报配置成功。 */
+/** 配置 USB 采样率：先停流再改时钟，最后回读确认一致才算成功。 */
 internal fun configureUsbPcmOutput(
     sampleRate: Int,
     deactivate: () -> Boolean,

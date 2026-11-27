@@ -3,7 +3,7 @@ package com.musicone.source.qq.internal
 import android.util.Log
 import org.json.JSONObject
 
-/** 短信、扫码换票与续期共用稳定的 Android 设备上下文。 */
+/** 短信登录、扫码换票和续期共用的 Android 设备参数。 */
 internal fun qqAndroidLoginComm(deviceId: String, login: Boolean): JSONObject {
     val stableId = deviceId.filter(Char::isLetterOrDigit).take(32).ifBlank { "musiconeandroidclient" }
     return JSONObject()

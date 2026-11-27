@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
-/** 只在更新弹窗挂载期间订阅当前音源，复用平台主题与玻璃表面。 */
+/** 只在更新弹窗显示时订阅当前音源主题，复用毛玻璃弹窗样式。 */
 @Composable
 internal fun AppUpdatePrompt(
     release: MusicOneRelease,

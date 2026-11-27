@@ -2,7 +2,7 @@ package com.musicone
 
 import com.musicone.source.sdk.*
 
-/** 同一次目录读取的所有分页都保留调用方的刷新意图。 */
+/** 拉取歌单目录的全部分页，每一页都沿用调用方传入的缓存/刷新策略。 */
 internal suspend fun SourceCollections.loadMainSourceLibrary(
     section: SourceLibrarySection,
     policy: SourceFetchPolicy,

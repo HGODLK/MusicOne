@@ -5,7 +5,7 @@ import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import kotlin.math.abs
 
-/** 明确到达终点的位移优先；短划再按速度判断，不随页面高度增加门槛。 */
+/** 根据拖动进度、距离和松手速度决定最终开关状态：拖够距离优先，短划则按速度判定。 */
 internal fun gestureTarget(progress: Float, velocity: Float, distanceDp: Float,
                            original: Boolean, threshold: Float = .5f,
                            dragDistanceDp: Float = Float.POSITIVE_INFINITY,

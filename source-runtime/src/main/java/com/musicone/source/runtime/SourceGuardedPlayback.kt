@@ -2,7 +2,7 @@ package com.musicone.source.runtime
 
 import com.musicone.source.sdk.*
 
-/** 目录能力只对主动实现的包公开；旧包仍使用原播放与展示默认值。 */
+/** 只对实现了音质目录的音源开放该能力，旧包继续用默认播放和展示配置。 */
 internal fun guardSourceMediaPlayback(service: SourceMediaPlayback, operations: SourceOperationLease): SourceMediaPlayback {
     val guarded = object : SourceMediaPlayback, SourcePlaybackBehavior, SourcePlayerPresentation, SourcePlaybackSessionProvider {
         override val playbackSessions get() = operations.read {

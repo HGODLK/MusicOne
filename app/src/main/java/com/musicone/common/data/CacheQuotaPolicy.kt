@@ -32,7 +32,7 @@ internal fun shouldShrinkCache(old: CacheLimits, next: CacheLimits) =
     (next.total != CacheCapacity.OFF && next.total.bytes < old.total.bytes) ||
         (next.independent != CacheCapacity.OFF && next.independent.bytes < old.independent.bytes)
 
-/** 两个额度只取较大值；保护以整首资源为单位，不能跳过新歌去凑满旧歌。 */
+/** 独立缓存额度按“总上限”和“保留额度”里较大的算；按整首歌保护，不跳过新歌去凑旧歌。 */
 internal fun protectedCacheKeys(entries: List<CacheResource>, limits: CacheLimits): Set<String> {
     if (limits.independent == CacheCapacity.OFF) return emptySet()
     val primary = entries.filter { it.primaryOrder != null && it.bytes > 0 }
@@ -47,7 +47,7 @@ internal fun protectedCacheKeys(entries: List<CacheResource>, limits: CacheLimit
     }
 }
 
-/** 先模拟完整决策，不能为了最终无法接纳的请求提前删掉旧缓存。 */
+/** 先在内存里算清楚要不要淘汰以及能不能放下，放不下就不动旧缓存，避免白删。 */
 internal fun cacheWritePlan(entries: List<CacheResource>, request: CacheResource, limits: CacheLimits): CacheWritePlan {
     val primary = request.primaryOrder != null
     val ceiling = if (primary) limits.maximum else limits.total.bytes
@@ -66,7 +66,7 @@ internal fun cacheWritePlan(entries: List<CacheResource>, request: CacheResource
         removed += entry.key
         excess -= entry.bytes
     }
-    // 只有一级缓存自身轮换可以淘汰旧保护歌曲，普通请求永远没有这项权限。
+    // 只有主动缓存新歌时才允许按顺序轮换掉旧的受保护歌曲，普通试听缓存不能动受保护的歌。
     val remaining = merged.filter { it.bytes > 0 && it.key !in removed && it.key != request.key }
     if (excess > 0 && primary && limits.protectsAllPrimary && remaining.all { it.key in protected }) {
         for (entry in remaining.filter { !it.active && requireNotNull(it.primaryOrder) <= requireNotNull(request.primaryOrder) }
@@ -80,7 +80,7 @@ internal fun cacheWritePlan(entries: List<CacheResource>, request: CacheResource
         else CacheWritePlan(false, reason = "没有可清理空间，正在使用的缓存会在释放后重新检查")
 }
 
-/** 仅有限额度主动缩容调用；关闭缓存不自动删除历史文件。 */
+/** 用户调小缓存上限时算出要清理哪些旧文件；关闭缓存不会自动删掉已有文件。 */
 internal fun cacheShrinkPlan(entries: List<CacheResource>, limits: CacheLimits): List<String> {
     if (limits.maximum == 0L) return emptyList()
     var excess = entries.sumOf { it.bytes } - limits.maximum

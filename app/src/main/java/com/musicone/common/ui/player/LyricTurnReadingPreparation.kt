@@ -15,7 +15,7 @@ internal data class LyricReadingPosition(val line: Int, val offset: Float, val h
     }
 }
 
-/** 目标排版和定位均在旧帧覆盖下完成，释放后不再重播首开对齐。 */
+/** 转屏准备期间在旧画面遮盖下完成新方向的列表定位，揭开后直接停在目标阅读位置。 */
 @Composable
 internal fun LyricTurnReadingPreparation(controller: LyricLayerTransitionController,
     anchor: PhoneLyricsReadingAnchor?, turn: PhonePlayerTurn?, rotation: Int,

@@ -3,7 +3,7 @@ package com.musicone.source.qq.internal
 import android.content.Context
 import java.util.UUID
 
-/** 名称与字段延续旧版；传入的Context由宿主按来源/签名隔离。 */
+/** 本地会话存储（key 名兼容旧版，传入的 Context 已由宿主按音源隔离）。 */
 internal class PlatformPreferences(context: Context) {
     val preferences = context.getSharedPreferences("platform_settings", Context.MODE_PRIVATE)
     fun readSession(source: MusicSource): PlatformSession {
@@ -38,7 +38,7 @@ internal class PlatformPreferences(context: Context) {
         val previous = credential(source)
         val editor = preferences.edit()
         preferences.all.keys.filter { it.startsWith("session_qq_") && it != "session_qq_device_id" }.forEach(editor::remove)
-        // 空键用于保留用户主动退出的选择，禁止旧数据再次导入覆盖。
+        // 写入空字符串标记用户主动退出，防止下次启动又把旧版账号迁回来
         check(editor.putString("session_qq_credential", "").commit())
         QqEntitlements.forget(previous)
     }

@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 音源尚未装载时保留最新跳转；歌曲相同但播放请求不同也不能交接旧位置。 */
+/** 音频还没加载好时暂存用户的拖动进度，加载完再跳；如果不是同一次播放请求则作废。 */
 internal class PlaybackPendingSeek {
     private var pending: Pair<PlaybackRequestKey, Long>? = null
 

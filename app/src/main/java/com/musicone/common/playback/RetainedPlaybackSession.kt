@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 只保存正在由服务播放的轻量状态；页面重建时接管会话，不重设音源。 */
+/** 暂存后台正在播放的轻量状态，页面重建时直接恢复，避免重新初始化播放器。 */
 internal class RetainedPlaybackState {
     private var snapshot: MusicOneUiState? = null
 

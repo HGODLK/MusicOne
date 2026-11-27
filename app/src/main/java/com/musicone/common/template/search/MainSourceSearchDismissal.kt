@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 关闭输入框才清理草稿；结果页返回只改变 full，继续保留当前输入和联想。 */
+/** 彻底关掉搜索菜单时才清空输入草稿；从结果页退回输入框只关 full，保留输入词和联想。 */
 internal fun MainSourceSearchState.withSearchMenuClosed(): MainSourceSearchState = copy(
     opened = false,
     full = false,

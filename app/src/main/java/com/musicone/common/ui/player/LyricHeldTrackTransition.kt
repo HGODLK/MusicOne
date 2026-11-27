@@ -20,7 +20,7 @@ internal class LyricHeldLayer(val window: LyricWindow, weight: Float) {
     var weight by mutableFloatStateOf(weight)
 }
 
-/** 按住切歌只改变内容权重；任务独立于播放跟随开关，松手不能中断交接。 */
+/** 按住手势或转屏期间的渐变切歌控制器：只调整新旧窗口的混合权重，松手不会中断正在进行的渐变。 */
 @Stable
 internal class LyricHeldTrackTransition {
     var layers by mutableStateOf<List<LyricHeldLayer>>(emptyList())
@@ -43,7 +43,7 @@ internal class LyricHeldTrackTransition {
             .filter { it.weight > 0f }.ifEmpty {
             if (active) emptyList() else listOfNotNull(source?.let { LyricHeldBlend(it, 1f) })
         }
-        // 保存实际可见权重；滑动中不同位置的来源也不能被总权重归一化而突然变暗。
+        // 保留当前各可见窗口的实际权重，不要重新归一化，防止滑动中的旧窗口突然变暗。
         val normalized = starts
         val request = ++revision
         animation?.cancel()
@@ -65,7 +65,7 @@ internal class LyricHeldTrackTransition {
                 awaitingLayout = false
                 val drawingLayers = layers
                 animate(0f, 1f, animationSpec = musicMotion<Float>(420)) { fraction, _ ->
-                    // 权重只在绘制阶段消费，渐变帧不重组整棵歌词列表。
+                    // 权重只在绘制阶段读取，渐变动画不会触发整棵歌词列表重组。
                     val weights = lyricHeldBlendWeights(normalized, target, fraction)
                     Snapshot.withMutableSnapshot {
                         drawingLayers.forEachIndexed { index, layer -> layer.weight = weights[index].weight }
@@ -77,7 +77,7 @@ internal class LyricHeldTrackTransition {
                 }
                 completed = true
             } finally {
-                // 替换与主动取消已更新代次；仅给仍拥有当前目标的意外中断收尾。
+                // 被新请求替换或主动取消时 revision 已递增；这里只兜底当前任务意外中断的情况。
                 if (!completed && request == revision) Snapshot.withMutableSnapshot {
                     target.recoverDisplay(drawEpoch)
                     preparation = null
@@ -91,7 +91,7 @@ internal class LyricHeldTrackTransition {
 
     fun weight(window: LyricWindow): Float = layers.firstOrNull { it.window === window }?.weight ?: 0f
 
-    /** 松手后的新切歌保留当前混合画面，把已有权重交给正常滑出窗口。 */
+    /** 松手后如果又触发滑动切歌，把当前还在渐变中的窗口连同权重转交给滑出列表继续退场。 */
     fun releaseForSlide(): List<LyricWindow> {
         if (!active) return emptyList()
         val visible = layers.filter { it.weight > 0f }.map { LyricHeldBlend(it.window, it.weight) }
@@ -125,7 +125,7 @@ internal fun lyricHeldBlendWeights(starts: List<LyricHeldBlend>, target: LyricWi
     return starts.map { it.copy(weight = it.weight * (1f - fraction)) } + LyricHeldBlend(target, fraction)
 }
 
-/** 透明歌词先在隔离层中按权重相加，再统一经过外层玻璃，避免重叠文字变暗或旧字透底。 */
+/** 渐变切歌时先在离屏层把新旧歌词按权重相加，再交给外层模糊，避免文字发暗或透底。 */
 @Composable
 internal fun Modifier.lyricHeldComposite(enabled: () -> Boolean): Modifier {
     val paint = remember { Paint() }
@@ -146,7 +146,7 @@ internal fun Modifier.lyricHeldWeight(weight: () -> Float?): Modifier {
         if (fraction == null) drawContent() else drawIntoCanvas { canvas ->
             paint.alpha = fraction.coerceIn(0f, 1f)
             canvas.saveLayer(Rect(0f, 0f, size.width, size.height), paint)
-            // 零权重目标仍完成录制与绘制确认，不把布局返回误当成可见就绪。
+            // 即使当前权重为 0 也要正常走完 drawContent，确保新窗口完成首次绘制确认。
             drawContent()
             canvas.restore()
         }

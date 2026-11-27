@@ -7,7 +7,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 
-/** 划掉系统控件后允许按页面前台状态或用户操作重新绑定，不在后台强行复活。 */
+/** 管理 MediaController 连接：用户划掉通知后不在后台自动重连，等回到前台或再次操作时再连。 */
 internal class SystemPlaybackConnection(context: Context) {
     private val context = context.applicationContext
     private val executor = ContextCompat.getMainExecutor(context)

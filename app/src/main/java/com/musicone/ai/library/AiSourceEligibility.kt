@@ -8,7 +8,7 @@ internal data class AiPlaybackValidation(
     val unknown: List<JSONObject>,
 )
 
-/** false 仅表示未声明检测器；已声明但未确认会员的 null 不伪装成确定无会员。 */
+/** detectorDeclared=false 表示音源没提供会员检测；membership=null 表示还没查到结果，不能当成非会员处理。 */
 internal fun aiSearchTier(kind: com.musicone.source.sdk.SourceKind, current: Boolean,
     detectorDeclared: Boolean, membership: Boolean?, authenticationDeclared: Boolean = true): Int? = when {
     kind == com.musicone.source.sdk.SourceKind.MAIN && current && membership == true -> 1

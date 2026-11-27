@@ -134,7 +134,7 @@ internal class SubsonicEntityService(
         subsonicArtwork(cover, reference.name.take(1))
     }
 
-    /** 游标是下一张专辑的序号；每页至少取满 limit 首或取完全部专辑，不交出空的中间页。 */
+    /** 游标记录下一张要拉的专辑下标；每页会一直拉满 limit 首或拉完全部专辑，避免返回空的中间页。 */
     override suspend fun tracks(reference: SourceEntityRef, request: SourceCursorRequest): SourcePage<SourceTrackDetails> =
         requests.forServer(reference.serverKey()) { server ->
             when (reference.kind) {

@@ -2,7 +2,7 @@ package com.musicone
 
 import com.musicone.source.sdk.*
 
-/** 新模板只公开已声明且宿主能够实际执行的动作；旧包保留原入口行为。 */
+/** 新版补充音源只开放它明确声明且宿主能执行的操作，旧版包保持原有入口。 */
 internal fun supplementalCanPlay(entry: SourceEntry): Boolean = entry.supplementalPageProviderOrNull() == null ||
     (SourceCapability.PLAYBACK in entry.descriptor.capabilities && entry.mediaPlayback != null)
 internal fun supplementalCanImport(entry: SourceEntry, content: SourceContent? = null, hasChildren: Boolean = false): Boolean {

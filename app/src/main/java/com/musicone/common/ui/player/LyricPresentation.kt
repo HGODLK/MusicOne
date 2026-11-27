@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 
-/** 歌词只依赖显示和定位数据，播放地址、音质及其他元数据不参与窗口交接。 */
+/** 歌词窗口所需的精简歌曲模型，隔离播放地址、音质等无关字段，避免无关更新触发切歌动画。 */
 internal data class LyricPresentation(
     val id: String,
     val source: MusicSource,

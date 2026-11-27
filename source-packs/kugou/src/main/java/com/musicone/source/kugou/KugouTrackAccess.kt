@@ -6,7 +6,7 @@ import com.musicone.source.sdk.TrackAccessInfo
 import kotlinx.coroutines.CancellationException
 import org.json.JSONObject
 
-/** 保留歌曲收费类型，账号会员变化时重新计算角标；播放地址不能证明会员或购买权益。 */
+/** 保存歌曲原始收费属性，账号会员状态变化时可以重新算角标。 */
 internal data class KugouTrackAccessInfo(
     val purchased: Boolean,
     val paidOnly: Boolean,
@@ -39,7 +39,7 @@ internal data class KugouTrackAccessInfo(
     }
 }
 
-/** feeType 只说明收费属性，不能单独证明必须另行购买；优先使用明确的歌曲收费类型。 */
+/** 解析歌曲收费属性：feeType 不能单独判定必须单曲购买，优先看 PayType 和 Privilege。 */
 internal fun JSONObject.kugouTrackAccessInfo(): KugouTrackAccessInfo? {
     val payType = kugouAccessInt("PayType", "paytype", "pay_type")
     val privilege = kugouAccessInt("Privilege", "privilege")
@@ -83,7 +83,7 @@ internal fun SourceTrackDetails.withKugouRawAccess(info: KugouTrackAccessInfo): 
         payload = payload.copy(encoded = data.toString()))
 }
 
-/** 新歌曲直接使用原始收费信息；旧快照缺失信息时仅补查标准档权益，不改播放取址。 */
+/** 补齐歌曲的收费权限信息：已有原始信息直接用，旧缓存缺失时只补查标准档权限。 */
 internal class KugouTrackAccessResolver(
     private val details: (MusicTrack, String) -> JSONObject = ::requestKugouTrackAccess,
 ) {
@@ -100,13 +100,13 @@ internal class KugouTrackAccessResolver(
         catch (interrupted: InterruptedException) { throw interrupted }
         catch (_: Exception) { null }
         if (info != null) return info.sourceAccess(track.access, accountId, hasVipAccess)
-        // 旧购买结论可能来自下载权限；核对失败保留未知，不能继续把它当作确定的播放收费。
+        // 旧缓存里的“付费”标记可能是按下载权限误判的，核对失败时重置为未知，别继续错标付费
         return if (stalePurchase && track.access.badge == TrackAccessBadge.PURCHASE)
             track.access.copy(badge = null, trialAvailable = false) else track.access
     }
 }
 
-/** 响应必须属于原歌曲；其他音质的收费信息不能覆盖标准档的角标。 */
+/** 从接口响应里挑出当前歌曲标准档的权限节点，避免用高音质的收费信息覆盖标准档角标。 */
 internal fun JSONObject.kugouStandardAccessDetail(track: MusicTrack): JSONObject? {
     if (optInt("status", 0) != 1 || optInt("error_code", 0) != 0) return null
     val roots = optJSONArray("data")?.let { rows ->

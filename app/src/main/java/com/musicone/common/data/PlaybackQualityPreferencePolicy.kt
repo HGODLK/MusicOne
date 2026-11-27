@@ -1,10 +1,10 @@
 package com.musicone
 
-/** 跨音源只传标准能力；未映射的私有档位不能当成其他音源的协议标识。 */
+/** 跨音源传递音质偏好时只传标准档位，私有自定义档位不能直接塞给别的音源。 */
 internal fun mainPlaybackQualityCapabilityId(quality: AudioQuality): String? =
     (if (quality.isCustom) quality.standardQuality else quality)?.name
 
-/** 启动早期保留原身份，目录就绪后每次读取恢复当前文案及标准能力。 */
+/** 启动早期音源目录还没就绪时先保留原保存的音质 ID，就绪后再补全显示文案和标准映射。 */
 internal fun refreshMobileQuality(
     saved: AudioQuality?,
     catalog: (String) -> List<AudioQuality>? = { sourceId ->
@@ -20,7 +20,7 @@ internal fun refreshMobileQuality(
         ?: AudioQuality.custom(sourceId, saved.qualityId, "未知音质", "未知")
 }
 
-/** 同源上限按原始档位，跨源上限只按声明的标准能力；未映射时保留目标源首选。 */
+/** 流量音质上限：同音源直接按原档位卡，跨音源按标准档位卡；映射不上就保留原首选。 */
 internal fun mobileLimitedQuality(preferred: AudioQuality, limit: AudioQuality?, sourceId: String?,
     fallback: () -> List<AudioQuality>): AudioQuality {
     if (limit == null) return preferred

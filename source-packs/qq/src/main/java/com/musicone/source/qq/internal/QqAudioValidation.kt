@@ -5,7 +5,7 @@ import android.media.MediaFormat
 import android.util.Log
 import kotlin.math.abs
 
-/** 对带重定向参数的已签发音源读取媒体时长，参数本身不能证明它是试听。 */
+/** 实际读取音频头里的时长来判断是不是完整歌曲（不能光看 URL 参数猜是不是试听）。 */
 internal object QqAudioValidation {
     private data class MediaInfo(val duration: Long, val mime: String)
     private val durations = object : LinkedHashMap<String, MediaInfo>(32, .75f, true) {
@@ -45,7 +45,7 @@ internal object QqAudioValidation {
             else -> false
         }
         val full = formatMatches && qqMediaDurationMatches(info.duration, track.durationMs)
-        // 仅记录歌曲标识和时长，不输出签名地址或账号凭证。
+        // 日志只打歌曲 ID 和时长，不打印带签名的 URL 和账号信息
         Log.d("QqAudioValidation", "track=${track.id} expected=${track.durationMs} actual=${info.duration} mime=${info.mime} full=$full")
         if (qqPlaybackQuality(url) == AudioQuality.DOLBY) {
             qqDiagnostic("杜比媒体验证：track=${track.id} expected=${track.durationMs} actual=${info.duration} mime=${info.mime} full=$full")

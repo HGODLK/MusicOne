@@ -15,7 +15,7 @@ internal data class SystemBitPerfectSession(
     val bitDepth: Int,
 )
 
-/** Android 14 起先尝试厂商声明支持的系统 Bit-Perfect USB 通道。 */
+/** Android 14 及以上优先尝试系统自带的 Bit-Perfect USB 直通输出。 */
 internal class AndroidBitPerfectOutput(context: Context) {
     private val applicationContext = context.applicationContext
     private var active: Api34Session? = null
@@ -35,9 +35,9 @@ internal class AndroidBitPerfectOutput(context: Context) {
         val sampleRate = format.sampleRate.takeIf { it > 0 } ?: return null
         val channelCount = format.channelCount.takeIf { it > 0 } ?: return null
         val encoding = format.pcmEncoding.takeIf { it != Format.NO_VALUE } ?: return null
-        // 既有系统 Sink 会将高位整数转换成 float，完整 S32 交由 UAC2 整数路径保留。
+        // 系统默认的 AudioSink 会把 24/32-bit 整数转成 float，为了保留完整的 32-bit 整数数据，这里直接走 UAC2 独占路径。
         if (encoding == AudioFormat.ENCODING_PCM_24BIT_PACKED || encoding == AudioFormat.ENCODING_PCM_32BIT) return null
-        // 系统路径不能改写 PCM 容器；两者不一致时交给可执行整数重排的 UAC2 独占路径。
+        // 系统路径无法调整 PCM 位深打包格式，位深对不上时交给 UAC2 独占路径处理。
         if (encoding.bitDepth() != sourceBitDepth) return null
         val manager = applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val device = manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull(::isUsbAudioOutput) ?: return null

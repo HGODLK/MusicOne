@@ -17,7 +17,7 @@ internal class LibraryEditForm(val title: String, val labels: List<String>, init
     val values = initial.map { mutableStateOf(it) }
 }
 
-/** 文件选择、编辑与后台任务集中在音乐库自己的控制器，根节点只挂载宿主。 */
+/** 集中管理本地音乐库的文件选择、弹窗编辑和后台任务，根页面只负责挂载宿主。 */
 @Stable
 internal class MusicLibraryUiController(val context: Context, private val scope: CoroutineScope) {
     val store = MusicLibraryStore.get(context)

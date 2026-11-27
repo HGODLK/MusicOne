@@ -109,7 +109,7 @@ internal class WebDavClient(
 
     /**
      * 递归扫描指定目录中的全部音频文件。
-     * 区分真实删除（NOT_FOUND）与暂时故障（抛出异常），绝不把访问失败伪装成空文件夹。
+     * 区分目录已删除（NOT_FOUND）和网络临时故障（直接抛异常），不会把报错当成空文件夹。
      */
     suspend fun scanAudio(
         server: WebDavServer,
@@ -229,7 +229,7 @@ internal class WebDavClient(
                         if (nextAuth != null && nextAuth != authHeader) {
                             authHeader = nextAuth
                             lastAuthForFinal = nextAuth
-                            // 用新头重试当前跳
+                            // 带上新鉴权头重试当前请求
                             val retryReq = Request.Builder()
                                 .url(currentUrl)
                                 .get()
@@ -278,7 +278,7 @@ internal class WebDavClient(
         }
         val supportsRange = code == 206 || response.header("Accept-Ranges").equals("bytes", ignoreCase = true)
         val contentType = response.header("Content-Type")?.substringBefore(';')?.trim()
-        // Digest 的 nonce 计数每次请求应递增，为播放器现算一次新鲜头
+        // Digest 鉴权的 nonce 计数每次请求都要递增，这里给播放器重新算一次请求头
         val finalAuth = if (authHeaderUsed != null && authManager.currentScheme(server.key) == WebDavAuthScheme.DIGEST) {
             authManager.preemptiveHeader(server, "GET", extractRequestUri(finalUrl)) ?: authHeaderUsed
         } else {

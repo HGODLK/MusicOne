@@ -70,7 +70,7 @@ internal class KugouSourceEntities(
 
     override suspend fun collections(reference: SourceEntityRef, request: SourceCursorRequest): SourcePage<SourceCollection> {
         val id = platformId(reference)
-        // 专辑实体没有下属专辑；这是契约中的正常空分区。
+        // 专辑下面没有子专辑，直接返回空页
         if (reference.kind == "album") return SourcePage(emptyList(), null)
         val current = state()
         return current.request { session ->

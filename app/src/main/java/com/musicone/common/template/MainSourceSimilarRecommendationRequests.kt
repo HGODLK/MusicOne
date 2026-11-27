@@ -6,7 +6,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
-/** 独立种子最多同时请求两页，仍按原顺序消费，保留排重、首屏交付和刷新替换顺序。 */
+/** 多个种子最多 2 路并发请求，但按原顺序依次产出，保证去重和首屏展示顺序稳定。 */
 internal suspend fun loadOrderedMainSourceSimilarRecommendations(
     baseTracks: List<MusicTrack>,
     load: suspend (MusicTrack) -> MainSourceSimilarRecommendation,

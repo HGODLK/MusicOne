@@ -56,7 +56,7 @@ internal fun rememberRecommendationNavigation(): RecommendationNavigation {
     val sourceContent = remember(context) { com.musicone.sourceintegration.SourceApplicationHost.get(context).contentUi }
     val cards = remember {
         PlaylistCardTransition(scope) {
-            // 包内公共卡片先交付歌单请求，再由原宿主 effect 打开，不能提前恢复封面。
+            // 音源包里的公共卡片会先发一个打开请求再由宿主接手，期间先别提前恢复原封面。
             selectedPlaylist.value != null || sourceContent.request != null ||
                 sourceContent.pages.active is com.musicone.source.sdk.SourcePageRequest.Collection
         }

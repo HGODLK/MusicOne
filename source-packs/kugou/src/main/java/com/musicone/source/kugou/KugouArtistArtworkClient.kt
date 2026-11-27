@@ -13,7 +13,7 @@ internal fun interface KugouArtistArtworkTransport {
     suspend fun load(params: Map<String, String>): JSONObject
 }
 
-/** 按真实热门曲查询平台写真，不从歌手编号拼造地址，也不读取登录会话。 */
+/** 通过歌手热门曲反查酷狗官方写真接口，不靠歌手 ID 硬拼图片链接，也不需要登录态。 */
 internal class KugouArtistArtworkClient(
     private val transport: KugouArtistArtworkTransport = KugouArtistArtworkTransport { params ->
         runInterruptible(Dispatchers.IO) {
@@ -60,7 +60,7 @@ internal fun JSONObject.kugouArtistArtworkSeed(): KugouArtistArtworkSeed? {
         contentText("audio_id").ifBlank { base?.contentText("audio_id").orEmpty() })
 }
 
-/** 接口实证 data[歌曲][作者].imgs[类型]；仅选目标作者，去重后把首张移到末尾。 */
+/** 解析写真接口 data[歌曲][作者].imgs[类型]：只取目标歌手的图片，去重后把第一张放到最后。 */
 internal fun JSONObject.kugouArtistPortraits(authorId: String): List<String> {
     requireKugouContentSuccess(this)
     val groups = optJSONArray("data") ?: throw PlatformApiException("酷狗歌手写真响应格式错误")
@@ -69,7 +69,7 @@ internal fun JSONObject.kugouArtistPortraits(authorId: String): List<String> {
         val authors = groups.optJSONArray(groupIndex) ?: throw PlatformApiException("酷狗歌手写真作者列表格式错误")
         authors.contentObjects().filter { it.contentText("author_id") == authorId }.forEach { author ->
             val images = author.optJSONObject("imgs") ?: return@forEach
-            // 保留平台返回的分组及组内顺序，不另外按类型或头像特征重排。
+            // 按接口返回的分组和顺序读取，不额外重排
             images.keys().forEach { type ->
                     images.optJSONArray(type)?.contentObjects()?.forEach { item ->
                         item.contentText("sizable_portrait").normalizeKugouContentArtwork(1080)?.let(urls::add)

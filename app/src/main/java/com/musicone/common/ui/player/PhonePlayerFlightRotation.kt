@@ -10,7 +10,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.abs
 
-/** 只给现有飞行层补偿侧边源条，页面进度仍完全由 PageMotion 持有。 */
+/** 手机横屏展开/收起时，为飞行层补充旋转和侧边源条的几何补偿（主进度仍由 PageMotion 管理）。 */
 @Stable
 internal class PhonePlayerFlightRotation(@Suppress("UNUSED_PARAMETER") scope: CoroutineScope) {
     private val settling = Animatable(0f, visibilityThreshold = .00005f)
@@ -48,7 +48,7 @@ internal class PhonePlayerFlightRotation(@Suppress("UNUSED_PARAMETER") scope: Co
 
     fun prepare(@Suppress("UNUSED_PARAMETER") rotation: Int) { complete() }
 
-    /** 旧结算被接管时封存正在显示的补偿，不重置到新的侧条端点。 */
+    /** 正在交接时返回锁定好的旋转方向，避免重新计算成别的方向。 */
     fun sourceRotation(fallback: Int): Int = if (handoffActive) heldRotation else fallback
 
     fun beginDrag(rotation: Int, progress: Float = 1f) {
@@ -61,7 +61,7 @@ internal class PhonePlayerFlightRotation(@Suppress("UNUSED_PARAMETER") scope: Co
             if (progress >= .9999f) initialWeight = side.second
         }
         if (progress >= .9999f) sideVelocity = 0f
-        // 当前倾角只生成等量补偿，不把接近竖屏的一点残差放大成整段 90 度。
+        // 按当前实际旋转角按比例计算初始权重，避免接近竖屏时的一点残角被放大成 90 度。
         heldWeight = initialWeight
         dragOriginProgress = progress
         dragOriginWeight = heldWeight
@@ -71,7 +71,7 @@ internal class PhonePlayerFlightRotation(@Suppress("UNUSED_PARAMETER") scope: Co
 
     fun dragTo(progress: Float) {
         if (!held) return
-        // 中途接管先保住当前画面，继续收到零进度时再逐渐接到侧边竖条。
+        // 中途接管拖动时先保住当前画面权重，随着继续下拉再逐步过渡到侧边竖条。
         val fraction = ((dragOriginProgress - progress) / dragOriginProgress.coerceAtLeast(.0001f)).coerceIn(0f, 1f)
         heldWeight = motionLerp(dragOriginWeight, 1f, fraction)
     }
@@ -98,7 +98,7 @@ internal val LocalPhonePlayerFlightRotation = staticCompositionLocalOf<PhonePlay
 
 internal data class PhonePlayerFlightGeometry(val bounds: Rect, val rotation: Float)
 
-/** 外接框只用于定位，横屏文字等内容仍按其未旋转的真实尺寸绘制。 */
+/** 横屏时把目标矩形旋转 90 度还原为未旋转的本地尺寸（文字等内容按本地尺寸绘制）。 */
 internal fun phonePlayerFlightTarget(bounds: Rect, rotation: Int): Rect = if (rotation == 0) bounds else
     Rect(bounds.center - Offset(bounds.height / 2f, bounds.width / 2f), Size(bounds.height, bounds.width))
 
@@ -134,7 +134,7 @@ internal fun phonePlayerFlightSource(motion: PageMotion, flight: PhonePlayerFlig
     return PhonePlayerFlightGeometry(motionRect(source, side, weight), sourceRotation * weight)
 }
 
-/** 视觉覆盖补偿：倾斜窗口的本地尺寸覆盖整窗，接管首帧不因旋转裁掉四角。 */
+/** 计算旋转角度下能完全覆盖整屏的最小本地尺寸，避免倾斜收起时四角被裁掉。 */
 internal fun phonePlayerFlightSurfacePose(host: Rect, angle: Float): PhoneTurnPose {
     val size = when (angle) {
         0f -> host.size
@@ -156,14 +156,14 @@ internal fun phonePlayerFlightGeometry(motion: PageMotion, flight: PhonePlayerFl
         flight.targetPose("cover")?.let { phonePlayerFlightSurfacePose(motion.hostBounds, it.rotation) }
     } else flight?.targetPose(key)
     if (livePose != null) {
-        // 实际枢轴可能是歌词焦点；换成等价中心矩形后再交给原飞行层。
+        // 元素的旋转枢轴可能不在正中心（如歌词焦点），先换算成等价的中心矩形再交给飞行层。
         val center = phonePlayerFlightRotate(
             livePose.pivot + Offset(livePose.size.width * (.5f - livePose.pivotFraction.x),
                 livePose.size.height * (.5f - livePose.pivotFraction.y)), livePose.pivot, livePose.rotation)
         var destination = Rect(center - Offset(livePose.size.width / 2f, livePose.size.height / 2f), livePose.size)
         val captured = motion.targetSnapshot[key]?.bounds
         if (captured != null && captured != target) {
-            // 中途切歌的文字宽高仍由原独立链控制，只把其局部补偿带到当前倾斜姿态。
+            // 如果飞行途中切歌导致标题/歌手尺寸变了，按当前缩放和旋转角度同步调整目标矩形。
             val nativeCaptured = phonePlayerFlightTarget(captured, rotation)
             val nativeTarget = phonePlayerFlightTarget(target, rotation)
             val scaleX = livePose.size.width / nativeCaptured.width.coerceAtLeast(.001f)

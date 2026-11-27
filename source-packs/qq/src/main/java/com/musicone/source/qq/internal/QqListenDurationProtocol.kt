@@ -35,7 +35,7 @@ internal class QqListenDurationLedger {
         return true
     }
     fun pendingMs(): Long = ((playedMs - attemptedMs).coerceAtLeast(0L) / 1_000L) * 1_000L
-    // 网关没有幂等键，发出后即锁住片段；回执丢失不能重发并重复累加。
+    // 接口不支持幂等，发出去就把这段时长扣掉，就算没收到回执也不重发，防止重复累加
     fun markAttempted(durationMs: Long) {
         require(durationMs in 1L..pendingMs())
         attemptedMs += durationMs

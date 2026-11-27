@@ -4,7 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
-/** 串行写入且合并等待中的进度，切歌与 seek 的调用线程只提交不可变状态引用。 */
+/** 后台串行保存播放状态，连续的进度更新会自动合并，避免频繁写盘阻塞主线程。 */
 internal class PlaybackSnapshotWriter(
     scope: CoroutineScope,
     private val write: suspend (MusicOneUiState, Long) -> Unit,

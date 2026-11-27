@@ -8,7 +8,7 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 import org.json.JSONObject
 
-/** 首页真实内容的只读展示集合；不创建云歌单，也不改动快照中的歌曲身份。 */
+/** 把首页的日推、最近播放包装成只读的 SourceCollection，方便复用公共歌单详情页。 */
 internal class KugouHomeCollections(
     private val currentOwner: () -> String?,
     private val delegate: SourceCollections,
@@ -40,7 +40,7 @@ internal class KugouHomeCollections(
         require(kind != "daily" || date.isNotBlank()) { "每日推荐缺少真实日期，请刷新首页" }
         tracks.forEach { requireTrack(it, owner) }
         val remote = homeRemote(kind, owner, date)
-        // 页面只传轻量引用；完整且不可变的快照留在包内，不在主线程反复编码。
+        // 导航参数只传轻量 token，完整歌曲列表留在内存里，避免在主线程反复序列化
         val token = UUID.randomUUID().toString()
         views.entries.removeIf { it.value.owner != owner || it.value.remote == remote && it.key !in retained }
         views[token] = View(owner, remote, kind, tracks)
@@ -56,7 +56,7 @@ internal class KugouHomeCollections(
     override suspend fun detail(collection: SourceCollection): SourceCollection {
         if (!collection.isKugouHomeCollection()) return delegate.detail(collection)
         val snapshot = snapshot(collection)
-        // 初始入口不能标记临时集合；公共详情先读取此处及完整 tracks 后再按已加载列表呈现。
+        // 这里不标临时集合，等公共详情页进来读完完整 tracks 后直接展示
         val data = JSONObject(collection.payload.encoded).apply { if (snapshot.kind == "daily") put("templateEphemeral", "true") }
         return collection.copy(title = homeTitle(snapshot.kind), subtitle = "${snapshot.tracks.size} 首歌曲",
             count = snapshot.tracks.size, artwork = snapshot.tracks.firstOrNull()?.artwork ?: collection.artwork,

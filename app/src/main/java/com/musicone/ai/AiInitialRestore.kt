@@ -8,7 +8,7 @@ internal data class AiInitialRestore(val saved: JSONObject, val providers: List<
     val configuration: AiConfiguration, val model: AiModel?, val messages: List<AiChatMessageUi>,
     val conversationId: String, val conversations: List<AiConversationUi>)
 
-/** 解密、模型资料和消息解码都在后台完成，会话身份与消息在首个界面快照中一起交付。 */
+/** 密钥解密、模型配置和历史消息解码都在 IO 线程做完，首帧一次性交给界面。 */
 internal suspend fun aiRestoreInitial(session: AiSessionStore, configuration: AiConfigurationStore,
     providerState: (AiProvider) -> AiProviderUiState): AiInitialRestore = withContext(Dispatchers.IO) {
     // 控制器每个进程只初始化一次；冷启动新建对话，进程内重新进入仍沿用当前对话。

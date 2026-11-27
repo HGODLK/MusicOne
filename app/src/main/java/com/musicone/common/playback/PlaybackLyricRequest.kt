@@ -5,7 +5,7 @@ import kotlinx.coroutines.ensureActive
 
 internal data class PlaybackLyricSession(val namespace: String, val revision: String)
 
-/** 前台和预取共用同一缓存与账号边界，宿主不接触包的认证凭据。 */
+/** 前台加载和后台预取歌词共用同一套缓存，按账号隔离。 */
 internal class PlaybackLyricRequest(
     private val session: (MusicTrack) -> PlaybackLyricSession,
     private val readCached: suspend (MusicTrack, String) -> List<TimedLyric>,

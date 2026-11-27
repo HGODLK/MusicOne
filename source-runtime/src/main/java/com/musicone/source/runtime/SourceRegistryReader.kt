@@ -9,7 +9,7 @@ internal data class SourceRegistryReadResult(
 )
 
 internal object SourceRegistryReader {
-    // 读取失败不能把损坏记录当成首次安装；调用方保留原文件并禁止覆盖。
+    // 读取失败时不能当成首次安装，调用方需保留原文件且禁止覆盖。
     fun read(readText: () -> String): SourceRegistryReadResult {
         val json = try { JSONObject(readText()) } catch (_: Exception) {
             return SourceRegistryReadResult(linkedMapOf(), listOf("音源注册表损坏，原文件已保留；本地音源仍可使用"))

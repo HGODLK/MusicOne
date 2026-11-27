@@ -13,7 +13,7 @@ internal data class KugouDailyResult(
     val count: Int get() = tracks.size
 }
 
-/** 标准版 NewDailyBillProtocol；与概念版旧日推及独立的“多听三十首”请求分开。 */
+/** 酷狗标准版每日推荐接口（NewDailyBillProtocol）。 */
 internal class KugouDailyClient(
     private val send: (String, String, String, Map<String, String>) -> JSONObject = { url, body, cookie, headers ->
         JSONObject(PlatformHttp.postJson(url, body, cookie, headers).text)
@@ -37,8 +37,7 @@ internal class KugouDailyClient(
             identity["userid"]?.takeIf { it.isNotBlank() && it != "0" }?.let { put("userid", it) }
             identity["token"]?.takeIf(String::isNotBlank)?.let { put("token", it) }
         }
-        // 普通读取的空请求体已有标准版开源协议实证；刷新才发送官方 refresh_rec 参数。
-        // 不用播放权限布尔值虚构会员类型、到期时间或原生加密的 u_info。
+        // 首次拉取直接传空 body，手动刷新时才带 refresh_rec 参数。
         val body = if (refresh) JSONObject()
             .put("appid", KUGOU_DAILY_APP_ID.toInt())
             .put("clientver", KUGOU_DAILY_CLIENT_VERSION.toInt())
@@ -55,13 +54,13 @@ internal class KugouDailyClient(
     }
 }
 
-// 官方 20.8.0 的应用编号、版本码与 RecordLyricErrorReportConstant.APPKEY。
+// 酷狗标准版 20.8.0 的 appid、clientver 和签名 key
 internal const val KUGOU_DAILY_APP_ID = "1005"
 internal const val KUGOU_DAILY_CLIENT_VERSION = "20809"
 internal const val KUGOU_DAILY_SIGN_KEY = "OIlwieks28dk2k092lksi2UIkp"
 internal const val KUGOU_DAILY_URL = "https://gateway.kugou.com/everydayrec.service/v3/everyday_song_recommend"
 
-/** 官方 e5.f 对请求体按 UTF-8 字节截取前二百五十六字节，不能按字符截取或复用概念版签名。 */
+/** 标准版日推签名：对请求体按 UTF-8 字节截取前 256 字节参与计算（不能按字符数截）。 */
 internal fun kugouDailySignature(params: Map<String, String>, body: String): String {
     val digest = MessageDigest.getInstance("MD5")
     digest.update(KUGOU_DAILY_SIGN_KEY.toByteArray(Charsets.UTF_8))
@@ -84,7 +83,7 @@ internal fun JSONObject.toKugouDailyResult(vip: Boolean): KugouDailyResult {
         data.optString("sub_title"), data.optString("cover_img_url").normalizeKugouContentArtwork())
 }
 
-/** 标准版两种歌曲数组的真实别名必须先归一化，保证歌曲身份仍按原有哈希规则生成。 */
+/** 统一标准版日推接口的字段别名，再交给通用歌曲解析器，确保歌曲 ID 生成一致。 */
 private fun JSONObject.toKugouDailyTrack(vip: Boolean): MusicTrack {
     val normalized = JSONObject(toString())
     fun alias(target: String, source: String) {

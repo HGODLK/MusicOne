@@ -20,7 +20,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import kotlin.math.sin
 
-/** 同一徽标从播放三角收束为音柱，暂停和切走时反向交接，不卸载后突然出现。 */
+/** 播放三角和跳动音柱在同一个组件里平滑形变切换，暂停或切歌时反向过渡，不生硬闪切。 */
 @Composable
 internal fun BoxScope.MainSourceFeedPlayingIndicator(current: Boolean, playing: Boolean) {
     val active by animateFloatAsState(if (current) 1f else 0f, musicMotion(240), label = "卡片选中")

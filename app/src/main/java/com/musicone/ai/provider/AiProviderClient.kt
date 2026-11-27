@@ -32,7 +32,7 @@ class AiProviderClient(private val store: AiConfigurationStore) {
         maxOutputTokens: Int? = null,
         onDelta: suspend (AiChatDelta) -> Unit = {}
     ): AiChatResponse {
-        // 仅构造协议字段，密钥始终只出现在认证请求头。
+        // 请求体里只放协议字段，API Key 只放在请求头里。
         val body = aiChatRequest(configuration,
             store.models(configuration.provider).firstOrNull { it.id == configuration.modelId }, messages, tools)
         maxOutputTokens?.let {
@@ -81,7 +81,7 @@ class AiProviderClient(private val store: AiConfigurationStore) {
 
     fun webSearchAvailable(): Boolean = store.webSearchAvailable()
 
-    /** 手动模型不依赖模型列表接口，使用不含用户资料的最小请求验证连接。 */
+    /** 手动填写的模型不查模型列表接口，发一个最简请求验证连通性。 */
     suspend fun verifyModel(baseUrl: String, key: String, modelId: String) {
         require(modelId.isNotBlank()) { "请填写模型名称" }
         val body = aiChatRequest(AiConfiguration(AiProvider.OTHER, modelId), null,

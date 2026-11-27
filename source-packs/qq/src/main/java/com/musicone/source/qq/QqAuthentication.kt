@@ -15,9 +15,9 @@ internal class QqAuthentication(private val context: Context, private val onLogi
     private val onExpired: (String) -> Unit = {}) : SourceAuthentication {
     val reduceMotion get() = motionPreference()
     init { QqSessionLog.attach(context) }
-    // 页面仅在完整会话写入成功后退出，播放安全验证不会触发此出口。
+    // 只有完整登录并写完会话后才走这里关闭页面，播放安全验证不走这个出口
     fun loginCompleted() = onLoginCompleted()
-    // 播放验证结束只关闭认证覆盖层，不把它当作新的登录成功。
+    // 播放安全验证结束后只关闭弹窗，不当成重新登录
     fun verificationClosed() = onLoginCompleted()
     private val preferences = PlatformPreferences(context)
     init { QqSessionRequestCoordinator.sessionChanged(session().credential) }
@@ -33,7 +33,7 @@ internal class QqAuthentication(private val context: Context, private val onLogi
     val isExpired get() = expired
     /** 最近一次失效原因与时间，登录页展示。 */
     fun lastExpiryNote(): String? = expiryNote.describe()
-    // 只在“有效→失效”时记录原因并提示一次；复核期间再被拒只走退避，不重复弹出。
+    // 只有从有效变成失效时才记日志并提示一次，后面自动复核失败只按退避重试，不再重复弹窗
     private fun markExpired(error: Throwable) = synchronized(recovery) {
         if (expired) return@synchronized
         expired = true
@@ -54,7 +54,7 @@ internal class QqAuthentication(private val context: Context, private val onLogi
     }
     override val methods = listOf(SourceLoginMethod("qr", "QQ扫码"), SourceLoginMethod("wechat-qr", "微信扫码"), SourceLoginMethod("sms", "短信登录"))
     fun session(): PlatformSession = preferences.readSession(MusicSource.QQ)
-    // 会员声明只读当前会话，不能通过 readSession 启动原权益层的后台请求。
+    // 查会员状态只直接读当前会话，不走 readSession，避免顺带触发权益层的后台刷新
     fun membershipSession(): Pair<String, Long>? {
         if (expired) return null
         val credential = preferences.preferences.getString("session_qq_credential", "").orEmpty()
@@ -160,7 +160,7 @@ internal class QqAuthentication(private val context: Context, private val onLogi
         expired = false
         recovery.recovered()
     }
-    // QQ续期失败保留原凭证，网络故障不能触发清空迁移数据。
+    // 续期失败时保留原凭证，避免网络波动把登录态清掉
     override suspend fun refreshAccount(): SourceAccountState = withContext(Dispatchers.IO) {
         renewal.validate()
         currentAccount()
@@ -168,9 +168,9 @@ internal class QqAuthentication(private val context: Context, private val onLogi
     suspend fun prepareRequest() = withContext(Dispatchers.IO) { renewal.prepare() }
     suspend fun renewRejected(rejected: PlatformSession): PlatformSession? = withContext(Dispatchers.IO) { renewal.renewRejected(rejected) }
     fun recentlyForcedRenewal(credential: String): Boolean = renewal.recentlyForced(credential)
-    // 定时保活只处理快到期的票；失效后改由 recoverIfDue 按退避复核，不在后台反复请求。
+    // 定时保活只续快到期的票；已经失效的交给 recoverIfDue 按退避复核，别在后台一直刷接口
     suspend fun renewIfDue() { if (!expired) prepareRequest() }
-    /** 失效后按退避节奏复核一次：通过即恢复登录，仍被拒则推迟下次。 */
+    /** 登录失效后按退避间隔复核一次：成功就恢复登录态，仍失败就拉长下次间隔。 */
     suspend fun recoverIfDue() = withContext(Dispatchers.IO) {
         if (!expired || !recovery.due()) return@withContext
         recovery.attempted()

@@ -45,13 +45,13 @@ internal class PlatformPlaybackResolver(
     private val localLibrary = MusicLibraryStore.get(context)
     private val localPlayback = LocalPlaybackAdapter(context.applicationContext)
     private val qualityCache = PlaybackQualityCache(context)
-    // 后台探测最多两路并发；下载与歌词仍走各自的单路门控。
+    // 后台音质探测最多 2 路并发，下载和歌词各自走单独的限流。
     private val probeSlots = Semaphore(2)
     private val adapters: Map<MusicSource, PlatformPlaybackAdapter>
         get() = MusicSource.entries.filter { it != MusicSource.LOCAL }
             .associateWith { SourcePlaybackAdapter(context, it, requestOrigin) }
 
-    /** 失败恢复使用实际已解析资源，经包的恢复接口重新获得票据。 */
+    /** 播放出错时拿当前解析出来的资源信息，调用音源包的恢复接口重新换取播放地址。 */
     suspend fun recover(track: MusicTrack, quality: AudioQuality, previous: PlaybackSource): ResolvedPlayback {
         awaitSourceStartup(track, requirePlayback = true)
         val adapter = adapters[track.source] ?: throw PlatformApiException("音源未提供恢复能力")
@@ -70,7 +70,7 @@ internal class PlatformPlaybackResolver(
             return ResolvedPlayback(local.copy(previewUrl = local.localUri, lyrics = lyrics), localPlayback.resolve(local, preferredQuality))
         }
         awaitSourceStartup(track, requirePlayback = true)
-        // 初始化账号后再绑定版本，迟到的取票不能污染后来登录的账号。
+        // 先确保账号已加载再记下版本号，防止切账号前发出的旧请求回来污染新账号状态。
         sourceAccountState(context, track.source)
         val availabilityRevision = availability.revisionFor(track)
         val localLyrics = if (hasReusableLyrics(track, track.lyrics)) track.lyrics
@@ -83,7 +83,7 @@ internal class PlatformPlaybackResolver(
         return try { resolvePlaybackCacheFirst(preferExactOnline,
             cached = { allowOther -> offline.resolve(readyTrack, preferredQuality, allowOtherQuality = allowOther) },
             online = {
-                // 在线取票等待切歌动作稳定，取消期间不产生已经来不及撤回的 HTTP 请求。
+                // 连续快速切歌时稍微等一下再发在线解析请求，避免发出大量白跑的 HTTP 请求。
                 if (onlineSettleDelayMs > 0L) delay(onlineSettleDelayMs)
                 resolveOnline(readyTrack, preferredQuality, verifyMedia = false)
             },
@@ -223,7 +223,7 @@ internal class PlatformPlaybackResolver(
         return PlaybackQualityProbe(best.second, cacheable)
     }
 
-    /** 下载前把已取到的完整音源登记进离线索引，保留现有缓存管理语义。 */
+    /** 下载前先把解析到的完整音质记进离线索引，方便缓存管理页识别。 */
     fun rememberPreloaded(resolved: ResolvedPlayback, preferred: AudioQuality) =
         offline.remember(resolved, preferred)
 
@@ -261,7 +261,7 @@ internal class PlatformPlaybackResolver(
             ?: throw PlatformApiException("${track.source.label}尚未接入播放")
 
     private fun registerResolvedSource(source: PlaybackSource) {
-        // 包提供的稳定资源键与具体请求地址保持绑定。
+        // 把音源包给的稳定缓存 key 和实际请求 URL、请求头绑定起来。
         source.cacheKey?.let { SupplementalPlaybackRequests.register(source.url, source.requestHeaders, it) }
     }
 
@@ -294,7 +294,7 @@ internal class PlatformPlaybackResolver(
                     session?.missed(quality)
                     null
                 } else if (candidate.trial) {
-                    // 高档试听源不能冒充完整音质；继续寻找较低档的完整地址。
+                    // 高音质只给了试听版时不算成功，继续往下找完整版，试听版只留着最后兜底。
                     if (trialFallback == null) trialFallback = candidate
                     session?.missed(quality)
                     null
@@ -387,7 +387,7 @@ internal class PlatformPlaybackResolver(
         ).ifEmpty { if (!track.source.supportsOnlineLyrics) cachedLyrics.read(track) else emptyList() }
     }
 
-    /** 快速切歌预览只读本地资料和缓存，不因允许手动歌词而提前发起在线请求。 */
+    /** 快速切歌预览时只读本地和缓存歌词，不发网络请求。 */
     suspend fun cachedOrLibraryLyrics(track: MusicTrack): List<TimedLyric> = AiLyricLayer.compose(localLibrary, track) {
         awaitSourceStartup(track)
         preferredLyrics(

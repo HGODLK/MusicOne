@@ -15,7 +15,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.IntSize
 import kotlin.math.abs
 
-/** 只在布局登记及转向交接时读取实测基线，正常动画帧不遍历坐标。 */
+/** 记录并锁定歌词当前阅读行的文字基线，供横竖屏切换时作为旋转枢轴（动画帧不遍历坐标）。 */
 internal class PhoneLyricsReadingAnchor {
     private data class Row(val token: Any, val coordinates: LayoutCoordinates, val layout: () -> TextLayoutResult?)
     private var pane: LyricWindowPane? = null
@@ -36,7 +36,7 @@ internal class PhoneLyricsReadingAnchor {
     fun bind(track: String, value: LyricWindowPane, line: Int, follow: Boolean = true,
         drawing: PhoneLyricsDrawingWindow = PhoneLyricsDrawingWindow.None) {
         if (trackId != track) { trackId = track; release() }
-        // 横竖布局更换列表实例时仍对齐同一句，不能在准备期间追到下一句。
+        // 切换列表实例时清空旧行坐标，保持对同一句歌词的锁定。
         if (pane !== value) { pane = value; rows.clear() }
         if (held && heldPanes.add(value)) value.playbackStep.holdTurnPosition(true)
         current = line
@@ -47,7 +47,7 @@ internal class PhoneLyricsReadingAnchor {
     private fun selectedLine(): Int = current.takeIf { following && it in rows } ?: pane?.listState?.layoutInfo
         ?.visibleItemsInfo?.minByOrNull { abs(it.offset) }?.index ?: current
 
-    /** 旧帧只接受已经挂载的真实文字基线，不拿估计枢轴启动另一种排版的旋转。 */
+    /** 确认目标行已挂载且完成排版后才锁定阅读基线，不拿估算值启动转屏动画。 */
     fun captureFrame(): Boolean {
         val row = rows[position?.line ?: selectedLine()] ?: return false
         if (pane?.listHost?.ready != true || !row.coordinates.isAttached || row.layout() == null) return false
@@ -73,9 +73,9 @@ internal class PhoneLyricsReadingAnchor {
         heldPanes.forEach { it.playbackStep.holdTurnPosition(false) }
         heldPanes.clear()
     }
-    /** 在旧帧覆盖下固定枢轴，位置锁等补偿起点完成绘制后才释放。 */
+    /** 固定当前算好的旋转枢轴，此时列表位置锁暂不释放，等首帧画完再放。 */
     fun pinForMotion() { pivotHeld = true }
-    /** 转向只固定已测得的几何枢轴，正文不再被阅读位置锁暂停。 */
+    /** 保留旋转枢轴供转向动画使用，同时释放列表位置锁让歌词恢复正常滚动。 */
     fun releaseForMotion() { pivotHeld = true; position = null; prepared = null; releasePositions() }
     fun release() { pivotHeld = false; pivots.clear(); position = null; prepared = null; releasePositions() }
     fun clear() { pane = null; trackId = null; rows.clear(); release() }
@@ -91,7 +91,7 @@ internal class PhoneLyricsReadingAnchor {
         val info = pane?.listState?.layoutInfo ?: return false
         val geometry = LyricPlacementGeometry(info.viewportSize.width, info.viewportSize.height, info.beforeContentPadding)
         val item = info.visibleItemsInfo.firstOrNull { it.index == position?.line } ?: return false
-        // 列表偏移与逐行动画各自维护，验收它们合成后的阅读位置，不能再要求残量清零。
+        // 验收时把列表偏移和行内剩余位移动画加在一起算，不强求行动画归零。
         val rowOffset = if (preservingRowMotion) pane?.playbackStep?.offsetPx(position?.line ?: current) ?: 0f else 0f
         return prepared == Triple(generation, rotation, geometry) &&
             abs(item.offset + rowOffset - (position?.targetOffset(drawingWindow.logicalHeight(geometry.height), item.size) ?: 0)) <= 1f
@@ -115,7 +115,7 @@ internal class PhoneLyricsReadingAnchor {
         val row = rows[position?.line ?: selectedLine()] ?: return null
         val text = row.layout() ?: return null
         if (!row.coordinates.isAttached) return null
-        // 以列表为坐标根，排除其外部的整页及转向补偿，避免把补偿再次写回端点。
+        // 相对列表容器计算基线坐标，排除外层的整页和转向变换，防止把动画补偿又算回终点。
         val point = runCatching {
             viewport.localPositionOf(row.coordinates, Offset(0f, text.firstBaseline)) - Offset(0f, drawingWindow.top.toFloat())
         }.getOrNull() ?: return null

@@ -26,7 +26,7 @@ internal fun QqLoginScreen(state: QqLoginUiState, actions: QqLoginActions, reduc
         .background(Brush.verticalGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.background)))
         .navigationBarsPadding().imePadding().verticalScroll(rememberScrollState())
         .padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        // 应用级返回由宿主页头统一承接，卡片布局沿用 0.2.0。
+        // 返回按钮由宿主页头统一提供，这里顶部留白对齐卡片位置
         Spacer(Modifier.height(40.dp))
         Surface(Modifier.widthIn(max = 480.dp).fillMaxWidth(), shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surface.copy(alpha = .8f)) {

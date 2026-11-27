@@ -9,7 +9,7 @@ internal const val QQ_SOURCE_ID = "com.musicone.source.qq"
 private val QQ_HOST_MAINTAINED_KEYS = setOf("sourcePayloadFormat", "sourcePayloadVersion", "sourcePayload",
     "musicone.host.originalStableId")
 
-/** SDK只接触完整公共资料和包自有payload，不读取宿主曲目JSON。 */
+/** 把 QQ 内部曲目模型转成 SDK 公开的 SourceTrackDetails（私有字段序列化进 payload）。 */
 internal fun MusicTrack.details(accountId: String?): SourceTrackDetails {
     val opaque = providerData + mapOf("catalogId" to catalogId, "mediaId" to mediaId,
         "providerType" to providerType.toString(), "qualityIds" to JSONObject(qualityIds.mapKeys { it.key.name }).toString())
@@ -29,7 +29,7 @@ internal fun MusicTrack.details(accountId: String?): SourceTrackDetails {
 
 internal fun SourceTrackDetails.musicTrack(): MusicTrack {
     require(track.identity.sourceId == QQ_SOURCE_ID) { "曲目所属音源不匹配" }
-    // 宿主维护的载荷与身份键不并入自有资料，避免编码进 qq.track 后逐次嵌套膨胀。
+    // 过滤掉宿主自身的元数据字段，避免重复塞进 qq.track 导致 payload 越滚越大
     val data = (if (payload.format == "qq.track" && payload.encoded.isNotBlank()) jsonStrings(JSONObject(payload.encoded)) else emptyMap()) +
         track.opaqueData - QQ_HOST_MAINTAINED_KEYS
     val qualityValues = data["qualityIds"]?.let { runCatching { JSONObject(it) }.getOrNull() }

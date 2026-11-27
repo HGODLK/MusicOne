@@ -2,7 +2,7 @@ package com.musicone.source.qq.internal
 
 import org.json.JSONObject
 
-/** 专辑复用歌单展示模型，但始终使用专辑接口和原始曲序。 */
+/** 专辑详情仓库：返回模型复用 MusicPlaylist，但数据走专辑接口并保持原曲序。 */
 internal class QqAlbumRepository {
     fun load(album: MusicPlaylist, cookie: String, vip: Boolean): MusicPlaylist {
         val mid = album.id.removePrefix(QQ_SEARCH_ALBUM_PREFIX)

@@ -2,7 +2,7 @@ package com.musicone.source.qq.internal
 
 import org.json.JSONObject
 
-/** 保存歌曲原始限制，账号变化时重新计算角标，不能只保存已经消除的显示结果。 */
+/** 保存歌曲原始收费限制，切换账号或会员状态变化时可以重新算角标。 */
 internal data class QqTrackAccessInfo(
     val payPlay: Int? = null,
     val payMonth: Int? = null,
@@ -73,7 +73,7 @@ internal fun MusicTrack.withQqVipEntitlement(hasVipAccess: Boolean): MusicTrack 
         copy(accessBadge = null, trialAvailable = false, playable = true, unavailableReason = null)
     } else this
 
-/** 播放地址只更新可播放状态，不能证明会员身份或购买权益。 */
+/** 根据实际播放结果更新可播放状态，不改动原来的 VIP/付费角标。 */
 internal fun MusicTrack.withQqPlaybackPermission(hasFullAccess: Boolean): MusicTrack =
     copy(playable = hasFullAccess || trialAvailable, unavailableReason = if (hasFullAccess) null else unavailableReason)
 

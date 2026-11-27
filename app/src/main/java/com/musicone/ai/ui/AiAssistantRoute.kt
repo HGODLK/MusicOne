@@ -11,7 +11,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
 
-/** 流式消息只在助手页面订阅，避免逐字更新牵动应用根页面。 */
+/** 流式输出只在这里订阅，避免逐字刷新把整个应用根页面一起带动重组。 */
 @Composable
 internal fun AiAssistantRoute(controller: AiAssistantController, onBack: () -> Unit, bottomInset: Dp) {
     val state by controller.state.collectAsStateWithLifecycle()
@@ -42,7 +42,7 @@ internal fun AiAssistantRoute(controller: AiAssistantController, onBack: () -> U
                     onOpenPlaylist = { playlist ->
                         controller.dispatch(AiUiAction.OpenPlaylist(playlist)); navigation.open(playlist)
                     })
-                // 空详情不挂全屏动画节点，避免覆盖层挡住聊天顶栏的齿轮点击。
+                // 没打开歌单详情时不挂这层全屏节点，避免挡住顶栏设置按钮的点击。
                 if (navigation.motion.mounted) navigation.playlist?.let { playlist ->
                     AiPlaylistDetailRoute(playlist, controller, bottomInset, navigation.motion, close)
                 }

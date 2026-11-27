@@ -82,7 +82,7 @@ internal class WebDavBrowserController(
         if (view.serverKey == serverKey) scrollPositions[path] = position
     }
 
-    /** 按当前账号校准：换服务器清空全部目录状态，首次进入时读取根目录。 */
+    /** 同步当前服务器状态：切服务器时清空目录缓存，首次进入时加载根目录。 */
     fun sync() {
         val server = auth.currentServer()
         if (server == null || server.key != view.serverKey) reset(server?.key.orEmpty())
@@ -312,7 +312,7 @@ internal class WebDavBrowserController(
         metadataReader.buildQuickTrack(server, audio, loaded.lyricOf(audio), loaded.coverFile).first.withCover(coverUri)
     }
 
-    /** 后台补目录封面和标签，按批次写回，避免每读完一首就重建整张列表。 */
+    /** 后台异步补齐目录封面和音频标签，攒够一批再更新 UI，避免每读一首就刷新整张列表。 */
     private fun startEnrich() {
         val server = auth.currentServer() ?: return
         val loaded = listing ?: return

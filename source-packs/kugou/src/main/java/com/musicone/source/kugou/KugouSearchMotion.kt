@@ -13,7 +13,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 
-/** 酷狗搜索复用 QQ 搜索从右上角按钮展开、反向收回的同一组页面运动参数。 */
+/** 酷狗搜索页展开和收回的动画参数（和 QQ 搜索保持一致）。 */
 internal class KugouSearchMotion {
     val reveal = Animatable(0f)
     val mounted: Boolean get() = reveal.value > 0f

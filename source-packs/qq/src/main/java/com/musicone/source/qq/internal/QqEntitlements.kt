@@ -22,7 +22,7 @@ internal data class QqEntitlementState(
     val sessionRevision: Long = 0L,
 )
 
-/** 页面只订阅权益结果；会话刷新和旧账号响应隔离都在 QQ 数据层完成。 */
+/** 歌曲播放权限与角标状态管理，内部处理会话刷新和切号隔离。 */
 internal object QqEntitlements {
     private val lock = Any()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -57,7 +57,7 @@ internal object QqEntitlements {
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
-                    // 鉴权或网络失败已经记录重试时间，不能终止整个权益刷新任务。
+                    // 单次网络或鉴权失败已记好重试时间，继续循环别把整个后台任务弄停
                     currentCoroutineContext().ensureActive()
                 }
                 val expiry = synchronized(lock) {

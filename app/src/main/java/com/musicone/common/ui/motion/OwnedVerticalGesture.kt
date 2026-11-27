@@ -8,7 +8,7 @@ import androidx.compose.ui.geometry.Offset
 
 internal data class VerticalGestureEnd(val completed: Boolean, val timeMillis: Long)
 
-/** 复用歌单的前置分发方式；接管后持续持有同一手指，并先采样最后位移再处理抬手。 */
+/** 在 Initial 阶段拦截纵向拖动：接管后一直追踪同一根手指，并在抬手前先采样最后一帧位移。 */
 internal suspend fun AwaitPointerEventScope.awaitOwnedVerticalGesture(
     down: PointerInputChange,
     tracker: VelocityTracker,
@@ -28,11 +28,11 @@ internal suspend fun AwaitPointerEventScope.awaitOwnedVerticalGesture(
         val change = event.changes.firstOrNull { it.id == down.id }
             ?: return if (owned) VerticalGestureEnd(false, time) else null
         time = change.uptimeMillis
-        // 多指和输入流丢失属于真正取消；子级消费不再中断已经接管的拖动。
+        // 多指触摸或事件流丢失时取消手势；一旦已接管，子控件消费事件不再打断拖动。
         if (event.changes.count { it.pressed } > 1 || (!owned && change.isConsumed)) {
             return if (owned) VerticalGestureEnd(false, time) else null
         }
-        // 合并事件的历史点也参与估速，画面仍只在本次事件提交一次完整位移。
+        // 把批处理事件里的历史采样点也喂给速度估算器，画面仍按本次完整位移更新。
         for (historical in change.historical) {
             if (historical.uptimeMillis > sampledTime && historical.uptimeMillis < time) {
                 tracker.addPosition(historical.uptimeMillis, historical.position)
@@ -47,7 +47,7 @@ internal suspend fun AwaitPointerEventScope.awaitOwnedVerticalGesture(
         val delta = position - change.previousPosition
         x += delta.x
         y += delta.y
-        // 完整轨迹用于松手意图，视觉跟手仍扣除启动死区。
+        // 用完整轨迹判断松手意图，视觉跟手移动时则扣掉启动阈值（touchSlop）。
         observe(delta.y)
         tracker.addPosition(time, position)
         release.moved(time, acceptedTail)
@@ -58,7 +58,7 @@ internal suspend fun AwaitPointerEventScope.awaitOwnedVerticalGesture(
                 -1 -> return null
                 1 -> {
                     val over = y - if (y > 0f) viewConfiguration.touchSlop else -viewConfiguration.touchSlop
-                    // 已锁定的方向不属于此操作时立即让出，不能在途中反向后抢走子级手势。
+                    // 方向锁定后如果不符合当前手势条件就立刻放手，避免中途反向又抢走子控件手势。
                     if (!begin(over)) return null
                     owned = true
                     move(over)

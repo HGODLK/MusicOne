@@ -15,9 +15,9 @@ import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 
 /**
- * 将媒体读取桥接到 Native FFmpeg AVIO 的数据读取与定位。
- * 对 file:// 与 content:// 优先采用系统级 FileChannel 快速 Seek，耗时为零且不反复重开流；
- * 未知数据流无缝回退至 Media3 DataSource。
+ * 桥接媒体数据读取与定位到 Native FFmpeg AVIO。
+ * file:// 和 content:// 优先走 FileChannel 直接 Seek，避免反复重开流；
+ * 其他流回退到 Media3 DataSource。
  */
 @Keep
 @OptIn(UnstableApi::class)
@@ -73,7 +73,7 @@ class NativeAudioIoBridge(
             }
         }
 
-        // 回退至通用 DataSource
+        // 回退到通用 DataSource
         isUsingChannel = false
         openAtFallback(0L)
     }

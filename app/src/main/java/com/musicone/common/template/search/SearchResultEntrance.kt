@@ -8,7 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 
-/** 首批已在后台就绪也从首帧接续；列表回收重建不重复播放已完成的入场。 */
+/** 搜索结果入场淡入动画：每个条目只播一次，列表滑出回收再滑回来不重播。 */
 @Composable
 internal fun SearchResultEntrance(content: @Composable () -> Unit) {
     var shown by rememberSaveable { mutableStateOf(false) }

@@ -32,7 +32,7 @@ internal object UsbAudioOutputStatus {
     private val mutableDeviceChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
     val deviceChanges = mutableDeviceChanges
 
-    /** 独占流是否真正持有输出；错误分流必须先核对，不能只看开关。 */
+    /** 标记 USB 独占输出是否真的在工作；排查异常时以这个为准，不能只看设置开关。 */
     @Volatile
     var directOutputActive = false
         private set

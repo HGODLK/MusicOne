@@ -18,7 +18,7 @@ internal class SourcePublicRootSearchCall(val request: SourcePageRequest.Search,
 }
 
 internal class SourcePublicRootSearchBridge {
-    // 资格只在注册时读取，不把实例身份交给结构相等策略合并。
+    // 当前允许接管公共搜索的宿主上下文，只在注册调用时核对。
     var frame: SourcePublicRootSearchFrame? = null
     var call by mutableStateOf<SourcePublicRootSearchCall?>(null)
         private set
@@ -42,7 +42,7 @@ internal class SourcePublicRootSearchBridge {
         if (call !== expected) return
         expected.retired = true
         call = null
-        // 先交还所有权，回调立即发起的新调用不能被旧收尾覆盖。
+        // 先清掉 call 再触发 onClose，防止回调里马上发起新搜索时被旧收尾覆盖。
         if (notify) expected.onClose()
     }
 }
@@ -83,7 +83,7 @@ internal fun SourcePublicRootSearchHost(bridge: SourcePublicRootSearchBridge, mo
     SideEffect { bridge.frame = frame }
     val call = bridge.call
     LaunchedEffect(source, instance, revision, frame.accountId, account?.status, account?.revision, custom, ready, call) {
-        // 独立重组器可能已换了调用；旧effect连清空共享VM的资格也不能保留。
+        // 如果已经换成新的搜索调用，旧协程直接退出，别去动共享 ViewModel。
         if (bridge.call !== call) return@LaunchedEffect
         if (call != null && !bridge.belongsTo(call, frame)) {
             model.deactivate()
@@ -105,7 +105,7 @@ internal fun SourcePublicRootSearchHost(bridge: SourcePublicRootSearchBridge, mo
     }
     LaunchedEffect(call, call?.activated, state.opened, motion.mounted) {
         if (call?.activated != true || state.opened || motion.mounted) return@LaunchedEffect
-        // StateFlow与独立重组器可能错一帧，不能把首次尚未展开误判为已经退出。
+        // 等一帧再确认是不是真关了，防止独立 ComposeView 和 StateFlow 差一帧把刚打开误判成关闭。
         withFrameNanos { }
         if (bridge.call === call && !model.state.value.opened && !motion.mounted) bridge.retire(call, notify = true)
     }

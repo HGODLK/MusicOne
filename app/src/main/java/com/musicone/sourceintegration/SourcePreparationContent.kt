@@ -12,7 +12,7 @@ import com.musicone.MusicOnePage
 import com.musicone.MusicSource
 import com.musicone.ReportPrimaryHeaderScroll
 
-/** 仅占据音源内容区，导航、设置和本地资料库始终可以操作。 */
+/** 音源启动准备中的占位页，只盖住音源内容区，底栏、设置和本地库照常能点。 */
 @Composable
 internal fun SourcePreparationContent(source: MusicSource, page: MusicOnePage, bottomInset: Dp,
     error: String?, onChooseSource: () -> Unit) {

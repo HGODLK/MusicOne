@@ -25,7 +25,7 @@ import com.musicone.source.sdk.SourceSupplementalPageContext
 import com.musicone.source.sdk.SourcePlayerUiContext
 import kotlinx.coroutines.*
 
-/** 外部组合使用独立重组器，包页面异常只替换本区域，宿主导航继续可用。 */
+/** 独立隔离承载音源包的 Compose 页面：包内崩溃只在这里显示错误页，不弄崩宿主和导航。 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SourceExternalSurface(instance: SourceInstance, route: SourceRoute, modifier: Modifier = Modifier,
@@ -55,9 +55,9 @@ internal fun SourceExternalSurface(instance: SourceInstance, route: SourceRoute,
     val parentMotionOffset = com.musicone.LocalMotionRootOffset.current
     var surfaceMotionOffset by remember(instance, mode) { mutableStateOf(Offset.Zero) }
     val rootCoordinates = remember(instance, rootIdentity) { rootIdentity?.let { SourceRootCoordinates() } }
-    // 消费量在测量阶段直接传递，避免重组延后一帧，也不替子树预消费 IME 或导航栏。
+    // 直接同步外层已消费的 WindowInsets，避免慢一帧，也不擅自替子页面消费键盘或导航栏。
     val consumedInsets = remember(instance, mode) { MutableWindowInsets() }
-    // 外部资源Context属于包；系统选择器与返回分发仍使用当前Activity的公开所有者。
+    // 包页面有自己的资源 Context，但系统文件选择器和返回键分发还是绑到宿主 Activity 上。
     val resultOwner = checkNotNull(LocalActivityResultRegistryOwner.current)
     val backOwner = checkNotNull(LocalOnBackPressedDispatcherOwner.current)
     val parentLifecycle = LocalLifecycleOwner.current
@@ -131,7 +131,7 @@ private class IsolatedSourceView(context: Context, private val failed: (Throwabl
     private val startContent = Runnable {
         if (!closed && !broken && !contentStarted && isAttachedToWindow) {
             contentStarted = true
-            // 首次组合会在setContent内同步执行，必须脱离宿主attach调用栈并直接捕获。
+            // setContent 会同步跑首次组合，放到 post 里脱离宿主 attach 栈并包一层 try-catch 兜底。
             try { compose.setContent(content) } catch (error: Throwable) { fail(error) }
         }
     }
@@ -190,7 +190,7 @@ private class IsolatedSourceView(context: Context, private val failed: (Throwabl
             super.onLayout(changed, left, top, right, bottom)
             // 子 ComposeView 已创建真实 AndroidComposeView，再装饰它的虚拟无障碍节点入口。
             if (reportCancellation && !broken && !closed) accessibilityBoundary.install(compose)
-            // 开页准备时宿主透明度为零，必须以真实布局就绪释放准备，不能等待被跳过的绘制。
+            // 准备阶段容器 alpha 为 0 不会触发绘制，所以在 onLayout 拿到有效尺寸时就通知就绪。
             if (!broken && !closed && contentStarted && !readyReported && compose.width > 0 && compose.height > 0) {
                 readyReported = true
                 post { if (!closed && !broken) ready() }

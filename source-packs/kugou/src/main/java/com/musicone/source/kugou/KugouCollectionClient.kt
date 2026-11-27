@@ -19,7 +19,7 @@ internal data class KugouManagedCollection(val raw: JSONObject, val playlist: Mu
         raw.optInt("is_def") == 0 && raw.optJSONArray("authors") == null
 }
 
-/** 创建者优先于副本类型；带 authors 的账号收藏是专辑，不冒充收藏歌单。 */
+/** 先判断是否是用户自建歌单；带 authors 字段的是收藏专辑，不要当成收藏歌单。 */
 internal fun kugouManagedCollection(item: JSONObject, version: Long, userId: String): KugouManagedCollection? {
     val id = item.optString("listid").takeIf { it.toLongOrNull()?.let { n -> n > 0 } == true } ?: return null
     val owner = item.opt("list_create_userid").takeUnless { it == null || it == JSONObject.NULL }
@@ -127,7 +127,7 @@ internal class KugouCollectionClient(
         }, { row -> checkAccount(); accept(row) })
     }
 
-    /** 目录只需要封面时逐页找最新记录，不建立整单曲目快照或歌曲对象列表。 */
+    /** 只需要拿歌单封面时，逐页找最新加入的那首歌即可，不必把整张歌单的歌曲对象都建出来。 */
     fun latestArtwork(cookie: String, target: KugouManagedCollection, checkAccount: () -> Unit = {}): String? {
         var newest = Long.MIN_VALUE
         var artwork: String? = null
@@ -158,7 +158,7 @@ internal class KugouCollectionClient(
                 beforeWrite = beforeWrite)
         } else {
             val hashes = tracks.flatMap { it.qualityIds.values + it.remoteId() }.map(String::lowercase).toSet()
-            // 删除编号必须来自目标歌单，不能使用其他歌单或我喜欢中的收藏项编号。
+            // 删歌用的 fileid 必须从目标歌单里查，不能拿其他歌单或“我喜欢”里的 fileid
             val items = entries(cookie, target).filter { item ->
                 listOf("FileHash", "hash", "Hash").any { item.optString(it).lowercase() in hashes }
             }.map { item ->
@@ -184,7 +184,7 @@ internal class KugouCollectionClient(
             if (page > 1 && pageVersion != version) error("酷狗歌单已变化，请刷新后重新排序")
             version = pageVersion
             beforeWrite()
-            // 排序只保留写入所需编号，不再额外常驻整单的完整歌曲 JSON 树。
+            // 排序接口只需要曲目编号，这里只提取必要字段，避免在内存里留整张歌单的完整 JSON
             data.requiredInfo().map { row -> JSONObject()
                 .put("ID", row.optString("ID").ifBlank { row.optString("fileid") })
                 .put("hash", row.optString("FileHash").ifBlank { row.optString("hash") }.ifBlank { row.optString("Hash") }) }
@@ -196,7 +196,7 @@ internal class KugouCollectionClient(
 
     private fun post(session: KugouSession, path: String, body: JSONObject,
         extra: Map<String, String> = emptyMap(), encrypted: Boolean = false, beforeWrite: (() -> Unit)? = null): JSONObject {
-        // 同步读取结束后、实际写请求发送前，再校验取消状态和账号归属。
+        // 真正发写请求前再确认一次协程没被取消且账号没切走
         beforeWrite?.invoke()
         return transport.post(session, path, body, extra, encrypted).also { it.requireKugouCollectionSuccess() }
     }
@@ -209,7 +209,7 @@ internal fun interface KugouCollectionDeleteTransport {
     fun post(request: KugouCollectionDeleteRequest, cookie: String): PlatformHttpResponse
 }
 
-/** 删除接口沿用旧 playlistAES：Base64 文本正文加 Android signature，不是 modify_list 的原始密文字节协议。 */
+/** 删歌接口走的是旧版 playlistAES（Base64 文本体 + Android 签名），和 modify_list 的原始密文格式不同。 */
 internal fun kugouCollectionDeleteRequest(session: KugouSession, listId: String, time: Long, aes: String): KugouCollectionDeleteRequest {
     val plain = JSONObject().put("listid", listId.toLong()).put("total_ver", 0).put("type", 1).toString()
     val digest = KugouProtocol.md5(aes)
@@ -240,7 +240,7 @@ internal fun kugouCollectionDeleteResponse(raw: ByteArray, aes: String): JSONObj
     JSONObject(cipher.doFinal(raw).toString(Charsets.UTF_8))
 }.getOrElse { JSONObject(raw.toString(Charsets.UTF_8)) }
 
-/** 保持 minSdk 23；纯字节编码也可在不依赖 Android stub 的单元测试中核对真实正文。 */
+/** 手写 Base64 编码：兼容 minSdk 23，同时纯 JVM 单元测试里也能直接跑。 */
 private fun kugouCollectionDeleteBase64(bytes: ByteArray): String = buildString {
     val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
     var offset = 0
@@ -258,7 +258,7 @@ private fun kugouCollectionDeleteBase64(bytes: ByteArray): String = buildString 
 internal fun kugouCollectionEditBody(target: KugouManagedCollection, title: String, description: String): JSONObject =
     JSONObject().put("listid", target.listId.toLong()).put("total_ver", target.totalVersion).put("type", 0)
         .put("name", title).put("sort", target.raw.optLong("sort")).put("tags", target.raw.optString("tags"))
-        // 公共契约的默认空简介也用于仅改名，不能把旧简介无意清空。
+        // 只改歌单名时上层会传空简介，这里回填原简介，防止把旧简介意外清空
         .put("intro", description.ifBlank { target.playlist.description })
 
 internal fun kugouCollectionOrderData(entries: List<JSONObject>, orderedIds: List<String>): JSONArray {
@@ -282,7 +282,7 @@ private fun JSONObject.requiredInfo(): List<JSONObject> {
         ?: throw PlatformApiException("酷狗歌单数据格式不完整，请刷新重试") }
 }
 
-/** 重复整页是远端分页异常，不能截断后当成完整目录交给删除、排序等写操作。 */
+/** 如果分页接口返回一整页重复数据，说明服务端分页异常，直接报错，不能拿残缺列表去删歌或排序。 */
 internal fun <T> collectKugouCollectionPages(size: Int, identity: (T) -> String,
     load: (Int, Int) -> List<T>): List<T> = buildList {
     visitKugouCollectionPages(size, identity, load) { add(it) }

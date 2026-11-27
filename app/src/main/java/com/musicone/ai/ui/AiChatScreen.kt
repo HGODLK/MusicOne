@@ -30,7 +30,7 @@ internal fun AiChatScreen(state: AiAssistantUiState, onAction: (AiUiAction) -> U
     val density = LocalDensity.current
     val bottomClearance = rememberAiBottomClearance(bottomInset)
     val presentation = remember(state.currentConversationId) { AiVisibleMessagesCache() }
-    val projectedMessages = remember(state.messages) { presentation.update(state.messages) }
+    val projectedMessages = remember(state.currentConversationId, state.messages) { presentation.update(state.messages) }
     val shownCards = remember(state.currentConversationId) {
         state.messages.filter { it.playlist != null || it.tracks.isNotEmpty() }.mapTo(mutableSetOf()) { it.id }
     }
@@ -46,7 +46,8 @@ internal fun AiChatScreen(state: AiAssistantUiState, onAction: (AiUiAction) -> U
             if (state.hasEarlierMessages) 1 else 0).coerceAtLeast(0))
     }
     val autoFollow = rememberAiChatAutoFollow(listState, state.messages.firstOrNull()?.id)
-    LaunchedEffect(projectedMessages, preparer) {
+    // 会话 ID 变化会重置 initialPrepared，必须纳入 key 确保预热协程必定重新触发。
+    LaunchedEffect(state.currentConversationId, projectedMessages, preparer) {
         if (!initialPrepared) {
             // 首屏只准备末尾六条，不先挂顶端再滚到底部。
             preparer.prepare(projectedMessages.takeLast(6))
@@ -65,7 +66,7 @@ internal fun AiChatScreen(state: AiAssistantUiState, onAction: (AiUiAction) -> U
     val pagingLayoutReady by rememberUpdatedState(messages.size == projectedMessages.size && initialPrepared)
     LaunchedEffect(listState) {
         var requestedAtSize = -1
-        // 只在向历史方向滚动时补页，末尾动画经过顶部索引不能触发历史加载。
+        // 只有用户往上翻历史时才触发加载上一页，避免自动滚动路过顶部时误触发。
         snapshotFlow { Triple(listState.firstVisibleItemIndex,
             listState.isScrollInProgress && listState.lastScrolledBackward, pagingState.messages.size) }
             .collect { (first, scrolling, size) ->
@@ -153,7 +154,7 @@ internal fun AiChatScreen(state: AiAssistantUiState, onAction: (AiUiAction) -> U
             }
         }
         }.map { it.measure(constraints) }
-        // 同帧测量输入区与玻璃顶栏，列表留白直接使用其动画中高度，不再首帧回写布局。
+        // 同一帧里一起测量输入框和顶栏，列表上下留白直接用实测高度，避免首帧闪一下。
         layout(constraints.maxWidth, constraints.maxHeight) {
             chat.forEach { it.placeRelative(0, 0) }
             toolbar.forEach { it.placeRelative(0, 0, zIndex = 2f) }

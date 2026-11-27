@@ -4,7 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.ceil
 
-/** 有真实用量时按上一请求校准估算；字节数不再当作 token。 */
+/** 如果上一次请求返回了真实 token 用量，就拿它校准估算比例，不再粗暴按字节数算 token。 */
 internal object AiContextBudget {
     fun estimate(text: String): Int {
         var ascii = 0
@@ -29,7 +29,7 @@ internal object AiContextBudget {
         return ceil(estimate.toDouble() * actual / prior).toLong()
     }
 
-    /** 将真实窗口换算为估算单位，供应商已拒绝时确保本轮确实释放空间。 */
+    /** 把真实的上下文上限换算成估算值；如果接口已经报超长了，确保这轮压缩能腾出足够空间。 */
     fun compactionCapacity(checkpoint: JSONObject, config: AiConfiguration, capacity: Int?, estimate: Int, rejected: Boolean = false): Int {
         val reserve = config.maxOutputTokens
         val predicted = predicted(checkpoint, config, estimate).coerceAtLeast(1)

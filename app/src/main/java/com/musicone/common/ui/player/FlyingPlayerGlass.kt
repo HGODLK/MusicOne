@@ -55,8 +55,8 @@ private class PlayerGlassSnapshotCache {
 }
 
 /**
- * 转场前准备原模糊引用；稳定背景在属性阶段更新，描边与源条交接继续实时绘制。
- * 进度不进入组合和测量阶段，避免扩张玻璃逐帧触发重组与双重模糊。
+ * 播放页展开/收起时的飞行毛玻璃背景：转场前先缓存模糊图层，动画期间只在属性阶段更新变换，
+ * 不把动画进度带入组合和测量阶段，避免逐帧重组和重复模糊。
  */
 @Composable
 internal fun FlyingPlayerGlass(motion: PageMotion) {
@@ -96,11 +96,11 @@ internal fun FlyingPlayerGlass(motion: PageMotion) {
     Box(Modifier.fillMaxSize()) {
     PlayerGlassNativeBackgroundLayer(nativeBackground, nativeFrame) { cache.sampleScale }
     Canvas(Modifier.fillMaxSize().graphicsLayer()) {
-        // 在准备缓存前读取本帧路径，不能在同一帧把模糊背景画两遍或漏掉一遍。
+        // 先读取本帧是否走原生图层路径，确保和缓存准备保持一致，不会多画或漏画一遍模糊背景。
         val native = nativeFrame.value
         val preparing = motion.phase == MotionPhase.PREPARING
         if (!motion.moving && !preparing && !prewarming) {
-            // 保留预热后的引用和合成结构；再次使用前仍校验来源、尺寸、偏移与模糊半径。
+            // 静止时保留预热好的模糊图层缓存，下次启动前再核对尺寸、偏移和模糊半径是否变化。
             return@Canvas
         }
         val hostWidth = motion.hostBounds.width.roundToInt().coerceAtLeast(1)
@@ -110,7 +110,7 @@ internal fun FlyingPlayerGlass(motion: PageMotion) {
         val sourceOffset = backdropBounds.topLeft - motion.hostBounds.topLeft
         val sampleScale = playerGlassSampleScale(hostWidth, hostHeight)
         val blurPixels = 18.dp.toPx() * sampleScale
-        // 准备阶段会持续重绘，但相同图层只需录制一次；子图层引用仍实时更新切歌和背景。
+        // 准备阶段虽会重绘，但图层参数没变时只录制一次；子图层本身仍会实时反映切歌和背景变化。
         val snapshotChanged = cache.hostSize != hostSize || cache.source !== sourceLayer ||
             cache.target !== targetLayer || cache.sourceSize != sourceLayer?.size ||
             cache.targetSize != targetLayer?.size || cache.sourceOffset != sourceOffset || cache.blurPixels != blurPixels
@@ -150,7 +150,7 @@ internal fun FlyingPlayerGlass(motion: PageMotion) {
 
         val rotated = flight != null && (rotation != 0 || flight.handoffActive)
         if (cache.ready && !cache.nativeReady && (rotated || prewarming)) {
-            // 横屏专用合成图提前建立；动画首帧只更新轮廓、透明度和正反旋转。
+            // 提前建好横屏用的合成图层，动画开始后只需改裁剪轮廓、透明度和旋转角度。
             // 背景混合保持采样尺寸，最后才放大；外层轮廓与描边仍按完整分辨率绘制。
             fixedBackground.record(size = sourceSnapshot.size) {
                 drawLayer(sourceSnapshot)
@@ -165,11 +165,11 @@ internal fun FlyingPlayerGlass(motion: PageMotion) {
                 androidx.compose.ui.geometry.Size(hostWidth.toFloat(), hostHeight.toFloat()), 0f)
             clippedBackground.clip = true
             cache.nativeReady = true
-            // 引用或采样尺寸改变时恢复本帧原参数，不能让重新录制留下全窗轮廓。
+            // 图层重建后立即补同步本帧参数，避免留下全屏裁剪轮廓。
             if (native != null) nativeBackground.apply(native, cache.sampleScale)
         }
         if (prewarming) {
-            // 遮罩覆盖期间实际使用模糊图层，让首次栅格化不落在用户展开的首帧。
+            // 启动预热时先实际绘制一遍模糊图层，把首次栅格化开销提前消化掉。
             if (cache.ready) {
                 sourceSnapshot.alpha = 1f
                 targetSnapshot.alpha = 1f
@@ -184,7 +184,7 @@ internal fun FlyingPlayerGlass(motion: PageMotion) {
             return@Canvas
         }
         if (preparing) {
-            // 玻璃保持原合成结构；不支持模糊时，现有回退路径也属于已准备完成。
+            // 标记玻璃层已准备就绪（不支持模糊时走纯色回退也算就绪）。
             preparation?.record(PlayerOpeningLayer.GLASS, hostSize)
             return@Canvas
         }
@@ -212,7 +212,7 @@ internal fun FlyingPlayerGlass(motion: PageMotion) {
             outline.transform(pathMatrix)
         }
         if (!rotated || !cache.ready || progress == 0f || sourceHandoffAlpha > .001f) {
-            // 原末段交接仍使用双重裁剪；其余阶段直接更新原生圆角轮廓。
+            // 末段与迷你条交接或未启用原生路径时，用 Path 裁剪圆角矩形。
             path.reset()
             path.addRoundRect(RoundRect(bounds, CornerRadius(corner)))
             rotatePath(path, bounds.center, geometry.rotation)
@@ -220,7 +220,7 @@ internal fun FlyingPlayerGlass(motion: PageMotion) {
 
         if (progress == 0f && fallbackLayer != null &&
             fallbackLayer.size.width > 0 && fallbackLayer.size.height > 0) {
-            // 快照只含背景，终点仍需继续绘制下方描边，才能无缝交回真实迷你条。
+            // 进度归零时直接画迷你条的背景快照，再配合下方描边实现无缝交接。
             clipPath(path) {
                 withTransform({
                     if (sourceGeometry.rotation != 0f) rotate(sourceGeometry.rotation, sourceBounds.center)
@@ -262,7 +262,7 @@ internal fun FlyingPlayerGlass(motion: PageMotion) {
             )
             }
         } else if (cache.ready) {
-            // 模糊底板已完全透明时不再提交正反旋转合成；下方原描边仍独立退场。
+            // 模糊底板完全透明后跳过绘制，只留下面的描边继续淡出。
         } else if (ExperiencePreferences.options.disableBlur) {
             val fallback = if (dark) Color(0xFF242526) else Color(0xFFF6F7F8)
             if (geometry.rotation == 0f) drawRoundRect(fallback.copy(alpha = alpha), bounds.topLeft, bounds.size, CornerRadius(corner))
@@ -291,7 +291,7 @@ internal fun FlyingPlayerGlass(motion: PageMotion) {
         if (progress != 0f && sourceHandoffAlpha > .001f && fallbackLayer != null &&
             fallbackLayer.size.width > 0 && fallbackLayer.size.height > 0
         ) {
-            // 末段覆盖为静态迷你玻璃自身保存的最终合成结果，使模糊与亮度在交接帧完全一致。
+            // 接近迷你条时叠加上静态迷你玻璃快照，保证落地帧的模糊和亮度完全一致。
             sourcePath.reset()
             sourcePath.addRoundRect(RoundRect(sourceBounds, CornerRadius(MiniPlayerSurfaceCorner.dp.dp.toPx())))
             rotatePath(sourcePath, sourceBounds.center, sourceGeometry.rotation)
@@ -345,7 +345,7 @@ internal fun playerGlassTintAlpha(progress: Float): Float = motionLerp(MiniPlaye
 
 internal fun playerGlassDarkTintAlpha(progress: Float): Float = motionLerp(.82f, .58f, progress)
 
-/** 在源端短距离内平滑切换到静态玻璃的精确合成快照，终点不再改变亮度或模糊。 */
+/** 接近迷你条（进度 0~0.16）时平滑过渡到静态玻璃快照，消除落地瞬间的亮度跳变。 */
 internal fun playerGlassSourceHandoffAlpha(progress: Float): Float {
     val remaining = 1f - (progress.coerceIn(0f, 1f) / .16f).coerceIn(0f, 1f)
     return remaining * remaining * (3f - 2f * remaining)

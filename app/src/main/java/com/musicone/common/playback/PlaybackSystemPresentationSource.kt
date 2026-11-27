@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.withContext
 
-/** 现有业务到通用系统展示接口的单向转换；平台适配不接触音源解析器。 */
+/** 把播放运行时状态转成通用的系统展示数据（供桌面歌词、状态栏歌词等消费），与具体音源解耦。 */
 @androidx.annotation.OptIn(UnstableApi::class)
 @OptIn(ExperimentalCoroutinesApi::class)
 internal fun playbackSystemPresentations(
@@ -40,7 +40,7 @@ internal fun playbackSystemPresentations(
     val lyricStates = runtime.state.map { it.currentTrack?.id to it.lyricLoadState }.distinctUntilChanged()
     return combine(prepared, runtime.playbackProgress, runtime.playbackActivity, lyricStates) { track, progress, activity, lyric ->
         if (track == null) null else {
-            // 新曲取票、媒体切换期间仍保留准备状态，不能误发成停止并拆掉旧岛。
+            // 切歌加载期间先标记为未就绪，别误判成已停止导致系统灵动岛/状态栏歌词闪退。
             val ready = progress.trackId == track.id && player.currentMediaItem?.mediaId == track.id
             SystemPlaybackPresentation(
             SystemPlaybackKey(track.id, progress.generation), track.title, track.artist, track.artworkUri,
@@ -49,20 +49,21 @@ internal fun playbackSystemPresentations(
             ready && activity.trackId == track.id && activity.advancing && player.isPlaying,
             readyForPresentation = ready,
             wordLeadMs = track.wordLeadMs,
-            // 歌词状态与曲目分两路到达，身份未对齐时按加载中处理。
+            // 歌词状态和当前歌曲是两条流，如果还没对齐到同一首歌，先当成加载中。
             lyricState = if (lyric.first == track.id) lyric.second else LyricLoadState.LOADING,
         )
         }
-    }
+    // 自然过渡交接后歌词停在上一首，等下一首开唱再切；无过渡时原样透传。
+    }.holdAutoMixLyrics({ runtime.autoMixHeldLyricPlan() })
 }
 
-/** 多个系统展示共用一份上游；异常随值传给每个订阅者自行处理，不会让共享协程崩溃。 */
+/** 把上游状态流共享给多个展示端；异常包在 Result 里往下传，避免一个地方出错把共享协程弄崩。 */
 internal fun Flow<SystemPlaybackPresentation?>.sharedSystemPresentations(scope: CoroutineScope): Flow<SystemPlaybackPresentation?> =
     map { Result.success(it) }.catch { emit(Result.failure(it)) }
         .shareIn(scope, SharingStarted.WhileSubscribed(replayExpirationMillis = 0L), replay = 1)
         .map { it.getOrThrow() }
 
-/** 源别校准留在播放业务边界；本地已校准时间线不能再次叠加手动偏移。 */
+/** 计算歌词最终时间线：本地歌词已经校准过时间，不要再重复叠加手动偏移。 */
 internal fun systemLyricLinesForPlayback(track: MusicTrack, manualOffsetMs: Long,
     timing: com.musicone.source.sdk.SourceLyricTiming = sourceLyricTiming(track),
     applyManualOffset: Boolean = track.source.supportsOnlineLyricOffset): List<SystemLyricLine> {

@@ -4,7 +4,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 
-/** 仅包装播放用 HTTP 上游；预加载下载器、本地和磁盘缓存读取不进入网络速度样本。 */
+/** 只统计在线播放时的 HTTP 下载速度，预加载、本地文件和磁盘缓存读取不计入测速。 */
 @androidx.annotation.OptIn(UnstableApi::class)
 internal fun playbackPreloadNetworkFactory(upstream: DataSource.Factory,
     bandwidth: PlaybackPreloadBandwidth): DataSource.Factory = DataSource.Factory {

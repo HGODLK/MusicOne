@@ -4,7 +4,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.animation.core.Animatable
 import kotlinx.coroutines.withTimeoutOrNull
 
-/** 隐藏请求不依赖转向准备和代次，防止退场被连续取消或被渐变降级跳过。 */
+/** 构造时钟过渡请求：隐藏时忽略转屏准备状态和版本号，避免退场动画被反复取消。 */
 internal data class PhoneClockTransitionRequest(val target: Float, val rotation: Int = 0,
     val revealWithPage: Boolean = false, val preparing: Boolean = false,
     val fading: Boolean = false, val generation: Int = 0)
@@ -14,7 +14,7 @@ internal fun phoneClockTransitionRequest(target: Float, rotation: Int, revealWit
     if (target == 0f) PhoneClockTransitionRequest(0f)
     else PhoneClockTransitionRequest(target, rotation, revealWithPage, preparing, fading, generation)
 
-/** 端点交接失败后继续等待本轮新登记，不因旧代次返回而永久放弃入口。 */
+/** 在预算时间内等待横屏时钟的目标布局端点就绪。 */
 internal suspend fun awaitPhoneClockEndpoint(turn: PhonePlayerTurn?, rotation: Int, budgetMillis: Long): Boolean {
     if (turn == null || turn.endpointReady("clock", rotation) && !turn.clockHandoffStalled(rotation)) return true
     if (budgetMillis <= 0L) return false
@@ -28,11 +28,11 @@ internal suspend fun awaitPhoneClockEndpoint(turn: PhonePlayerTurn?, rotation: I
     } == true
 }
 
-/** 已经飞行的时钟保留位置和速度，页面状态改变不能再把它吸到终点。 */
+/** 只有时钟还没起步且处于静止状态时，才随整页直接显现；已经在飞的保持原动画。 */
 internal fun phoneClockRevealWithPage(revealWithPage: Boolean, progress: Float, velocity: Float): Boolean =
     revealWithPage && progress == 0f && velocity == 0f
 
-/** 速度独立保存，取消旧任务不会丢失飞入过程的动量，反向依靠同一弹簧连续加速。 */
+/** 横屏时钟的进出弹簧控制器：单独保存实时速度，中途取消或反向时动量不丢失。 */
 internal class PhoneClockFlight {
     val progress = Animatable(0f)
     var velocity = 0f

@@ -13,7 +13,7 @@ internal data class CachedAudioDetails(
     val hasUnknownQuality: Boolean,
 )
 
-/** 按物理缓存键去重；同曲跨歌单的引用不能重复计算占用。 */
+/** 按实际缓存文件去重统计，同一首歌被多个歌单引用只算一次空间占用。 */
 internal fun cachedAudioDetails(resources: List<CachedAudioResource>): Map<String, CachedAudioDetails> = resources
     .filter { it.bytes > 0 }
     .distinctBy { it.identity to it.key }

@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.sqrt
 
-/** 所有切歌窗口共用位移和速度，相邻页按完整出屏距离排列，不叠加整窗淡出。 */
+/** 切歌歌词窗口的滑动位移控制器：所有窗口共用同一位移和速度，按整屏高度顺次排列。 */
 internal class LyricWindowMotion {
     val offset = Animatable(0f, visibilityThreshold = .0005f)
     private var visibilityThreshold = .0005f

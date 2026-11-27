@@ -27,13 +27,15 @@ internal class LyricWordLightDrawing(bitmap: ImageBitmap, origin: Offset) {
     private var maskEndColor = 0
 
     fun draw(scope: DrawScope, left: Float, right: Float, progress: Float, strength: Float,
-        lightStart: Float, lightEnd: Float, spatial: Boolean) {
-        // 把整词的移动柔边映射到当前视觉行，跨行时不从头开始。
+        lightStart: Float, lightEnd: Float, spatial: Boolean, rtl: Boolean = false,
+        drawLeft: Float = 0f, drawTop: Float = 0f,
+        drawRight: Float = scope.size.width, drawBottom: Float = scope.size.height) {
+        // 把整词的移动柔边映射到当前视觉行，跨行时不从头开始；RTL 词段从右向左推进。
         val width = (right - left).coerceAtLeast(1f)
         val span = (lightEnd - lightStart).coerceAtLeast(.0001f)
         val edge = progress * (1f + LYRIC_WORD_SWEEP_WIDTH)
-        val start = left + (edge - LYRIC_WORD_SWEEP_WIDTH - lightStart) / span * width
-        val end = start + LYRIC_WORD_SWEEP_WIDTH / span * width
+        val featherWidth = LYRIC_WORD_SWEEP_WIDTH / span * width
+        val travel = (edge - LYRIC_WORD_SWEEP_WIDTH - lightStart) / span * width
         val first = alphaColor(if (spatial) 1f else lyricWordSweepAlpha(progress, 0f, strength, false))
         val last = alphaColor(if (spatial) 1f - .3f * strength else lyricWordSweepAlpha(progress, 1f, strength, false))
         // 颜色不变时只移动同一柔边；仍由词段重新录制提交矩阵，避免显示列表停留在旧位置。
@@ -44,11 +46,22 @@ internal class LyricWordLightDrawing(bitmap: ImageBitmap, origin: Offset) {
                 maskEndColor = last
                 paint.shader = ComposeShader(ink, it, PorterDuff.Mode.DST_IN)
             }
-        maskMatrix.setScale(if (spatial) end - start else width, 1f)
-        maskMatrix.postTranslate(if (spatial) start else left, 0f)
+        if (!spatial) {
+            maskMatrix.setScale(width, 1f)
+            maskMatrix.postTranslate(left, 0f)
+        } else if (rtl) {
+            // 局部 x=0（亮端）落在右侧 brightEdge，局部 x=1（暗端）落在左侧 brightEdge - featherWidth。
+            val brightEdge = right - travel
+            maskMatrix.setScale(-featherWidth, 1f)
+            maskMatrix.postTranslate(brightEdge, 0f)
+        } else {
+            val start = left + travel
+            maskMatrix.setScale(featherWidth, 1f)
+            maskMatrix.postTranslate(start, 0f)
+        }
         gradient.setLocalMatrix(maskMatrix)
         scope.drawIntoCanvas { canvas ->
-            canvas.nativeCanvas.drawRect(0f, 0f, scope.size.width, scope.size.height, paint)
+            canvas.nativeCanvas.drawRect(drawLeft, drawTop, drawRight, drawBottom, paint)
         }
     }
 

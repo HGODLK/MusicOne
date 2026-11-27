@@ -107,7 +107,7 @@ internal fun MainSourceSearchMenu(
             }
             CompositionLocalProvider(LocalContentColor provides textColor) {
                 Column(Modifier.layout { measurable, constraints ->
-                    // 全屏转场只使用进入前的固定布局；进度不进入测量阶段。
+                    // 全屏展开动画期间锁死菜单尺寸，不跟着动画进度每帧重新测量。
                     val fixed = if (state.full || motion.fullMoving) motion.frozenMenuSize else
                         geometry().let { it.contentWidth to it.contentHeight }
                     val (contentWidth, contentHeight) = searchContentSize(
@@ -127,7 +127,7 @@ internal fun MainSourceSearchMenu(
                     translationY = frame.top.toPx()
                 }) {
                     val unifiedBack = LocalUnifiedBack.current
-                    // 输入行始终按视口测量，文字只做绘制位移，端点不改变光标滚动宽度。
+                    // 输入行固定按屏幕宽度测量，动画只做绘制偏移，避免文字宽度变化把光标挤跑。
                     Row(Modifier.wrapContentSize(Alignment.TopStart, unbounded = true).requiredWidth(viewportWidth).height(56.dp)
                         .retainMainSourceSearchInput(motion, state.full, obscured) { visibility },
                         verticalAlignment = Alignment.CenterVertically) {

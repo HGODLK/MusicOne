@@ -3,6 +3,7 @@ package com.musicone
 import android.graphics.Color as AndroidColor
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
@@ -36,7 +37,10 @@ internal fun atmosphereSweepProgress(elapsedMs: Float, depth: Float, direction: 
     return AtmosphereSweepEasing.transform(local)
 }
 
-/** 一次换色扫动；起点按九个色团与底色两端分别记录，中途打断时从实际所见颜色续接。 */
+/**
+ * 一次换色扫动；起点按九个色团与底色两端分别记录，中途打断时从实际所见颜色续接。
+ * drive 非空时为自然过渡：进度跟随过渡时钟 [driveClock]，不按固定时长推进；resumeFromStart 表示从接手时的进度续接。
+ */
 internal class AtmosphereSweep(
     val fromColors: IntArray,
     val fromTop: Color,
@@ -44,15 +48,26 @@ internal class AtmosphereSweep(
     val toColors: IntArray,
     val direction: TrackTransitionDirection,
     settled: Boolean,
+    val drive: AutoMixVisualDrive? = null,
+    private val resumeFromStart: Boolean = true,
 ) {
     val toBase = averageArtworkColor(toColors)
     val elapsed = mutableFloatStateOf(if (settled) ATMOSPHERE_SWEEP_TOTAL_MS else 0f)
+    val driveClock = mutableLongStateOf(drive?.startClockMs ?: 0L)
     // 绘制时回写最近一帧实际颜色，仅供打断续接读取，不参与重组。
     private val drawnColors = fromColors.copyOf()
     private var drawnTop = fromTop
     private var drawnBottom = fromBottom
 
     val settled get() = elapsed.floatValue >= ATMOSPHERE_SWEEP_TOTAL_MS
+
+    /** 该视觉纵向位置的换色进度；绘制阶段读取，状态变化只触发重绘。 */
+    fun progressAt(depth: Float): Float {
+        val drive = drive ?: return atmosphereSweepProgress(elapsed.floatValue, depth, direction)
+        val progress = drive.sweepProgress(driveClock.longValue, depth, direction)
+        return if (resumeFromStart) autoMixResumedProgress(progress, drive.sweepProgress(drive.startClockMs, depth, direction))
+        else progress
+    }
 
     fun colorAt(index: Int, progress: Float): Color {
         val color = lerp(Color(fromColors.colorAt(index)), Color(toColors.colorAt(index)), progress)
@@ -67,9 +82,10 @@ internal class AtmosphereSweep(
     }
 
     /** 以当前所见颜色为起点衔接下一首。 */
-    fun next(colors: IntArray, direction: TrackTransitionDirection, settled: Boolean): AtmosphereSweep =
-        if (this.settled) AtmosphereSweep(toColors, toBase, toBase, colors, direction, settled)
-        else AtmosphereSweep(drawnColors.copyOf(), drawnTop, drawnBottom, colors, direction, settled)
+    fun next(colors: IntArray, direction: TrackTransitionDirection, settled: Boolean,
+        drive: AutoMixVisualDrive? = null): AtmosphereSweep =
+        if (this.settled) AtmosphereSweep(toColors, toBase, toBase, colors, direction, settled, drive)
+        else AtmosphereSweep(drawnColors.copyOf(), drawnTop, drawnBottom, colors, direction, settled, drive)
 
     companion object {
         fun still(colors: IntArray): AtmosphereSweep = averageArtworkColor(colors).let {

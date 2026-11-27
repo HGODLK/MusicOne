@@ -35,7 +35,7 @@ internal class MainSourceFeedSnapshotStore(private val cache: MusicDiskCache, pr
                         it.map { song -> song.recommendationTitle }, value.mainSourceHomeSectionKind())
                 }
                 "song-shelf" -> value.optJSONArray("pages")?.toFeedPages()?.let { pages ->
-                    // 旧版本未保存跨页合并契约，不能把损坏的货架数量恢复成当前声明；由网络刷新补回。
+                    // 丢弃 v3 之前的旧货架缓存，让网络刷新拉最新的货架结构回来。
                     if (value.optInt("shelfLayoutVersion") < 3) return@mapNotNull null
                     MainSourceHomeCard.SongShelf(
                         value.optString("shelfId"),

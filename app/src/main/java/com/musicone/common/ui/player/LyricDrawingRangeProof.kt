@@ -5,7 +5,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 
-/** 转向扩展区也必须完成文字放置及录制，不能只用焦点句的回执放行动画。 */
+/** 校验转屏扩展缓冲区的歌词也已完成布局和绘制，不能只看焦点句就放行转屏动画。 */
 internal class LyricDrawingRangeProof(private val pane: LyricWindowPane, private val translated: List<Boolean>) {
     private val coordinates = mutableMapOf<Pair<Int, Boolean>, LayoutCoordinates>()
     private val drawn = mutableSetOf<Pair<Int, Boolean>>()

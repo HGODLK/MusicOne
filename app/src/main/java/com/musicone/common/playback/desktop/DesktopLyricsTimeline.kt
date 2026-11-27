@@ -2,7 +2,7 @@ package com.musicone
 
 internal enum class DesktopLyricKind { TITLE, LINE, EMPTY }
 
-/** 切句动画的身份：同一首歌的同一句不重复入场。 */
+/** 标识当前展示的是哪首歌的哪一句，避免同一句重复触发入场动画。 */
 internal data class DesktopLyricKey(val trackId: String, val kind: DesktopLyricKind, val index: Int = -1)
 
 internal data class DesktopLyricContent(
@@ -36,7 +36,7 @@ internal class DesktopLyricResolver(private val loadingTimeoutMs: Long = PLAYBAC
     private var unitMs = DESKTOP_UNIT_MS
     private var titleStart = Long.MIN_VALUE
 
-    /** 加载提示的落定时刻；没有在等待时为空。 */
+    /** 歌词加载超时的截止时间，不在等待加载时为 null。 */
     var loadingDeadlineMs: Long? = null
         private set
 
@@ -76,7 +76,7 @@ internal class DesktopLyricResolver(private val loadingTimeoutMs: Long = PLAYBAC
         if (titleStart == Long.MIN_VALUE || positionMs < titleStart) titleStart = positionMs
         return DesktopLyricContent(
             DesktopLyricKey(snapshot.key.trackId, DesktopLyricKind.TITLE),
-            listOf(snapshot.title, snapshot.artist).filter { it.isNotBlank() }.joinToString(" - "),
+            joinBidiIsolated(listOf(snapshot.title, snapshot.artist), " - "),
             startMs = titleStart, endMs = titleStart,
         )
     }
@@ -136,28 +136,33 @@ internal class DesktopLyricClock {
 }
 
 /**
- * 超长单句随进度横向滚动的距离。逐字歌词让已唱边缘停在可视宽度约 60% 处；
- * 整行歌词在本句 15%～85% 时间内匀速从头滚到尾。不超长时为 0。
+ * 超长单句随进度横向滚动的距离（返回视口左缘在内容里的偏移，0..overflow）。
+ * LTR 从左端（0）向右端（overflow）滚，逐字边缘停在视口左侧 60% 处；
+ * RTL 从右端行首（overflow）向左端行尾（0）滚，逐字边缘停在视口右侧 60%（即左侧 40%）处。
  */
 internal fun desktopLyricScroll(textWidth: Float, viewport: Float, edge: Float?, startMs: Long, endMs: Long,
-    positionMs: Long): Float {
+    positionMs: Long, leftToRight: Boolean = true): Float {
     val overflow = textWidth - viewport
     if (viewport <= 0f || overflow <= 0f) return 0f
-    val target = if (edge != null) edge - viewport * .6f else {
+    val target = if (edge != null) {
+        edge - viewport * if (leftToRight) .6f else .4f
+    } else {
         val span = (endMs - startMs).coerceAtLeast(1L)
-        (((positionMs - startMs).toFloat() / span - .15f) / .7f).coerceIn(0f, 1f) * overflow
+        val fraction = (((positionMs - startMs).toFloat() / span - .15f) / .7f).coerceIn(0f, 1f)
+        (if (leftToRight) fraction else 1f - fraction) * overflow
     }
     return target.coerceIn(0f, overflow)
 }
 
-/** 中日韩按字、其他语言按单词计数；标点和空白不算，撇号留在单词内。 */
+/** 中日韩按字、其他语言按单词计数；标点和空白不算，撇号、组合音标与 ZWNJ/ZWJ 留在单词内。 */
 internal fun desktopLyricUnits(text: String): Int {
     var count = 0
     var inWord = false
     for (char in text) {
+        if (isCombiningOrJoiner(char)) continue
         if (!char.isLetterOrDigit()) {
             if (char != '\'' && char != '’') inWord = false
-        } else if (char.code in 0x2E80..0xFFEF) {
+        } else if (char.code in 0x2E80..0xFFEF && !isArabicOrPersianChar(char)) {
             count++
             inWord = false
         } else if (!inWord) {
@@ -181,18 +186,23 @@ internal fun desktopLyricUnitMs(lines: List<SystemLyricLine>): Long {
     return (values[values.size / 2] * 5 / 4).coerceAtLeast(DESKTOP_UNIT_MS)
 }
 
-/** 过长歌名来回滚动的位置；stillMs 为两端停留的剩余时间，移动中为 0。 */
+/** 过长歌名来回滚动的位置；stillMs 为两端停留的剩余时间，移动中为 0。RTL 从右端行首起手。 */
 internal data class DesktopTitleScroll(val offset: Float, val stillMs: Long)
 
-internal fun desktopTitleScroll(overflow: Float, elapsedMs: Long, density: Float): DesktopTitleScroll {
+internal fun desktopTitleScroll(overflow: Float, elapsedMs: Long, density: Float,
+    leftToRight: Boolean = true): DesktopTitleScroll {
     val travel = (overflow / (DESKTOP_TITLE_DP_PER_SECOND * density) * 1_000f).toLong().coerceAtLeast(1L)
     val half = DESKTOP_TITLE_HOLD_MS + travel
     val time = elapsedMs.coerceAtLeast(0L) % (half * 2)
     val back = time >= half
     val local = if (back) time - half else time
-    if (local < DESKTOP_TITLE_HOLD_MS) return DesktopTitleScroll(if (back) overflow else 0f, DESKTOP_TITLE_HOLD_MS - local)
-    val moved = (local - DESKTOP_TITLE_HOLD_MS).toFloat() / travel * overflow
-    return DesktopTitleScroll(if (back) overflow - moved else moved, 0L)
+    val ltr = if (local < DESKTOP_TITLE_HOLD_MS) {
+        DesktopTitleScroll(if (back) overflow else 0f, DESKTOP_TITLE_HOLD_MS - local)
+    } else {
+        val moved = (local - DESKTOP_TITLE_HOLD_MS).toFloat() / travel * overflow
+        DesktopTitleScroll(if (back) overflow - moved else moved, 0L)
+    }
+    return if (leftToRight) ltr else ltr.copy(offset = overflow - ltr.offset)
 }
 
 internal fun desktopWordProgress(word: LyricWord, positionMs: Long): Float = when {
@@ -202,17 +212,29 @@ internal fun desktopWordProgress(word: LyricWord, positionMs: Long): Float = whe
 }
 
 /** 已唱边缘的横向位置；标点等没有时间的片段随前一个词一起越过。 */
-internal fun desktopSungEdge(ranges: List<LyricHighlightRange>, positionMs: Long, x: (Int) -> Float): Float {
-    var edge = 0f
+internal fun desktopSungEdge(ranges: List<LyricHighlightRange>, positionMs: Long, x: (Int) -> Float): Float =
+    desktopSungEdge(ranges, positionMs, leftToRight = true, rowWidth = 0f) { start, end -> x(start) to x(end) }
+
+/** 按词段真实视觉起止坐标（startX → endX）计算已唱边缘，兼容纯 RTL 与双向混排。 */
+internal fun desktopSungEdge(
+    ranges: List<LyricHighlightRange>,
+    positionMs: Long,
+    leftToRight: Boolean,
+    rowWidth: Float,
+    spanX: (start: Int, end: Int) -> Pair<Float, Float>,
+): Float {
+    var edge = if (leftToRight) 0f else rowWidth
     for (range in ranges) {
         val word = range.word ?: continue
         val progress = desktopWordProgress(word, positionMs)
         if (progress <= 0f) return edge
-        val start = x(range.start)
-        edge = start + (x(range.end) - start) * progress
+        val (start, end) = spanX(range.start, range.end)
+        edge = start + (end - start) * progress
         if (progress < 1f) return edge
     }
-    return if (ranges.isEmpty()) 0f else x(ranges.last().end)
+    if (ranges.isEmpty()) return if (leftToRight) 0f else rowWidth
+    val (_, lastEnd) = spanX(ranges.last().start, ranges.last().end)
+    return lastEnd
 }
 
 internal enum class DesktopLyricTransition { FADE, FORWARD, BACKWARD }
@@ -240,7 +262,7 @@ internal fun desktopLyricsOrigin(fraction: Float, safeStart: Int, safeEnd: Int, 
     return safeStart + (room * fraction.coerceIn(0f, 1f)).toInt()
 }
 
-/** 该方向没有移动余地时保留原比例，竖屏拖动不会抹掉横屏的位置。 */
+/** 把窗口坐标换算成相对比例；如果当前方向没有拖动空间就保留原比例，避免竖屏操作把横屏位置覆盖掉。 */
 internal fun desktopLyricsFraction(origin: Int, safeStart: Int, safeEnd: Int, size: Int, fallback: Float): Float {
     val room = safeEnd - safeStart - size
     return if (room <= 0) fallback else ((origin - safeStart).toFloat() / room).coerceIn(0f, 1f)
@@ -258,7 +280,7 @@ internal fun desktopLyricsWidthDp(availableDp: Float, savedDp: Float = 0f): Floa
 
 internal enum class DesktopLyricsGesture { MOVE, RESIZE_LEFT, RESIZE_RIGHT }
 
-/** 两侧各三成区域内横向起手是调整该侧宽度；中间起手或竖向起手都是移动位置。 */
+/** 判断手势意图：从左右两侧各 30% 区域横向滑动是调整宽度，其余情况都是拖动位置。 */
 internal fun desktopLyricsGesture(startX: Float, width: Float, dx: Float, dy: Float): DesktopLyricsGesture = when {
     kotlin.math.abs(dx) <= kotlin.math.abs(dy) -> DesktopLyricsGesture.MOVE
     startX < width * .3f -> DesktopLyricsGesture.RESIZE_LEFT

@@ -7,12 +7,12 @@ internal data class QqMusicFeedBatch(
     val remaining: List<QqMusicFeedCard>,
 )
 
-/** 只在卡片列表变化时整理展示分区，保留各分区内的卡位和对象。 */
+/** 按分区整理首页推荐卡片顺序，保持各分区内部顺序不变。 */
 internal fun qqMusicFeedDisplayCards(cards: List<QqMusicFeedCard>): List<QqMusicFeedCard> =
     cards.filter { it.section == QqMusicFeedSection.SONG_RECOMMENDATION } +
         cards.filter { it.section == QqMusicFeedSection.MUSIC_FLOW }
 
-/** 后台合并后恢复原有全局分区，三条官方推荐分别合并，横向页和音乐流顺序保持不变。 */
+/** 加载下一页后把新卡片合并进现有分区（三条官方推荐货架分别追加，其他顺序不变）。 */
 internal fun appendQqMusicFeedDisplayCards(
     old: List<QqMusicFeedCard>, new: List<QqMusicFeedCard>, replace: Boolean,
 ): List<QqMusicFeedCard> {
@@ -61,7 +61,7 @@ internal fun takeQqMusicFeedBatch(
     return QqMusicFeedBatch(unique.take(limit), unique.drop(limit))
 }
 
-/** 只重排当前已取得的未展示卡池，尽量交错歌曲卡与歌单卡，不为凑类型增加请求。 */
+/** 对本地待展示的卡片池做一下交错排布，让单曲卡和歌单卡尽量穿插显示。 */
 internal fun interleaveQqMusicFeedCards(
     cards: List<QqMusicFeedCard>,
     random: Random = Random.Default,

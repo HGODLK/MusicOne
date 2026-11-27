@@ -6,7 +6,7 @@ import java.net.URI
 internal fun aiProviderEndpoint(provider: AiProvider, customBaseUrl: String): String =
     if (provider == AiProvider.DEEPSEEK) provider.baseUrl else aiNormalizeBaseUrl(customBaseUrl)
 
-/** 基址保留服务自定义路径，调用方只追加标准接口路径。 */
+/** 保留用户填的自定义路径前缀，调用方只往后拼标准接口路径。 */
 internal fun aiNormalizeBaseUrl(value: String): String {
     val trimmed = value.trim().trimEnd('/')
     val uri = runCatching { URI(trimmed) }.getOrNull()
@@ -17,7 +17,7 @@ internal fun aiNormalizeBaseUrl(value: String): String {
     return trimmed
 }
 
-/** 只复制旧配置；密钥密文沿用原 Keystore，不解密、打印或覆盖已有其他服务。 */
+/** 把旧版 MiMo 配置迁到“其他服务”，密文直接复用原 Keystore，不解密也不覆盖已有配置。 */
 internal fun aiMigrateProviderSettings(old: Map<String, *>): Map<String, Any> {
     if (old["mimo_migrated_to_other"] == true || (old["provider"] != "MIMO" && old.keys.none { it.endsWith("_MIMO") })) return emptyMap()
     return buildMap {

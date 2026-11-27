@@ -19,14 +19,14 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-/** 复用歌词已有的录制代次；正文只录制一次，逐字和逐行动画仍由原子图层更新。 */
+/** 横屏和转屏期间的歌词上下边缘渐隐遮罩：复用歌词绘制缓存，逐字和逐行动画仍由子图层独立更新。 */
 @Composable
 internal fun Modifier.phoneLyricsTurnFade(enabled: Boolean, fadeBottom: Boolean, bottomFadeHeight: Dp?,
     statusBarHeight: Int, drawingWindow: PhoneLyricsDrawingWindow, fadeTurn: PhoneLyricsFadeTurn,
     landscape: Boolean, orientationChanging: () -> Boolean, readingPivot: () -> Float,
     windowMotionOffset: (() -> Float)? = null): Modifier {
     val contentEpoch = LocalPlayerLyricsContent.current?.drawEpoch
-    // 保留独立绘制节点，让父级模糊源引用实时遮罩；默认合成不额外栅格化整窗。
+    // 用独立 graphicsLayer 包裹以便外层引用，默认自动合成不会把整屏离屏栅格化。
     return graphicsLayer().lyricDrawWithCache {
         if (!enabled) return@lyricDrawWithCache onDrawWithContent { drawContent() }
         val viewportHeight = size.height - drawingWindow.top - drawingWindow.bottom
@@ -34,7 +34,7 @@ internal fun Modifier.phoneLyricsTurnFade(enabled: Boolean, fadeBottom: Boolean,
             .coerceAtLeast(1f)
         val bottomHeight = minOf(bottomFadeHeight?.toPx() ?: fadeHeight,
             (viewportHeight - fadeHeight).coerceAtLeast(0f))
-        // 自动合成只保存实时子图层引用，不为整块扩展歌词额外分配离屏纹理。
+        // 用独立图层记录歌词内容引用，不额外分配整屏离屏纹理。
         val source = obtainGraphicsLayer()
         val paint = Paint()
         val topRemoval = Brush.verticalGradient(listOf(Color.White, Color.Transparent), startY = 0f, endY = 1f)
@@ -57,14 +57,14 @@ internal fun Modifier.phoneLyricsTurnFade(enabled: Boolean, fadeBottom: Boolean,
     }
 }
 
-/** 透明度计算沿用原遮罩，只隔离受遮罩影响的上下区域，清晰中段直接重放原图层。 */
+/** 只对上下渐隐带开 saveLayer 做 DstOut 渐隐，中间清晰区域直接绘制原图层以省开销。 */
 internal fun DrawScope.drawPhoneLyricsTurnFade(frame: PhoneLyricsFadeFrame, fadeBottom: Boolean,
     paint: Paint, topRemoval: Brush, bottomRemoval: Brush, drawSource: DrawScope.() -> Unit) {
     val strength = frame.strength.coerceIn(0f, 1f)
     if (strength == 0f) { drawSource(); return }
     val upper = frame.top.coerceIn(0f, size.height)
     val lower = frame.bottom.coerceIn(0f, size.height)
-    // 仅完全不透明的遮挡才可剔除；退场中的屏外区域继续按原权重显露。
+    // 只有遮罩强度达到 1 时才能跳过上下边界外的区域；渐变过渡期间仍需按权重画出来。
     val visibleTop = if (strength == 1f) upper else 0f
     val visibleBottom = if (strength == 1f) lower else size.height
     if (visibleBottom <= visibleTop) return
@@ -95,7 +95,7 @@ internal fun DrawScope.drawPhoneLyricsTurnFade(frame: PhoneLyricsFadeFrame, fade
             }
         }
     }
-    // 极短视口或反向交接可能使渐隐重叠，此时仍在同一区域内按原顺序相乘。
+    // 如果视口太矮导致上下渐隐区重叠，合并成一个 saveLayer 统一处理。
     if (topEnd >= bottomStart) masked(visibleTop, visibleBottom) else {
         masked(visibleTop, topEnd)
         clipRect(top = topEnd, bottom = bottomStart) { drawSource() }

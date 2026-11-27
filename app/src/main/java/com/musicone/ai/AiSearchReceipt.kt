@@ -3,7 +3,7 @@ package com.musicone
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 只保留真实搜索回执，不携带歌曲大列表、私有资料或本地诊断。 */
+/** 只保留精简的搜索回执，不带完整歌曲列表、私有字段或本地诊断信息。 */
 internal fun aiSearchReceipt(result: JSONObject): JSONObject {
     val receipt = JSONObject()
     if (!result.has("searchInvoked") && !result.has("sourceResults")) return receipt

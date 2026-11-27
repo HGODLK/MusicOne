@@ -28,7 +28,7 @@ internal fun sourceLyricTiming(track: MusicTrack): SourceLyricTiming {
     }.getOrElse { declaredLyricTiming(entry?.descriptor?.presentation) }
 }
 
-// 保留源别入口供无需逐曲资料的调用使用，不再在宿主维护任何平台时间表。
+// 按音源取默认歌词提前量，宿主不再硬编码各平台的时间偏移表。
 internal fun lyricDisplayPosition(progressMs: Long, source: MusicSource? = null): Long {
     val presentation = source?.let { SourcePackageController.current()?.running(it.id)?.entry?.descriptor?.presentation }
     return lyricDisplayPosition(progressMs, declaredLyricTiming(presentation))
@@ -42,7 +42,7 @@ internal fun lyricWordDisplayPosition(progressMs: Long, source: MusicSource?): L
 internal fun lyricDisplayPosition(progressMs: Long, timing: SourceLyricTiming): Long =
     (progressMs + timing.lineLeadMs).coerceAtLeast(0L)
 
-/** 逐字时钟独立消费逐字提前量，不叠加整行提前量或用户整行偏移。 */
+/** 逐字高亮只用逐字提前量，不再叠加整行提前量或用户手动偏移。 */
 internal fun lyricWordDisplayPosition(progressMs: Long, timing: SourceLyricTiming): Long =
     (progressMs + timing.wordLeadMs).coerceAtLeast(0L)
 

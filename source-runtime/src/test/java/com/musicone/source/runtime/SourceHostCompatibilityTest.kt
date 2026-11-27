@@ -22,7 +22,7 @@ class SourceHostCompatibilityTest {
     }
 
     @Test fun explicitRuntimeCompatibilityAllowsOldCompilerAfterHostUpgrade() {
-        // 此处只验证名单策略，合成版本组合不充当真实 ABI 验收证据。
+        // 这里只测名单匹配逻辑，合成版本号不代表真实 ABI 兼容。
         val upgraded = host.copy(kotlinVersions = setOf("2.3.21", "2.3.22"),
             composeVersions = setOf("1.11.4", "1.11.5"))
         val old = SourceManifest.parse(json)

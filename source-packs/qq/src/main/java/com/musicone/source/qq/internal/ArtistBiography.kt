@@ -5,7 +5,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
 
-/** 详情接口包含完整正文和成员资料，不能使用首页的定长摘要替代。 */
+/** 解析歌手详情 XML 里的完整简介和成员信息。 */
 internal fun artistBiography(xml: String): String {
     require(!xml.contains("<!DOCTYPE", ignoreCase = true))
     val factory = DocumentBuilderFactory.newInstance()

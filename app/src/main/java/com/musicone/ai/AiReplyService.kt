@@ -20,7 +20,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-/** 回复期间独立保活，不绑定助手页面或播放器；完成和等待原生确认后立即结束。 */
+/** AI 生成回复期间用前台服务保活，不依赖助手页面或播放器；生成完或等用户确认时立刻停掉。 */
 class AiReplyService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var wakeLock: PowerManager.WakeLock? = null
@@ -40,7 +40,7 @@ class AiReplyService : Service() {
             .setCategory(NotificationCompat.CATEGORY_PROGRESS).build()
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification,
             if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0)
-        // 锁的寿命只覆盖这次服务，不使用与模型生成长度无关的固定短超时。
+        // 唤醒锁跟着本次服务走，服务结束时释放，不设固定短超时以免长回复中途休眠。
         wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MusicOne:AiReply").apply { acquire() }
     }
@@ -50,7 +50,7 @@ class AiReplyService : Service() {
             AiAssistantController.get(applicationContext).state.first { !it.running }
             stopSelfResult(startId)
         }
-        // 不自行重放工具；系统回收后的恢复仍沿已保存的会话断点。
+        // 被系统杀死后不自动重启重放工具，重新进入时按本地断点恢复。
         return START_NOT_STICKY
     }
 

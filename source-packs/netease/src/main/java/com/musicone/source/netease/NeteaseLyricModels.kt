@@ -7,6 +7,6 @@ internal data class NeteaseLyricLine(
     val text: String,
     val translation: String? = null,
     val words: List<NeteaseLyricWord> = emptyList(),
-    // 零表示来源未经当前解析器确认，不能仅凭非空内容升级旧缓存。
+    // 0 表示旧版本缓存或未经过当前解析器确认，不能只看歌词非空就当成最新缓存
     val parserVersion: Int = 0,
 )

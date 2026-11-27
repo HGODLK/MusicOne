@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import java.io.File
 
-/** 旧身份字符串只用于读取 0.2.0 数据；仅交付给签名匹配的内置音源。 */
+/** 把 0.2.0 旧版的登录会话迁给对应的内置音源包（只迁给签名校验通过的包）。 */
 internal class LegacySourceDataMigration(
     private val hostContext: Context,
     private val trustedSigners: Map<String, String>,
@@ -39,7 +39,7 @@ internal class LegacySourceDataMigration(
             }
             else -> return
         }
-        // 所有写入完成后才记录完成；中断时重试，原数据始终保留，不访问网络。
+        // 全部迁完才写完成标记，中途杀进程下次还能重试，旧数据保留不删。
         check(migration.edit().putInt("version", VERSION).commit()) { "无法保存旧音源迁移状态" }
     }
 
@@ -47,7 +47,7 @@ internal class LegacySourceDataMigration(
         val source = hostContext.getSharedPreferences("platform_settings", Context.MODE_PRIVATE)
         val target = targetContext.getSharedPreferences("platform_settings", Context.MODE_PRIVATE)
         val prefix = "session_${legacyId}_"
-        // 已存在的凭证键（包括用户主动退出后的空值）具有优先权，不能混入旧账号资料。
+        // 目标里已经有登录键（哪怕是用户退出登录后的空值）就不覆盖，避免把旧账号又迁回来。
         if (target.contains("${prefix}credential")) return
         val values = source.all.filterKeys { it.startsWith(prefix) }.toMutableMap()
         if (legacyId == "netease" && !values.containsKey("${prefix}credential")) {

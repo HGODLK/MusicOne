@@ -11,7 +11,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-/** 只读补充源公开目录及内容；转换结果仍须经过既有本地修改确认。 */
+/** 只负责读取补充音源的公开目录和内容，要写入本地歌单还是走统一的确认流程。 */
 internal class AiSupplementalTools(context: Context, private val library: AiLibraryTools) {
     private val controller = SourcePackageController.get(context.applicationContext)
     private val refs = context.applicationContext.getSharedPreferences("musicone_ai_supplemental_refs", Context.MODE_PRIVATE)
@@ -52,7 +52,7 @@ internal class AiSupplementalTools(context: Context, private val library: AiLibr
         })).put("nextCursor", next(source, purpose, page.nextCursor)).put("isLastPage", page.nextCursor == null)
     }
 
-    /** 先完整读取子项目供选择；省略选择参数仅预览，不静默导入默认分P。 */
+    /** 先拉出全部子项（如分P）供挑选；没传选择列表时只做预览，不默认直接导入。 */
     suspend fun content(contentRef: String, selectedIds: List<String>?): JSONObject = withContext(Dispatchers.IO) {
         val (source, ref) = reference(contentRef, "content")
         val stamp = stamp(source)

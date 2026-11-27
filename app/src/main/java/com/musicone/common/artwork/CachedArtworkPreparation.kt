@@ -8,13 +8,13 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
-/** 只读取已有图片缓存；未命中直接交还原显示链路，不在准备阶段下载。 */
+/** 只预热本地已缓存的封面，没命中的交给正常显示流程去下载，不在这里发网络请求。 */
 internal suspend fun prepareCachedArtwork(urls: List<String?>, context: Context, maxSide: Int = 768) =
     prepareCachedArtwork(urls) { url -> ArtworkRepository.cached(url, context, maxSide) }
 
 internal suspend fun prepareCachedArtwork(urls: List<String?>, readCached: suspend (String) -> Unit) = coroutineScope {
     val limit = Semaphore(3)
-    // 优先显示的封面最后准备，避免较长列表的尾部图片挤出首屏内存缓存。
+    // 倒序预热，让排在前面的封面最后进 LRU，避免长列表把首屏封面挤出内存缓存。
     urls.filterNotNull().filter(String::isNotBlank).distinct().asReversed().map { url ->
         async {
             limit.withPermit {

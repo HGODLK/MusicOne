@@ -101,7 +101,7 @@ internal fun JSONObject.toQqTrack(hasVipAccess: Boolean = false): MusicTrack {
         qualityIds = qqTrackQualityIds(this, file, mediaMid),
         accessBadge = access.badge,
         trialAvailable = access.trialAvailable,
-        // 只有数字歌曲 ID 的记录仍可补详情，缺 MID 本身不能证明音源失效。
+        // 只有数字 songId 的歌后面还能补查详情，缺 mid 不代表不能播
         playable = access.playable,
         unavailableReason = if (!access.playable) "当前账号无权播放这首歌曲" else null,
     ).withQqSongMid(mid.takeUnless { missingSource }.orEmpty()).withQqAccessInfo(rawAccess)
@@ -128,7 +128,7 @@ private fun qqTrackQualityIds(track: JSONObject, file: JSONObject?, mediaMid: St
             AudioQuality.DOLBY to size("size_dolby", "sizeDolby", "sizedolby"),
         ),
     ).toMutableMap().apply {
-        // 独立 MID 只用于取票；是否可用仍以完整音源查询为准。
+        // 杜比单独的 mid 只用于换播放链接，实际能不能播以取流校验为准
         if (dolbyMid.isNotBlank()) put(AudioQuality.DOLBY, dolbyMid)
     }
 }
@@ -221,25 +221,25 @@ internal fun MusicTrack.mergeQqTrackMetadata(detail: MusicTrack): MusicTrack = c
     trialAvailable = if (detail.qqAccess?.complete == true) detail.trialAvailable else trialAvailable,
     playable = if (detail.qqAccess?.complete == true) detail.playable else playable,
     unavailableReason = if (detail.qqAccess?.complete == true) detail.unavailableReason else unavailableReason,
-    // 详情中的文件尺寸是权威值；空集合也必须覆盖旧快照，避免错误保留 FLAC。
+    // 以详情接口返回的文件大小为准，哪怕是空的也要覆盖旧缓存，避免错误保留高音质档位
     qualityIds = detail.qualityIds,
 ).withQqSongMid(detail.qqSongMid.ifBlank {
     detail.remoteId().takeUnless { it.all(Char::isDigit) }.orEmpty()
 }.ifBlank { qqSongMid }).withQqAccessInfo(detail.qqAccess?.takeIf { it.complete } ?: qqAccess)
 
-/** 歌曲 MID 用于换票及歌词查询，文件 MID 只用于拼接媒体文件名，两者不能混用。 */
+/** 取换票和歌词用的歌曲 MID（和拼媒体文件名用的 mediaMid 不同，不能混用）。 */
 internal fun MusicTrack.qqPlaybackMid(): String = qqSongMid.ifBlank {
     remoteId().takeUnless { it.all(Char::isDigit) }.orEmpty()
 }
 
-/** 信息流短卡补全后改用服务器 MID 作为统一身份，供播放队列与“我喜欢”排重。 */
+/** 推荐流短卡补完详情后，把歌曲主 ID 统一换成服务端 songMid，方便队列和“我喜欢”去重。 */
 internal fun MusicTrack.withCanonicalQqIdentity(): MusicTrack {
     if (source != MusicSource.QQ) return this
     val mid = qqPlaybackMid().takeIf(::isValidQqTrackMid) ?: return this
     return copy(id = "qq-$mid").withQqSongMid(mid)
 }
 
-/** 元数据验证失败时仅保留保守的标准档，绝不沿用旧快照中的高级音质。 */
+/** 详情校验失败时只保留标准音质，不沿用旧缓存里的高音质档位。 */
 internal fun MusicTrack.withConservativeQqQuality(): MusicTrack {
     if (source != MusicSource.QQ) return this
     val id = mediaId.ifBlank { remoteId() }

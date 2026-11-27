@@ -8,7 +8,7 @@ internal fun interface KugouPublicCollectionTransport {
     fun request(path: String, params: Map<String, String>, body: JSONObject?, cookie: String, router: String?): JSONObject
 }
 
-/** 公开全局歌单与旧数字 specialid 属于不同协议，只在本包内分流。 */
+/** 酷狗新版全局歌单接口客户端（和旧版数字 specialid 走不同接口）。 */
 internal class KugouPublicCollectionClient(
     private val transport: KugouPublicCollectionTransport = KugouPublicCollectionTransport(::requestKugouPublicCollection),
 ) {
@@ -63,7 +63,7 @@ private fun requestKugouPublicCollection(path: String, values: Map<String, Strin
     return JSONObject(response.text)
 }
 
-/** 显式全局标识优先；非数字旧标识也只能携带真实 global 字段后进入新协议。 */
+/** 提取全局歌单 ID：优先用显式的 globalCollectionId，纯数字的旧 specialid 不走新接口。 */
 internal fun SourceCollection.kugouGlobalCollectionId(): String? {
     val metadata = runCatching { JSONObject(payload.encoded) }.getOrElse { JSONObject() }
     val remote = identity.remoteId

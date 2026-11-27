@@ -3,7 +3,7 @@ package com.musicone
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 正常请求保持稳定前缀，压缩时只保留完整工具组，原始任务始终留在本机。 */
+/** 正常请求尽量保持前半段消息不变（方便服务端缓存），压缩上下文时只按完整的工具调用对来裁剪，原始任务只存本地。 */
 internal object AiContext {
     fun estimate(value: String): Int = value.toByteArray(Charsets.UTF_8).size
     private fun tokens(value: String): Int = AiContextBudget.estimate(value)

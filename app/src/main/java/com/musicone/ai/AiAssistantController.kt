@@ -9,7 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-/** 应用级会话独立于设置页和音源页面，关闭页面不会丢失任务。 */
+/** 全局单例会话，不跟着设置页或音源页销毁，关掉页面任务也会继续跑。 */
 internal class AiAssistantController private constructor(context: Context) {
     private val app = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -242,7 +242,7 @@ internal class AiAssistantController private constructor(context: Context) {
                 mutable.update { it.copy(pendingPlan = null, canUndo = lastOperation != null) }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
-                // 冲突后必须重新生成计划；旧授权不延续到任何新计划。
+                // 发生冲突就必须重新生成计划，旧的确认授权不能复用。
                 runCatching { library.cancel(id) }
                 upsert(aiFailedNativeReceipt(id, error.message ?: "操作失败"))
                 mutable.update { it.copy(pendingPlan = null, error = error.message ?: "操作失败", canContinue = true) }
@@ -273,7 +273,7 @@ internal class AiAssistantController private constructor(context: Context) {
         val plan = withContext(Dispatchers.IO) { library.pendingPlan(id) } ?: return
         if (plan.status == "pending") mutable.update { it.copy(pendingPlan = plan.toUiPlan()) }
         else if (plan.status == "executed") {
-            // 进程可能在数据库提交后、会话收据落盘前结束，依靠幂等结果恢复。
+            // 防止数据库已经提交但收据还没落盘时进程被杀，靠幂等 confirm 恢复。
             val receipt = library.confirm(id)
             lastOperation = id.takeIf { plan.kind != "undo" }
             if (lastOperation != null) checkpoint.put("undoTurnId", checkpoint.optString("activeTurnId"))
@@ -310,31 +310,38 @@ internal class AiAssistantController private constructor(context: Context) {
         val previous = running
         switchTask = scope.launch {
             try {
-                // 切换只停止模型；已经确认的事务必须等收据保存完毕。
+                // 切会话只停掉正在生成的回复；如果正在提交已确认的操作，必须等收据存完再切。
                 if (committing) previous?.join() else previous?.cancelAndJoin()
                 mutable.update { it.copy(running = true, progress = null) }
                 if (ready()) memory.schedule()
                 persistSnapshot(state.value.copy(running = false))
                 withContext(NonCancellable) {
-                val saved = withContext(Dispatchers.IO) {
+                // 在同一次后台读取里把新会话 ID、列表和消息一起切过来，避免旧会话 ID 配上新消息导致界面错位。
+                val switched = withContext(Dispatchers.IO) {
                     if (id == null) session.newConversation() else session.selectConversation(id)
                     if (deletedIds.isNotEmpty()) session.deleteConversations(deletedIds)
-                    session.read()
+                    val saved = session.read()
+                    AiSwitchedConversation(
+                        saved = saved,
+                        messages = saved.optJSONArray("messages")?.objects()?.map { it.toAiMessage() }.orEmpty(),
+                        conversationId = session.currentConversationId,
+                        conversations = session.listConversations().map { item -> AiConversationUi(item.id, item.title, item.updatedAt) },
+                    )
                 }
+                val saved = switched.saved
                 history.clear(); checkpoint.keys().asSequence().toList().forEach(checkpoint::remove)
                 saved.optJSONArray("history")?.objects()?.let(history::addAll)
                 saved.optJSONObject("checkpoint")?.let { data -> data.keys().forEach { checkpoint.put(it, data.get(it)) } }
                 if (saved.optBoolean("historyTruncated")) history.add(0, JSONObject().put("role", "user").put("content",
                     "对话从断点恢复，请先read_task读取完整任务与约束。"))
                 runner.closeInterruptedTools()
-                lastOperation = aiUndoForCurrentTurn(saved.optional("lastOperation"), checkpoint,
-                    saved.optJSONArray("messages")?.objects()?.map { it.toAiMessage() }.orEmpty())
-                mutable.update { it.copy(messages = saved.optJSONArray("messages")?.objects()?.map { row -> row.toAiMessage() }.orEmpty(),
+                lastOperation = aiUndoForCurrentTurn(saved.optional("lastOperation"), checkpoint, switched.messages)
+                mutable.update { it.copy(currentConversationId = switched.conversationId, conversations = switched.conversations,
+                    messages = switched.messages,
                     input = "", pendingPlan = null, error = null, progress = null, canUndo = lastOperation != null, canRetry = false,
                     canContinue = saved.optBoolean("running") || saved.optBoolean("canContinue"), references = emptyList(), openedPlaylist = null,
                     hasEarlierMessages = saved.optBoolean("hasEarlierMessages"), loadingEarlierMessages = false) }
                 saved.optional("pendingPlan")?.let { presentPlan(it) }
-                refreshConversationList()
                 if (deletedIds.isNotEmpty()) historyNavigation.open()
                 }
             } catch (error: Exception) {
@@ -405,5 +412,12 @@ internal class AiAssistantController private constructor(context: Context) {
         }
     }
 }
+
+private data class AiSwitchedConversation(
+    val saved: JSONObject,
+    val messages: List<AiChatMessageUi>,
+    val conversationId: String,
+    val conversations: List<AiConversationUi>,
+)
 
 private val AiProvider.uiId get() = name.lowercase()

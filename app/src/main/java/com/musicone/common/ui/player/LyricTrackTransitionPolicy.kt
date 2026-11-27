@@ -2,7 +2,7 @@ package com.musicone
 
 import androidx.compose.runtime.staticCompositionLocalOf
 
-/** 页面和歌词窗口只发布运动资格，逐帧位移仍留在原图层里读取。 */
+/** 通过 CompositionLocal 只传递“是否在运动/是否可见”的布尔状态，逐帧位移留在绘制层读取以防重组。 */
 internal val LocalPlayerLyricsMoving = staticCompositionLocalOf { false }
 internal val LocalPlayerLyricsDisplayed = staticCompositionLocalOf { false }
 

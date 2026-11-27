@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.ensureActive
 import kotlin.coroutines.coroutineContext
 
-// 仅使用封面属性作为切换标识，歌词、播放地址和音质更新不会重启渐变。
+// 只用封面相关字段当切换 key，歌词、播放地址或音质更新时不会重新触发封面渐变。
 internal data class ArtworkIdentity(val url: String?, val start: Long, val end: Long, val mark: String)
 
 internal fun MusicTrack.artworkIdentity() = ArtworkIdentity(artworkUrl, artworkStart, artworkEnd, artworkMark)
@@ -29,7 +29,7 @@ internal fun rememberPlayerArtwork(track: MusicTrack): State<PlayerArtworkFrame>
         val bitmap = ArtworkRepository.peek(identity.url) ?: ArtworkRepository.load(identity.url)
         ArtworkColorFieldRepository.prepare(identity, bitmap)
         if (bitmap == null && value.bitmap != null && identity.url == null) {
-            // 音源详情补全期间按其策略保留旧封面，元数据更新会取消本次等待。
+            // 切歌后如果新歌暂时没封面，按音源配置短暂停留旧封面等详情补全，元数据一到就立刻取消等待。
             delay((track.source.playerPresentation?.missingArtworkHoldMs ?: 0L).coerceAtLeast(0L))
         }
         // 加载期间保留上一张真实封面；目标确认无封面后才使用占位图。
@@ -54,7 +54,7 @@ internal fun CoroutineScope.prefetchPlayerArtwork(state: StateFlow<MusicOneUiSta
                 val bitmap = ArtworkRepository.load(track.artworkUrl)
                 ArtworkColorFieldRepository.prepare(track.artworkIdentity(), bitmap)
             } }
-            // 当前目标优先；新进入窗口的邻曲等交叉渐变结束后再解码，避免抢占切歌帧预算。
+            // 先保证当前这首的封面加载，前后邻曲等切歌渐变播完再解码，避免切歌掉帧。
             delay(PLAYER_ARTWORK_NEIGHBOR_PREFETCH_DELAY_MS)
             tracks.drop(1).forEach { track -> launch {
                 val bitmap = ArtworkRepository.load(track.artworkUrl)

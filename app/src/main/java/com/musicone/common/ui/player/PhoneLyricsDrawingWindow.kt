@@ -11,7 +11,7 @@ import kotlin.math.ceil
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
-/** 临时绘制缓冲围绕原阅读锚点展开；转向及正在衔接的开合结束后才撤下额外列表行。 */
+/** 转屏期间的歌词扩展视口：上下额外多画出一圈缓冲行，防止旋转时露出空白边界，转向和开合结束后收回。 */
 internal class PhoneLyricsDrawingWindow(
     val top: Int = 0,
     val bottom: Int = 0,
@@ -33,12 +33,12 @@ internal class PhoneLyricsDrawingWindow(
         val p = fraction
         val viewport = viewport(height, shift, p)
         return LyricBoundaryEdges(
-            // 补行只服务转向；收起时原正文上沿随窗口移动，不能反向露出补行拖住退场。
+            // 上下缓冲行只给转屏用，收起歌词时正常随窗口上沿裁掉，不要把缓冲行露出来。
             (viewport.top + original.topBuffer * p).coerceAtLeast(top * p),
             viewport.bottom.coerceAtMost(height))
     }
 
-    /** 扩展边界随转向收敛，开合位移始终完整反向抵消，二者不能相乘。 */
+    /** 计算当前帧的有效视口边界：缓冲高度随转向进度收回，并扣除歌词开合位移。 */
     fun viewport(height: Float, shift: Float, fraction: Float = progress()): LyricBoundaryEdges =
         LyricBoundaryEdges(top * fraction - shift, height - bottom * fraction - shift)
 
@@ -47,7 +47,7 @@ internal class PhoneLyricsDrawingWindow(
 
 internal val LocalPhoneLyricsDrawingWindow = staticCompositionLocalOf { PhoneLyricsDrawingWindow.None }
 
-/** 转屏尾段与普通开合共用当前视口，开合途中不撤补行或重测正文。 */
+/** 保持扩展视口直到转屏和正在进行的歌词开合全部结束，避免开合中途撤掉缓冲行引起重排。 */
 internal class PhoneLyricsDrawingRetention {
     private var retained = PhoneLyricsDrawingWindow.None
 
@@ -93,7 +93,7 @@ internal fun rememberPhoneLyricsDrawingWindow(surface: PhoneLyricsSurface,
     return retention.resolve(target, openingOrClosing, LocalPlayerVisible.current && pageMotion.mounted)
 }
 
-/** 物理窗口对角线覆盖任意转角投影，避免依赖固定补几句或另一朝向的旧高度。 */
+/** 按屏幕对角线长度计算上下需要扩展的缓冲高度，确保任意旋转角度下都不会露白边。 */
 internal fun phoneLyricsDrawingInsets(window: Size, height: Int, anchor: Float): Pair<Int, Int> {
     val reach = ceil(hypot(window.width.toDouble(), window.height.toDouble())).toInt()
     return ceil((reach - anchor).coerceAtLeast(0f)).toInt() to

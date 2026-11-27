@@ -2,7 +2,7 @@ package com.musicone
 
 import org.json.JSONObject
 
-/** 收据来自原生事务，稳定身份使崩溃恢复不会重复展示，也不能被重新生成覆盖。 */
+/** 收据由本地事务生成，用固定 ID 防止崩溃恢复时重复显示或被重新生成覆盖。 */
 internal fun aiNativeReceipt(result: JSONObject, confirmed: Boolean): AiChatMessageUi {
     val id = "native-" + result.optString("operationId", result.optString("planId"))
     val details = if (confirmed) aiMetadataDetails(result) + result.optJSONArray("changes")?.objects().orEmpty().map { change ->

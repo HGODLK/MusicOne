@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 首页仅保留导入统计，文件名和技术异常由日志保存。 */
+/** 界面提示只显示导入了多少首，具体报错细节打日志。 */
 internal fun LocalImportResult.displaySummary(): String = buildList {
     add("已导入 $added 首")
     add("已存在 $duplicates 首")

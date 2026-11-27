@@ -5,7 +5,7 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.TransferListener
 
-/** 离线媒体显式携带原缓存键，读取链不再接入 HTTP 或过期 CDN 票据。 */
+/** 离线播放直接按原缓存 key 读本地缓存，完全不走网络请求，也不怕旧 CDN 链接过期。 */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class CachedPlaybackDataSource(
     private val cached: DataSource.Factory,
@@ -47,7 +47,7 @@ internal class CachedPlaybackDataSource(
             reader = null
             retainedKey?.let(onCloseKey)
             retainedKey = null
-            // EOF 后内容长度才可能写回缓存；不能只依赖先到达的缓存块回调。
+            // 读到文件末尾关流后缓存总长才会落盘，所以要在 close 时触发一次回调检查。
             onReadFinished()
         }
     }

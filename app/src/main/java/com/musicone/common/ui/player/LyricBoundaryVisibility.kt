@@ -18,7 +18,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import kotlin.math.min
 
-/** 与玻璃绘制共用原点；开合位移只改变换算，不改变列表布局。 */
+/** 歌词可见边界窗口：与模糊玻璃共用坐标系，开合位移只做坐标换算，不触发列表重排。 */
 internal class LyricBoundaryWindow(
     val topBuffer: Float,
     val offset: () -> Float,
@@ -42,15 +42,15 @@ internal class LyricLineBoundary(val window: LyricBoundaryWindow,
     val geometry: LyricViewportGeometry? = null,
     val viewport: LyricBoundaryViewport = LyricBoundaryViewport(window, viewportHeight))
 
-/** 竖屏普通开合只在透明度变化时重录正文；转向、扩展窗口和横屏继续逐帧读取实际边界。 */
+/** 竖屏普通开合时缓存每行透明度，只在变化时重绘；横屏、转屏或扩展视口则每帧实时计算。 */
 internal fun lyricBoundaryCachesAlphas(extendedEdges: Boolean, partialTop: Boolean,
     turnActive: Boolean, hasTransform: Boolean): Boolean =
     !extendedEdges && !partialTop && !turnActive && hasTransform
 
-/** 未取得新坐标不等于不可见，交给原文字和外层实际视口裁剪。 */
+/** 还没拿到坐标或全行都是 100% 不透明时，直接正常绘制原文，交给外层视口裁剪。 */
 internal fun lyricBoundaryDrawsContent(alphas: List<Float>): Boolean = alphas.isEmpty() || alphas.all { it == 1f }
 
-/** 按真实排版行保护字形；新补入的行沿列表位移和边界位置自然显现。 */
+/** 按实际文本排版行做边缘渐隐，避免整行字形在视口上下边缘被生硬切掉。 */
 @Composable
 internal fun Modifier.lyricTextBoundary(
     boundary: LyricLineBoundary?,
@@ -77,7 +77,7 @@ internal fun Modifier.lyricTextBoundary(
             nativeOrigin.value = lyricNativeTextOrigin(parent.localPositionOf(child, Offset.Zero),
                 visual.pivot(), visual.scale(), visual.offset())
     }
-    // 父行可能晚于文字发布坐标；补齐登记只发生在放置/重排，不加入逐帧矩阵遍历。
+    // 父行坐标可能晚于文字就绪，在重组时补记一次相对原点，避免每帧遍历坐标矩阵。
     SideEffect { if (root?.isAttached == true) recordOrigin(coordinates.value) }
     val drawing = remember(layout, rowCoordinates, coordinates, boundary.geometry, generation, contentKey) {
         Modifier.onGloballyPositioned {
@@ -91,14 +91,14 @@ internal fun Modifier.lyricTextBoundary(
             val fadePx = 8.dp.toPx()
             val overhang = 6.dp.toPx()
             val alphaSampler = LyricBoundaryAlphaSampler(bands)
-            // 只在实际绘制时读取边界，裁剪节点仍在首次经过边界时创建。
+            // 延迟到歌词行真正碰到视口边缘时才创建离屏裁剪层。
             var scene: LyricBoundaryRenderScene? = null
             var source: GraphicsLayer? = null
             var recordedEpoch = Long.MIN_VALUE
             fun prepareScene(draw: androidx.compose.ui.graphics.drawscope.ContentDrawScope): LyricBoundaryRenderScene {
                 val currentSource = source ?: obtainGraphicsLayer().also { source = it }
                 val epoch = contentEpoch?.revision ?: 0L
-                // 换窗或 seek 后刷新引用；正常逐字帧仍由持久子图层独立更新。
+                // 切歌或 seek 导致绘制版本变化时重新录制，普通逐字高亮仍由子图层独立更新。
                 if (recordedEpoch != epoch) {
                     currentSource.record { draw.drawContent() }
                     recordedEpoch = epoch
@@ -138,7 +138,7 @@ internal fun Modifier.lyricTextBoundary(
                     lyricBoundaryDiagnostic(alphas, bands, latestBoundary.value, rowCoordinates(), coordinates.value) +
                         " canvasClip=${drawContext.canvas.nativeCanvas.clipBounds}"
                 }
-                // 有效坐标和文字均齐备后再录制，防止把首次空内容永久作为边界来源。
+                // 等坐标和排版都有效后再录制，避免把首帧空内容录进去。
                 val prepared = if (preparing.value && alphas.isNotEmpty()) prepareScene(this) else null
                 if (lyricBoundaryDrawsContent(alphas)) {
                     drawContent()
@@ -148,7 +148,7 @@ internal fun Modifier.lyricTextBoundary(
                 val currentScene = prepared ?: prepareScene(this)
                 currentScene.draw(this, alphas)
             }
-        // 边界只重放内部节点；逐字内容变化仍由内部绘制失效更新，遮罩保持实时。
+        // 用独立图层包裹边界绘制，逐字高亮变化时仍由内部节点实时刷新。
         }.graphicsLayer()
     }
     return this.then(drawing)

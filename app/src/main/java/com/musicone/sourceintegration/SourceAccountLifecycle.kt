@@ -10,7 +10,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.musicone.MusicSource
 import kotlinx.coroutines.delay
 
-/** 切换音源、恢复前台与前台停留时按宿主节流检查公开账号，续期逻辑仍由音源执行。 */
+/** 切音源、回前台或前台停留期间定时触发账号检查（带节流），具体续期逻辑交给音源包。 */
 @Composable
 internal fun SourceAccountLifecycle(source: MusicSource, refreshIfDue: () -> Unit) {
     val latestRefresh = rememberUpdatedState(refreshIfDue)

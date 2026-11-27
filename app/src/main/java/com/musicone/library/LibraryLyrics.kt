@@ -4,14 +4,14 @@ import android.content.Context
 import android.net.Uri
 import java.io.File
 
-/** 手动覆盖权限与在线提供者互相独立；空覆盖继续走在线，不伪造无歌词。 */
+/** 优先读手动关联的本地歌词，没关联或为空时继续走在线歌词，不强行当成无歌词。 */
 internal suspend fun preferredLyrics(manualAllowed: Boolean, onlineAvailable: Boolean,
     readLibrary: suspend () -> List<TimedLyric>, readOnline: suspend () -> List<TimedLyric>): List<TimedLyric> {
     if (manualAllowed) readLibrary().takeIf { it.isNotEmpty() }?.let { return it }
     return if (onlineAvailable) readOnline() else emptyList()
 }
 
-/** 原文保留，偏移只在装载时间线时应用一次，逐字与点击跳转使用同一结果。 */
+/** 原始歌词文件不改，用户设的时间偏移只在加载进时间轴时加一次，显示和点击跳转保持一致。 */
 internal fun MusicLibraryStore.lyrics(track: MusicTrack): List<TimedLyric> {
     val (manual, offset) = lyricAsset(track.id)
     val file = manual?.let(::File)?.takeIf(File::isFile)

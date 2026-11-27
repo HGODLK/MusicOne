@@ -7,9 +7,9 @@ data class TimedLyric(
     val text: String,
     val translation: String? = null,
     val words: List<LyricWord> = emptyList(),
-    // 零表示来源未经当前解析器确认，不能仅凭非空内容升级旧缓存。
+    // 0 表示旧版缓存没记录解析器版本，不能只因为有内容就当成最新版缓存。
     val parserVersion: Int = 0,
-    // 资料库时间线已应用用户整行与逐字偏移，展示层不能再次移动。
+    // 为 true 表示已经加过用户的歌词时间偏移，展示层别再重复加一次。
     val libraryTimeline: Boolean = false,
     // 音源包提供的逐词注音，格式见 LyricRuby.kt；时间相对字组起点，不受偏移影响。
     val transliteration: String? = null,

@@ -26,7 +26,9 @@ internal fun RowScope.MiniPlayerInformation(track: MusicTrack, favorite: Boolean
     val duration = if (swipe.active || motion?.phase == MotionPhase.SHOWN) 0 else 260
     // 转场中的封面与飞行层、大封面同速，避免收起落地时跳到另一混合比例。
     val artworkDuration = if (motion?.moving == true) 420 else duration
-    val artwork by rememberPlayerArtwork(track)
+    // 自然过渡期间封面提前朝下一首渐变；交接状态仍按实际歌曲登记。
+    val artworkTrack = autoMixArtworkTrack(track)
+    val artwork by rememberPlayerArtwork(artworkTrack)
     val outgoingArtwork by rememberPlayerArtwork(swipe.outgoing ?: track)
     val incomingArtwork by rememberPlayerArtwork(swipe.incoming ?: track)
     Box(Modifier.size(MiniPlayerLayoutMetrics.artwork).clickable(enabled = !swipe.active, onClick = onOpen)
@@ -39,11 +41,12 @@ internal fun RowScope.MiniPlayerInformation(track: MusicTrack, favorite: Boolean
             displayKey = track.source to track.id,
             onDisplayed = {
                 swipe.onTargetBaseArtworkDrawn(track, it)
-                PlayerOpeningArtworkHandoff.offer(track, it)
+                PlayerOpeningArtworkHandoff.offer(artworkTrack, it)
             },
             onBlendSnapshot = { blends ->
-                PlayerOpeningArtworkHandoff.offer(track, blends.last().frame, blends)
+                PlayerOpeningArtworkHandoff.offer(artworkTrack, blends.last().frame, blends)
             },
+            autoMixDriven = true,
         ) { MiniArtworkFrame(it) }
         if (swipe.active) {
             val target = swipe.incoming!!

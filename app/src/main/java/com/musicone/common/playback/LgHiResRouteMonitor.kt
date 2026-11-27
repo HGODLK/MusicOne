@@ -7,7 +7,7 @@ import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 
-/** 设备变化与 USB 使用同一串行重建入口，避免两个输出同时争用播放器。 */
+/** 音频设备切换时和 USB 走同一个串行重建入口，防止两边同时抢占播放器。 */
 internal class LgHiResRouteMonitor(context: Context, private val changed: (Boolean) -> Unit) {
     private val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val callback = object : AudioDeviceCallback() {

@@ -7,7 +7,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
-/** 再次按下接住当前画面，旧收尾任务不能抢回拖动状态。 */
+/** 动画还没停就再次按下时直接接管当前位置，防止旧的收尾协程抢回状态。 */
 internal class LibraryCardSwipeState(initial: Int, private val scope: CoroutineScope, private val onSelected: (Int) -> Unit) {
     val animation = Animatable(initial.toFloat())
     private var drag by mutableFloatStateOf(Float.NaN)
@@ -46,7 +46,7 @@ internal class LibraryCardSwipeState(initial: Int, private val scope: CoroutineS
 
 internal fun libraryCardSwipeTarget(position: Float, distance: Float, velocity: Float, width: Float, cancelled: Boolean, selected: Int): Int {
     if (cancelled) return selected
-    // 明确位置优先，短划才由释放方向补充；反向回勾不沿用整段距离的方向。
+    // 拖得够远直接按位置落位，短距离轻划看松手速度方向，避免往回勾时误判。
     if (position <= .2f) return 0
     if (position >= .8f) return 1
     if (abs(distance) > width * .025f && abs(velocity) > width * .65f) return if (velocity < 0f) 1 else 0

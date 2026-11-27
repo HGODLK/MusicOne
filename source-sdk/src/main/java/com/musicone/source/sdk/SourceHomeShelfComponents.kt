@@ -3,7 +3,7 @@ package com.musicone.source.sdk
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 
-/** 可选横向货架能力：视口延伸到页面边缘，标题与首尾内容保留指定边距。 */
+/** 可选的横向货架组件：滑动区域延伸到页面边缘，标题和首尾项保留指定边距。 */
 interface SourceHomeShelfComponents {
     @Composable fun SongShelf(id: String, title: String, pages: List<List<SourceTrackDetails>>,
         player: SourcePlayerState = SourcePlayerState(), showFavorites: Boolean = true,

@@ -9,7 +9,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
-/** 添加后即准备歌单大封面，卡片和详情仍消费已有的同一份图片缓存与渐变。 */
+/** 本地歌单变化时提前预热封面缓存，卡片和详情页直接复用。 */
 @Composable
 internal fun PrepareLibraryArtwork(snapshot: LibrarySnapshot) {
     val context = LocalContext.current.applicationContext

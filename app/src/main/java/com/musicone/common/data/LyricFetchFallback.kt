@@ -2,7 +2,7 @@ package com.musicone
 
 import kotlinx.coroutines.CancellationException
 
-/** 联网刷新失败仍交付旧歌词；取消必须继续传播，不能伪装成成功的降级结果。 */
+/** 在线拉歌词失败时退回旧歌词兜底；协程取消直接抛出，不当成失败降级。 */
 internal suspend fun fetchLyricsPreservingFallback(track: MusicTrack, fallback: List<TimedLyric>,
     preserveVerbatimFallback: Boolean = track.source.lyricBehavior?.preserveVerbatimFallback == true,
     fetch: suspend () -> List<TimedLyric>): List<TimedLyric> = try {

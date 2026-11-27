@@ -40,7 +40,7 @@ internal fun qqRecentPlayReportRequest(
         .put("param", JSONObject().put("data", JSONArray().put(item))))
 }
 
-/** 音乐流短卡只有数字 songId；真实 MID 补齐前不能消耗本次播放的上报机会。 */
+/** 检查歌曲是否已有完整的上报标识（推荐流短卡只有数字 songId，等补齐 songMid 再上报）。 */
 internal fun MusicTrack.hasQqRecentPlayIdentity(): Boolean =
     catalogId.toLongOrNull()?.let { it > 0L } == true &&
         qqPlaybackMid().let { it.isNotBlank() && isValidQqTrackMid(it) }

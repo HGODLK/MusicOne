@@ -1,6 +1,6 @@
 package com.musicone.source.kugou
 
-/** 取消和换号也需收尾；只有同一请求才能清除自己的加载状态。 */
+/** 跟踪当前进行中的请求标识，只有对应的那次请求结束时才能清除 loading 状态，避免旧请求误清。 */
 internal class KugouRequestIdentity {
     private var sequence = 0L
     private val active = mutableMapOf<String, Long>()

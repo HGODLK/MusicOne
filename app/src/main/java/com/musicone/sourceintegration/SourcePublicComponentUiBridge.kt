@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.compose.runtime.Composable
 import com.musicone.source.sdk.*
 
-/** 绑定音源后复用公共控件；不会把宿主模型交给包。 */
+/** 按音源创建受限的公共组件作用域，复用宿主组件但不暴露内部数据模型。 */
 internal class SourcePublicComponentUiBridge(private val context: Context) : SourceComponentUi {
     override fun forSource(sourceId: String, checkAccess: () -> Unit): SourceComponentScope {
         checkAccess()

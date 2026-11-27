@@ -10,7 +10,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-/** 默认仅在本包主动接入时启用，最近播放仍由原 reportPlayed 单独处理。 */
+/** 负责上报酷狗听歌时长和 CSCC 播放事件（最近播放仍由 reportPlayed 单独处理）。 */
 internal class KugouListeningReporter(
     private val capture: () -> KugouAccountRequest,
     private val check: (KugouAccountRequest) -> Unit,
@@ -56,12 +56,12 @@ internal class KugouListeningReporter(
                 settle(session)
             }
             if (event.type == SourcePlaybackSessionEventType.END) {
-                // 先退役，失败或重复结束都不能再次提交同一段时长或结束事件。
+                // 先把 active 置空，避免失败或重复回调导致同一段时长被报两次
                 active = null
                 lastEnded = session.id
                 attempt("结束事件") {
                     check(session.owner)
-                    // 开始时没有完整身份或未确认开始事件，则本会话不发送孤立的结束事件。
+                    // 之前没成功报过开始事件，就不单独发结束事件
                     val song = session.csccSong ?: return@attempt
                     client.playback(session.owner.cookie, song, false, event.playedMs,
                         event.endReason == SourcePlaybackSessionEndReason.COMPLETED, event.occurredAtMs) { check(session.owner) }
@@ -75,10 +75,10 @@ internal class KugouListeningReporter(
         if (seconds <= 0) return
         attempt("真实时长") {
             check(session.owner)
-            // 每次结算先读真实服务端基线，不能把歌曲总长或播放位置当作已收听时长。
+            // 每次结算前先查服务端当前的累计基线，再提交本次真实新增秒数
             val baseline = client.baseline(session.owner.cookie) { check(session.owner) }
             check(session.owner)
-            // 写请求开始后结果可能不明确，先消费该差额，超时不重复重放。
+            // 发请求前先把这段时长记为已提交，就算超时也不重复补发
             session.submittedMs += seconds * 1_000
             client.sync(session.owner.cookie, baseline, seconds) { check(session.owner) }
         }

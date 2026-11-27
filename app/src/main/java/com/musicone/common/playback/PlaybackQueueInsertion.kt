@@ -17,7 +17,7 @@ internal fun insertTrackAfterCurrent(
     return retained
 }
 
-/** 只改队列，不触碰当前歌曲、播放意图、歌词或进度。 */
+/** 只把歌插到下一首位置，不影响当前播放、歌词和进度。 */
 internal fun MusicOneUiState.withTrackInsertedNext(selected: MusicTrack): MusicOneUiState {
     val current = currentTrack
     if (current?.source == selected.source && current.id == selected.id) return this
@@ -30,7 +30,7 @@ internal fun MusicOneUiState.withTrackInsertedNext(selected: MusicTrack): MusicO
     )
 }
 
-/** 显式插入优先于单曲循环一次，播放模式本身保持原值。 */
+/** 单曲循环时如果手动插了“下一首播放”，下一次先播插进来的歌，不改播放模式。 */
 internal fun MusicOneUiState.insertedNextIndex(): Int? {
     if (currentTrack?.id != queueOrder.nextAfterId) return null
     return queue.indexOfFirst { it.id == queueOrder.nextTrackId }.takeIf { it >= 0 }

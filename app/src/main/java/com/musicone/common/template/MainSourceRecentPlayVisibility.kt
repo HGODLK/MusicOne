@@ -4,7 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 
-/** 首页和我的页共用刷新入口；隐藏期间保留一次待刷新，不重复解析最近播放。 */
+/** 首页和“我的”页共用最近播放刷新门控：页面隐藏期间只记一次待刷新，回到可见时再统一拉。 */
 internal class MainSourceRecentPlayRefreshGate {
     private val visibleOwners = mutableSetOf<Any>()
     private var pending = true

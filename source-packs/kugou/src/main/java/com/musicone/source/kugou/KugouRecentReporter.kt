@@ -4,7 +4,7 @@ import com.musicone.source.sdk.SourceTrackDetails
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 只提交云端历史，复用现有通知入口，不参与播放器和音频请求。 */
+/** 向酷狗上报单曲播放记录到云端历史。 */
 internal class KugouRecentReporter(private val client: KugouContentClient = KugouContentClient(),
     private val now: () -> Long = { System.currentTimeMillis() / 1000 }) {
     suspend fun report(track: SourceTrackDetails, cookie: String) {

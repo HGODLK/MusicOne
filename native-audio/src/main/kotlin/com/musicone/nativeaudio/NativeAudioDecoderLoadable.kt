@@ -8,7 +8,7 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.exoplayer.upstream.Loader
 import java.io.IOException
 
-/** 单轮解码只产出有界结果，交给 Loader 回调在播放线程发布。 */
+/** 单次解码只产出有限块数据，交给 Loader 回调在播放线程写入队列。 */
 @OptIn(UnstableApi::class)
 internal class NativeAudioDecoderLoadable(
     private val context: Context?,

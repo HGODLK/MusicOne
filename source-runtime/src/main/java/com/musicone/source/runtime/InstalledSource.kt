@@ -44,7 +44,7 @@ data class InstalledSource(
         removed = true, pendingRemoval = false, pendingVersionName = null, error = null)
 }
 
-/** 版本号用于展示与升降级判断，安装标识用于文件、激活事务及回退身份。 */
+/** 版本号用于展示和升降级判断；安装标识用于区分目录文件、激活事务和回退目标。 */
 internal data class SourceInstallRef(val versionCode: Long, val installId: String) {
     init {
         require(versionCode > 0 && installId.matches(Regex("[a-zA-Z0-9_-]{1,80}"))) { "音源安装标识无效" }

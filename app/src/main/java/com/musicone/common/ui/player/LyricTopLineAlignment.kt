@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.flow.collect
 
-/** 在屏外准备完整顶行，入场时由同一展开进度将列表送回阅读锚点。 */
+/** 歌词展开前先在屏外把顶部露出的一行补全，入场时随展开进度平滑滚回阅读锚点。 */
 internal suspend fun LazyListState.revealTopLineForEntrance() {
     scroll(MutatePriority.PreventUserInput) {
         val viewport = layoutInfo
@@ -19,7 +19,7 @@ internal suspend fun LazyListState.revealTopLineForEntrance() {
     }
 }
 
-/** 保存列表交接状态，防止父级到终点的同一帧又启动播放跟随补位。 */
+/** 管理歌词展开入场时的列表对齐状态，避免展开结束瞬间和播放跟随打架。 */
 @Stable
 internal class LyricTopLineAlignment {
     private var preparationRevision = 0L
@@ -39,7 +39,7 @@ internal class LyricTopLineAlignment {
     }
 
     fun acceptSeekAlignment() {
-        // 中间态 seek 已在同一位置驱动中完成，不再补播旧的首开锚点。
+        // 如果展开中途发生了 seek，列表已由 seek 逻辑对齐，不再补跑旧的入场对齐。
         preparationRevision++
         preparedLine = null
         playbackScroll?.release()
@@ -48,7 +48,7 @@ internal class LyricTopLineAlignment {
     }
 
     suspend fun align(pane: LyricWindowPane, progress: () -> Float) {
-        // 基线固定在准备时已呈现的句子，之后的换句不能挤进入场剩余进度。
+        // 入场对齐锁定在准备时的那一行，展开途中的自然换句走独立的播放滚动，不混在一起。
         val revision = preparationRevision
         val list = pane.listState
         val origin = preparedLine ?: pane.playbackStep.presentedLine
@@ -65,7 +65,7 @@ internal class LyricTopLineAlignment {
                     .takeWhile { (fraction, users) ->
                         if (!shared.canScroll() || preparationRevision != revision) return@takeWhile false
                         shared.moveEntrance(fraction)
-                        // 展开结束只收掉自己的补偿，尚在运行的自然换句继续持有同一滚动权。
+                        // 展开进度到 1 后，如果此时正好有自然换句在滚动，等它滚完再释放滚动权。
                         fraction < 1f || users > 0
                     }.collect()
             } finally {
@@ -80,7 +80,7 @@ internal class LyricTopLineAlignment {
     }
 }
 
-/** 接管时读取当前画面，不补播等待滚动权期间已经走过的展开进度。 */
+/** 入场对齐会话：接管滚动时从当前进度起步，不补播之前已经走过的部分。 */
 internal class LyricEntranceAlignmentSession {
     private var target = -1
     private var measured = false
@@ -97,7 +97,7 @@ internal class LyricEntranceAlignmentSession {
     }
 }
 
-/** 反向、拖动和跨句重新接管时，起点始终是当前实际偏移。 */
+/** 按当前进度线性插值剩余偏移，确保拖动或反向接管时从实际位置平滑过渡。 */
 internal class LyricEntranceTravel(private val start: Float, private val offset: Float) {
     private var applied = 0f
 
@@ -130,7 +130,7 @@ internal fun rememberLyricTopLineAlignment(
             if (latestProgress() < 1f && alignment.followingPlayback) alignment.prepare()
             while (true) {
                 snapshotFlow { alignment.pending || latestProgress() < 1f && !alignment.followingPlayback }.first { it }
-                // 首次打开仍需等屏外定位完成；手势反向不重置列表或重播准备阶段。
+                // 首次打开需等屏外定位完成；手势中途反向时直接继续，不重新走准备流程。
                 snapshotFlow { latestProgress() }.first { it > 0f }
                 alignment.align(pane, { latestProgress() })
             }

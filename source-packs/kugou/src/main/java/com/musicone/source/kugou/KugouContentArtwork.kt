@@ -3,7 +3,7 @@ package com.musicone.source.kugou
 import java.net.URI
 import org.json.JSONObject
 
-/** 只规范平台实际返回的图片地址，不用歌手或专辑编号拼造图片。 */
+/** 补全和格式化酷狗返回的图片 URL（替换 {size} 等），不自己拿 ID 拼接链接。 */
 internal fun String?.normalizeKugouContentArtwork(size: Int = 480): String? {
     require(size > 0)
     val value = this?.trim()?.takeIf { it.isNotBlank() && it !in setOf("null", "undefined", "0") }
@@ -17,7 +17,7 @@ internal fun String?.normalizeKugouContentArtwork(size: Int = 480): String? {
     return absolute.takeIf { uri.scheme.equals("https", true) && !uri.host.isNullOrBlank() }
 }
 
-/** 搜索 Image、专辑 album_info.cover 和 union_cover 均由成熟客户端实际消费。 */
+/** 按优先级从搜索结果、专辑信息和 union_cover 里提取歌曲封面 URL。 */
 internal fun JSONObject.kugouContentTrackArtwork(): String? =
     contentImage("Image", "image", "ImgUrl", "imgurl", "img", "cover", "sizable_cover")
         ?: optJSONObject("album_info")?.contentImage("cover", "sizable_cover", "imgurl", "img")
@@ -28,12 +28,12 @@ internal fun JSONObject.kugouContentTrackArtwork(): String? =
                 ?: audio.optJSONObject("trans_param")?.contentImage("union_cover")
         }
 
-/** 歌手详情的 sizable_avatar 与专辑搜索的 img 是不同字段，不能只读一套别名。 */
+/** 歌手详情用 sizable_avatar，专辑搜索用 img，这里按类型分别取对应字段。 */
 internal fun JSONObject.kugouContentEntityArtwork(kind: String): String? =
     if (kind == "artist") contentImage("sizable_avatar", "SizableAvatar", "Avatar", "avatar", "ImgUrl", "imgurl", "image", "img")
     else contentImage("sizable_cover", "ImgUrl", "imgurl", "img", "Image", "image", "cover", "pic")
 
-/** 酷狗已确认的资料只有平台头像时，用同源图片作为背景，不伪造官方写真或轮播图。 */
+/** 没拿到歌手写真时，退回用歌手头像当背景图。 */
 internal fun JSONObject.kugouContentArtistBackgrounds(): List<String> =
     listOfNotNull(kugouContentEntityArtwork("artist"))
 

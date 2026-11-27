@@ -48,7 +48,7 @@ private class AiGlassOverlayState {
 
 private val LocalAiGlassOverlay = staticCompositionLocalOf<AiGlassOverlayState?> { null }
 
-/** 仅弹层显示期间录制当前完整页面，聊天和歌单详情共用同一坐标系，弹层自身不进入采样。 */
+/** 只在有弹窗或菜单显示时录制底层页面给毛玻璃采样，弹层自身不录进去。 */
 @Composable
 internal fun AiGlassOverlayHost(content: @Composable () -> Unit) {
     val state = remember { AiGlassOverlayState() }
@@ -142,7 +142,7 @@ private fun AiGlassMenuWindow(backdrop: GraphicsLayer, bounds: Rect, entry: AiGl
     }
 }
 
-/** 用同页玻璃承载原确认内容与回调，保留业务层的执行和取消资格。 */
+/** 用毛玻璃弹窗套住确认内容，点击确认和取消照常走原来的回调。 */
 @Composable
 internal fun AiGlassDialog(onDismissRequest: () -> Unit, title: @Composable () -> Unit,
     text: @Composable () -> Unit, confirmButton: @Composable () -> Unit,

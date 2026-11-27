@@ -44,13 +44,19 @@ internal fun PlayerSongInformation(track: MusicTrack, favorite: Boolean, motion:
                 style = MusicOneTextStyles.playerTitle, color = ink,
                 marquee = true, marqueeRunning = textMarquee,
                 badgeOnDark = ink.luminance() > .5f, showBadges = false, primaryTitleOnly = true)
-            Text(musicOneUiAnnotatedString(playerPrimaryArtists(track.artists)), style = MusicOneTextStyles.playerArtist,
-                color = ink.copy(alpha = .62f), maxLines = 1,
-                modifier = Modifier
-                    .motionAnchor(if (anchorsEnabled) motion else null, "subtitle", true, hideDuringMotion = false, textSizeSp = 16f)
-                    .playerTextHandoffCapture(motion, "subtitle", track)
-                    .playerRelatedInformation(actionTrack, lyricsOpened && motion.phase == MotionPhase.SHOWN)
-                    .basicMarquee(iterations = if (textMarquee) Int.MAX_VALUE else 0))
+            val artistText = playerPrimaryArtists(track.artists)
+            val artistDirection = if (isRtlStrongText(artistText)) androidx.compose.ui.unit.LayoutDirection.Rtl
+                else androidx.compose.ui.platform.LocalLayoutDirection.current
+            CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides artistDirection) {
+                Text(musicOneUiAnnotatedString(artistText),
+                    style = MusicOneTextStyles.playerArtist.copy(textDirection = contentTextDirection(artistText)),
+                    color = ink.copy(alpha = .62f), maxLines = 1,
+                    modifier = Modifier
+                        .motionAnchor(if (anchorsEnabled) motion else null, "subtitle", true, hideDuringMotion = false, textSizeSp = 16f)
+                        .playerTextHandoffCapture(motion, "subtitle", track)
+                        .playerRelatedInformation(actionTrack, lyricsOpened && motion.phase == MotionPhase.SHOWN)
+                        .basicMarquee(iterations = if (textMarquee) Int.MAX_VALUE else 0))
+            }
         }
         PlayerFavoriteButton(actionTrack, favorite, onFavorite,
             // 位移放在淡入图层外侧：透明度小于 1 时离屏缓冲按图层大小裁剪，放里面会切掉红心右缘。

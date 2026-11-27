@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
-/** 原生窗口不参与父 AnimatedVisibility 的退出等待，验证状态清空即释放触摸与焦点。 */
+/** 弹窗状态清空时立刻销毁原生 Dialog，不等父级退出动画，防止残留拦截触摸和焦点。 */
 @Composable
 internal fun QqVerificationDialog(verification: PlatformSecurityVerificationUiState, working: Boolean,
     message: String?, onCancel: () -> Unit, onComplete: (PlatformSecurityVerificationResult) -> Unit) {
@@ -36,7 +36,7 @@ internal fun QqVerificationDialog(verification: PlatformSecurityVerificationUiSt
             properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 Column(Modifier.fillMaxSize().systemBarsPadding()) {
-                    // 所有验证类型共用标题与关闭入口，网页不再与原生控件叠放。
+                    // 所有验证方式共用顶部标题栏和关闭按钮
                     Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Text(verification.title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)

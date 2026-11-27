@@ -64,7 +64,7 @@ internal class PlayerSeekPreview {
 
 internal data class LyricProgressSeek(val trackId: String, val fraction: Float, val revision: Long)
 
-/** 进度条单击携带播放轮次及跳转前位置，旧请求不能在同曲重新起播时重放。 */
+/** 点击进度条跳转时带上播放轮次和原位置，防止重播同一首歌时把旧跳转请求误重放。 */
 internal data class ProgressLyricSeek(
     val trackId: String,
     val fromPositionMs: Long,

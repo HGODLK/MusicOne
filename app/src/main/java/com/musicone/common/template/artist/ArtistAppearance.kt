@@ -23,7 +23,7 @@ private val DefaultArtistAppearance = ArtistAppearance(Color(0xFF283431), Color(
 // 列表文字、分隔线和更多按钮使用的颜色不随写真变化。
 internal val ArtistListColors = DefaultArtistAppearance.colors
 
-/** 仅让实际使用动态主题的控件订阅逐帧颜色，页面和列表保留稳定的组合边界。 */
+/** 只让用到动态取色的局部控件订阅主题变化，避免每帧滑动写真把整页列表一起重组。 */
 @Composable
 internal fun ArtistLiveTheme(appearance: State<ArtistAppearance>, enabled: Boolean = true,
     content: @Composable () -> Unit) {
@@ -67,7 +67,7 @@ internal fun rememberArtistAppearance(photos: List<String>, pager: PagerState): 
         val offset = pager.currentPageOffsetFraction
         val from = palettes[photos.getOrNull(page)]?.current() ?: DefaultArtistAppearance
         val to = palettes[photos.getOrNull(page + if (offset < 0) -1 else 1)]?.current() ?: from
-        // 延后到绘制或局部控件读取，仍逐帧跟手混色，不冻结颜色或叠加追赶动画。
+        // 只在绘制阶段或局部控件里读状态，翻写真时直接跟手插值混色。
         ArtistAppearance(
             background = lerp(from.background, to.background, abs(offset)),
             accent = lerp(from.accent, to.accent, abs(offset)),

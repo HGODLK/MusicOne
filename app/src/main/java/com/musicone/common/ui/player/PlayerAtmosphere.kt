@@ -53,7 +53,8 @@ internal fun PlayerAtmosphere(track: MusicTrack, contentActivated: Boolean, dire
                 if (customVisual != null) {
                     SourceBackdrop(customVisual, Modifier.fillMaxSize())
                 } else {
-                    val frame by rememberPlayerArtwork(track)
+                    // 自然过渡期间色场提前以下一首为目标，换色跟随过渡时钟。
+                    val frame by rememberPlayerArtwork(autoMixArtworkTrack(track))
                     // 首帧与稳定态共用同一个色场绘制器，不再叠加第二层入场背景。
                     FlowingArtworkAtmosphere(frame, direction)
                     Box(Modifier.fillMaxSize().drawWithCache {

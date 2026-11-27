@@ -43,7 +43,6 @@ class WebDavSourceManifestTest {
         assertEquals(pres.getLong("lineLeadMs"), d.presentation.lineLeadMs)
         assertEquals(pres.getLong("wordLeadMs"), d.presentation.wordLeadMs)
 
-        // 校验逐页页面策略合法性
         assertEquals(SourceSupplementalPageMode.CUSTOM, entry.supplementalPagePolicy(SourceSupplementalPage.HOME).mode)
         assertEquals(SourceSupplementalPageMode.DEFAULT, entry.supplementalPagePolicy(SourceSupplementalPage.ACCOUNT).mode)
         assertEquals(SourceSupplementalPageMode.DEFAULT, entry.supplementalPagePolicy(SourceSupplementalPage.COLLECTIONS).mode)

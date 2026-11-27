@@ -48,7 +48,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 /**
  * 极验安全验证悬浮遮罩层。
  *
- * 遵循无成品 Material 对话框/Surface 约束，通过基础 Box 呈现并嵌入 WebView。
+ * 用基础 Box 自绘悬浮遮罩并嵌入 WebView，不使用 Material Dialog/Surface。
  */
 @Composable
 internal fun BiliGeetestOverlay(
@@ -77,7 +77,6 @@ internal fun BiliGeetestOverlay(
                 .clickable(remember { MutableInteractionSource() }, indication = null) {},
         ) {
             Column(Modifier.fillMaxSize()) {
-                // 顶部标题栏
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -107,7 +106,6 @@ internal fun BiliGeetestOverlay(
                     }
                 }
 
-                // 极验 WebView 内容区
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -140,7 +138,7 @@ private fun BiliGeetestWebView(
     val latestClose = rememberUpdatedState(onClose)
     val latestFailure = rememberUpdatedState(onFailure)
 
-    // 原生兜底覆盖网页脚本完全未执行的情况，就绪后允许用户正常完成验证。
+    // 防止网页脚本完全没跑起来导致卡死；一旦网页回调就绪就取消这个超时
     LaunchedEffect(challenge, ready) {
         if (!ready) {
             delay(20_000L)

@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 仅本次前台会话生效；连续真实播放计时和网络卡顿计数不写入设置。 */
+/** 记录本次播放会话的连续播放时长和网络卡顿次数，仅存内存不持久化。 */
 internal class PlaybackPreloadTiming {
     var bufferingCount = 0
         private set
@@ -24,7 +24,7 @@ internal class PlaybackPreloadTiming {
 
     fun newTrack() { startedAt = null; interrupt() }
 
-    /** 主动跳转、暂停、换音质、连接错误不能继承先前的网络卡顿候选。 */
+    /** 主动拖动进度、暂停、切音质或报错时重置计时，别把这些算成网络卡顿。 */
     fun interrupt() {
         stableAt = null
         wasPlaying = false

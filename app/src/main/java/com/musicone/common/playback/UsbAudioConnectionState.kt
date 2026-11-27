@@ -19,7 +19,7 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/** 独立于开关和播放路由跟踪实际 USB 音频连接，未播放或等待授权时也能更新策略。 */
+/** 实时跟踪 USB 音频设备是否已连接，即使当前没在播或还没授权也能更新相关策略（如杜比限制）。 */
 internal object UsbAudioConnectionState {
     var connected by mutableStateOf(false)
         private set

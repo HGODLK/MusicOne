@@ -6,7 +6,7 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 
-/** 跨曲窗口保留独立进度，滑动和手势中间态交接共用同一窗口身份。 */
+/** 单个切歌歌词窗口实例，独立持有播放进度与准备状态，在滑动和渐变切歌间保持同一身份。 */
 internal class LyricWindow(presentation: LyricPresentation, val slot: Float = 0f) {
     var presentation by mutableStateOf(presentation)
     val playback = LyricWindowPlayback(presentation.id)
@@ -29,7 +29,7 @@ internal class LyricWindow(presentation: LyricPresentation, val slot: Float = 0f
         playback.canReturnTo(progress, restarting) &&
             presentation.source == target.source && presentation.id == target.id
 
-    // 同曲加载重试只换播放轮次，不生成一次跨曲入场；新窗口仍隔离旧轮次的 seek。
+    // 同一首歌重新加载或重播时只更新播放轮次，不触发切歌动画。
     /**
      * 同一首重新起播（换音质、重连播放器、恢复失效播放等）只换播放轮次：原窗口原地改绑，
      * 列表与显示状态全部保留。不能新建窗口，新窗口不经准备与就绪流程，会让歌词停在不可见状态。

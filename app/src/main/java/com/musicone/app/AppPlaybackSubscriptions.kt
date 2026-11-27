@@ -34,7 +34,7 @@ internal fun rememberAppPlaybackNavigation(states: StateFlow<MusicOneUiState>): 
 @Composable
 internal fun rememberPagePlaybackState(states: StateFlow<MusicOneUiState>, player: PageMotion): State<MusicOneUiState> =
     remember(states, player) {
-        // 完全被播放页遮挡时保留底页快照，拖动或收起开始即接回最新值，不补放中间歌曲。
+        // 全屏播放页盖住底页时暂停更新底页状态，开始下拉收起时直接切到最新状态。
         visiblePagePlaybackStates(states, snapshotFlow { player.phase != MotionPhase.SHOWN })
     }.collectAsStateWithLifecycleFrom(states) { it }
 
@@ -44,6 +44,6 @@ internal fun <S, T> Flow<T>.collectAsStateWithLifecycleFrom(
     source: StateFlow<S>,
     initialValue: (S) -> T,
 ): State<T> {
-    // value 只提供同步首帧；后续变化仍由同一来源派生的 Flow 持续收集，避免恢复时闪回占位状态。
+    // 用当前值兜底首帧，后续继续收集同一个 Flow，避免重建时先闪一下空状态。
     return collectAsStateWithLifecycle(initialValue = initialValue(source.value))
 }

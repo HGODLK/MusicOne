@@ -4,7 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
-/** 离线使用已展示的歌单快照，不能先补齐网络分页再读取本地音频。 */
+/** 离线时直接用界面上已有的歌单快照播放，不要先去拉远程分页。 */
 internal suspend fun playlistForPlayback(
     snapshot: MusicPlaylist,
     online: Boolean,
@@ -20,7 +20,7 @@ internal suspend fun playlistForPlayback(
     return snapshot.copy(tracks = tracks, count = tracks.size)
 }
 
-/** 补页失败时仍允许点播已加载歌曲；全单播放与全选继续要求完整结果。 */
+/** 点播单首时如果补页失败，允许先播已加载的部分；但“播放全部”和“全选”仍要求拉完整。 */
 internal suspend fun completePlaylistForSelectedTrack(
     snapshot: () -> MusicPlaylist,
     selected: MusicTrack?,

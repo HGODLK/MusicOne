@@ -71,7 +71,7 @@ internal class PlaybackQualityCache(private val context: Context) {
     }
 }
 
-/** 键只含身份，不含首选档；偏好变化不应丢失已探测结果。 */
+/** 缓存 key 只含账号和歌曲信息，不含用户首选音质，这样改首选音质时不用重探。 */
 internal fun playbackQualityCacheKey(
     source: MusicSource,
     id: String,

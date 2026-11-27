@@ -4,7 +4,7 @@ import com.musicone.source.sdk.*
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
-/** 账号与取消检查沿用包内请求边界，不缓存或串用其他账号的首页内容。 */
+/** 酷狗发现页与每日推荐服务实现。 */
 internal class KugouSourceDiscovery(
     private val state: () -> KugouPackageState,
     private val remember: (MusicPlaylist, KugouAccountRequest) -> MusicPlaylist = { playlist, _ -> playlist },
@@ -40,7 +40,7 @@ internal class KugouSourceDiscovery(
         val owner = state()
         return owner.request { session ->
             val account = owner.account()
-            // 宿主首次网络读取也会传 REFRESH，它不等于用户要求重生成推荐，先读取账号真实当日日推。
+            // 宿主首次联网也会传 REFRESH，这里先读账号当天的日推，不直接触发重新生成
             dailyClient.daily(session.cookie, owner.verifiedVipAccess(session)).tracks
                 .map { KugouSourceMapping.track(it, account?.userId) }
         }

@@ -12,7 +12,7 @@ internal class SubsonicApiException(val code: Int, message: String) : Exception(
 /** 网络、HTTP 状态或非 Subsonic 响应；消息不含带凭据的地址。 */
 internal class SubsonicTransportException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
-/** 只发 Subsonic REST 请求；读取用 GET，带大量歌曲编号的写入用表单 POST。 */
+/** Subsonic REST 请求封装：查询走 GET，批量传歌曲 ID 的写操作走表单 POST。 */
 internal class SubsonicClient(
     private val connectTimeoutMs: Int = 15_000,
     private val readTimeoutMs: Int = 30_000,
@@ -63,7 +63,7 @@ internal class SubsonicClient(
     }
 }
 
-/** 解析统一响应外壳；协议错误优先于 HTTP 状态，方便识别账号错误。 */
+/** 解析 Subsonic 响应体；优先检查协议层错误码（再看 HTTP 状态），方便准确识别账号失效。 */
 internal fun parseSubsonicResponse(text: String, status: Int): JSONObject {
     val root = try { JSONObject(text).optJSONObject("subsonic-response") } catch (_: JSONException) { null }
     if (root == null) {

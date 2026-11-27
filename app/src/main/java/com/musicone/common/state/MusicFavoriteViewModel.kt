@@ -148,7 +148,7 @@ internal class MusicFavoriteViewModel(application: Application) : AndroidViewMod
                 val desired = track.isMainSourceFavorite(_state.value.ids)
                 if (desired == confirmed) break
                 try {
-                    // 同一歌曲串行同步；请求过程中撤销只更新目标状态，不发出相互覆盖的并发请求。
+                    // 同一首歌的收藏请求串行发，请求还没回来用户又点反了就只改目标状态，不并发发两个请求互相覆盖。
                     repository.setLiked(track, desired)
                     confirmed = desired
                 } catch (cancelled: CancellationException) {
@@ -244,7 +244,7 @@ internal fun MusicFavoriteUiState.restoreFavoriteRemoval(
 ): MusicFavoriteUiState = copy(
     ids = ids + playlistTrackIdentities(track),
     message = null,
-    // 没有旧记录时也显式写入恢复项，让已经过滤的“我的”内存快照能补回歌曲。
+    // 就算之前没有本地变更记录也要显式补一条 true，让“我的”页里已隐藏的歌曲能马上恢复显示。
     changes = changes + (track.id to (previousChange ?: (track to true))),
     deferredRemovalIds = deferredRemovalIds - track.id,
 )

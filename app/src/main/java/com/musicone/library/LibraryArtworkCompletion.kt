@@ -4,7 +4,7 @@ import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
 import org.json.JSONObject
 
-/** 只补齐默认封面，不能把显示层的自定义资料写回默认资料。 */
+/** 只顺手补全缺失的默认封面，不动用户自己改过的自定义信息。 */
 internal fun SQLiteDatabase.completeLibraryArtwork(incoming: MusicTrack) {
     val image = incoming.artworkUrl?.takeIf(String::isNotBlank) ?: return
     rawQuery("SELECT data,artwork_override FROM songs WHERE id=?", arrayOf(incoming.id)).use { row ->

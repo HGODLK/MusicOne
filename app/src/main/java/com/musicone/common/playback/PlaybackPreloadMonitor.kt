@@ -10,7 +10,7 @@ import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.exoplayer.source.MediaLoadData
 import java.io.IOException
 
-/** 在真实播放器和当前媒体周期边界收集证据；不依赖页面播放动画或音源预设码率。 */
+/** 直接从播放器底层监听真实的缓冲、卡顿和码率数据，供预加载判断网速是否够用。 */
 @androidx.annotation.OptIn(UnstableApi::class)
 internal class PlaybackPreloadMonitor(
     val timing: PlaybackPreloadTiming,

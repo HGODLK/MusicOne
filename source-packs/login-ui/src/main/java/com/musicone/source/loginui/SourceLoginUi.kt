@@ -27,14 +27,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 
-/** 转场保留出场内容的不可变展示快照，不持有认证挑战或会话凭证。 */
+/** 登录方式切换动画用的纯展示状态，只保存界面文案和图片，不放登录凭证。 */
 internal data class SourceLoginContentState(
     val method: String, val busy: Boolean, val qrUrl: String?, val signedIn: Boolean,
     val message: String?, val error: String?, val country: String, val phone: String,
     val code: String, val resendSeconds: Int, val canLogin: Boolean,
 )
 
-/** 复用 0.2.0 QQ 登录的限宽卡片与转场，认证状态和协议仍由音源包持有。 */
+/** 通用登录卡片和切换动效（样式和 QQ 登录一致），具体的登录逻辑由各音源包自己管。 */
 @Composable
 internal fun SourceLoginScreen(title: String, accent: Color, state: SourceLoginContentState,
     reduceMotion: Boolean, onSelectMethod: (String) -> Unit,
@@ -60,7 +60,7 @@ internal fun SourceLoginScreen(title: String, accent: Color, state: SourceLoginC
                                 modifier = Modifier.weight(1f)) { Text(label) }
                         }
                     }
-                    // 与 QQ 登录一致，以方式为内容键，旧方式离场时继续使用旧展示状态。
+                    // 按登录方式做 AnimatedContent 的 key，切换时让旧页面用原来的状态播完退出动画
                     AnimatedContent(state, contentKey = { it.method }, transitionSpec = {
                         ((fadeIn(loginMotion(reduceMotion, 320)) + slideInHorizontally(loginMotion(reduceMotion, 360)) { it / 16 }) togetherWith
                             (fadeOut(loginMotion(reduceMotion, 220)) + slideOutHorizontally(loginMotion(reduceMotion, 280)) { -it / 16 }))

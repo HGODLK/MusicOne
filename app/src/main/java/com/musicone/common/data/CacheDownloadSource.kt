@@ -8,7 +8,7 @@ import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.ContentMetadata
 import androidx.media3.datasource.cache.ContentMetadataMutations
 
-/** DASH 资源只缓存实际音轨；DASH 清单保留在离线索引中，不能冒充整首歌曲字节。 */
+/** DASH 歌曲只缓存实际音轨流，MPD 清单单独记在离线索引里，不能把清单当成整首歌的音频数据。 */
 internal fun cacheDownloadUrl(source: PlaybackSource): String {
     if (source.mimeType != "application/dash+xml") return source.url
     val xml = String(Base64.decode(source.url.substringAfter(','), Base64.DEFAULT), Charsets.UTF_8)
@@ -20,7 +20,7 @@ internal fun dashAudioBaseUrl(xml: String): String? = Regex("<BaseURL[^>]*>(.*?)
     ?.replace("&apos;", "'")?.replace("&lt;", "<")?.replace("&gt;", ">")?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
 
 
-/** 只有服务器确认的总长可界定完整缓存，不能把任意416或现有片段末尾当作EOF。 */
+/** 必须以服务端返回的总字节数为准来判断有没有下完，不能把 416 错误或已有片段末尾当成下载完成。 */
 internal fun boundedCacheDownloadLength(remoteLength: Long, cachedEnd: Long, knownLength: Long = -1L): Long {
     if (remoteLength <= 0) throw PlatformApiException("服务器未声明音轨总长度，请重新解析")
     if (cachedEnd > remoteLength || (knownLength > 0 && knownLength != remoteLength))
@@ -28,7 +28,7 @@ internal fun boundedCacheDownloadLength(remoteLength: Long, cachedEnd: Long, kno
     return remoteLength
 }
 
-/** 长度已确认后仍须由调用方在最终写入前核对取消、账号和实例代次。 */
+/** 确认总长度后，真正写入前由调用方再核对一次协程取消、账号和音源实例有没有变。 */
 internal fun commitCacheDownloadLength(remoteLength: Long, cachedEnd: Long, knownLength: Long,
     commit: (() -> Unit) -> Unit, write: (Long) -> Unit): Long {
     val length = boundedCacheDownloadLength(remoteLength, cachedEnd, knownLength)
@@ -36,7 +36,7 @@ internal fun commitCacheDownloadLength(remoteLength: Long, cachedEnd: Long, know
     return length
 }
 
-/** DASH分段读取可能已覆盖全文件却没有总长；先从零打开音轨核对，再让CacheWriter只填有界区间。 */
+/** DASH 分段缓存可能已经下全但没记总长度；先从 0 探测一次拿准确总长，再交给 CacheWriter 补齐剩余区间。 */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal fun cacheDownloadSpec(source: PlaybackSource, upstream: DataSource.Factory, cache: Cache, key: String,
     commit: (() -> Unit) -> Unit): DataSpec {
@@ -47,7 +47,7 @@ internal fun cacheDownloadSpec(source: PlaybackSource, upstream: DataSource.Fact
     if (source.mimeType != "application/dash+xml") return spec
     val probe = upstream.createDataSource()
     val remoteLength = try {
-        // 不复用CacheDataSource，避免再次直接跳到已缓存末端发出越界Range；不读取响应正文。
+        // 直接用上游数据源探测总长（不读正文），避免 CacheDataSource 跳到缓存末尾发越界 Range。
         val openedLength = probe.open(spec)
         val contentRange = probe.responseHeaders.entries.firstOrNull { it.key.equals("Content-Range", true) }?.value?.firstOrNull()
         HttpUtil.getDocumentSize(contentRange).takeIf { it > 0 } ?: openedLength

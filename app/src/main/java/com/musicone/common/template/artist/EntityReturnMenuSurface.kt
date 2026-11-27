@@ -9,7 +9,7 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 
-/** 返回播放页关联菜单时复用实时表面，避免旧像素快照重新带回上一曲的模糊。 */
+/** 回到播放页的关联菜单时直接画实时画面，避免用旧截图把上一首歌的模糊背景带回来。 */
 @Composable
 internal fun EntityReturnMenuSurface(layer: GraphicsLayer) {
     Canvas(Modifier.fillMaxSize()) {

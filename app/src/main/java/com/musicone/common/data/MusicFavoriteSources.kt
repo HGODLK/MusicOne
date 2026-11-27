@@ -4,7 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
-/** 失败或缺包时保留已有离线收藏，成功源只替换自己已知的索引。 */
+/** 汇总各音源的红心歌曲：拉取失败或没装包时保留旧数据，只覆盖拉取成功的音源。 */
 internal suspend fun MusicFavoriteRepository.likedTrackIdsAcrossSources(previous: Set<String>): Set<String> = coroutineScope {
     val results = favoriteSources().map { source ->
         val known = knownFavoriteIds(source)

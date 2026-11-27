@@ -1,6 +1,6 @@
 package com.musicone.source.bilibili
 
-/** 只描述平台实际给出的编码；采样率、位深等待音轨解析，不填默认规格。 */
+/** 只按接口返回的编码字段显示格式，采样率和位深等播放器解析后再展示，不写默认值。 */
 internal fun biliStreamCodecLabel(stream: BiliAudioStream, dolby: Boolean): String = when {
     dolby -> "Dolby Atmos"
     stream.codecs.startsWith("mp4a", true) -> "AAC"

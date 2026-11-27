@@ -80,7 +80,7 @@ internal class KugouSourcePlayback(private val state: () -> KugouPackageState) :
             catch (failure: TrackUnavailableException) { access.copy(playable = false, reason = failure.message) }
             catch (failure: Exception) {
                 if (failure.stopsPlaybackFallback()) throw failure
-                // 媒体探测临时失败不撤销刚确认的收费标记，也不改写已有可播放状态。
+                // 音频探测临时失败时，保留原权限和收费标记不改动
                 access
             }
         }

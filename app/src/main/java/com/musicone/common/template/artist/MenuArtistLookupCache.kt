@@ -7,7 +7,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-/** 菜单关闭不取消头像准备，同一宿主内按音源和歌手合并请求并保留已准备内容。 */
+/** 关菜单时不取消正在查的歌手头像，同一歌手并发请求合并去重并缓存结果。 */
 internal class MenuArtistLookupCache<T>(private val scope: CoroutineScope) {
     private val requests = LinkedHashMap<String, Deferred<Result<T>>>()
     private val ready = LinkedHashMap<String, T>()

@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 统计真正推进的墙钟时长，seek位置和暂停时间不算已经收听。 */
+/** 统计用户实际听了多久，拖动进度条和暂停的时间不算在内。 */
 internal class PlaybackPlayedDuration {
     private var generation = Long.MIN_VALUE
     private var previousMs = 0L

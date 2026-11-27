@@ -5,7 +5,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import org.json.JSONObject
 
-/** 对接已有 next 消费入口，反馈只有宿主显式调用时才发送。 */
+/** 酷狗私人电台服务实现，切歌和不喜欢反馈按宿主调用触发。 */
 internal class KugouSourceRadio(
     private val state: () -> KugouPackageState,
     private val client: KugouRadioClient = KugouRadioClient(),

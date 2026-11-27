@@ -8,7 +8,7 @@ import com.musicone.source.sdk.SourceCollection
 import com.musicone.source.sdk.SourceComponentScope
 import com.musicone.source.sdk.SourceLoadedHomeComponents
 
-/** 两张卡直接复用公共日推和公共封面歌单卡，附加信息始终留在封面内。 */
+/** 每日推荐和最近播放两张个人卡片，复用公共卡片样式。 */
 @Composable
 internal fun KugouHomePersonalCards(
     state: KugouHomeState, components: SourceComponentScope, daily: SourceCollection,

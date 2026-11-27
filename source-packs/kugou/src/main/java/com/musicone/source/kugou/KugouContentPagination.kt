@@ -3,7 +3,7 @@ package com.musicone.source.kugou
 import com.musicone.source.sdk.SourceCursorRequest
 import org.json.JSONObject
 
-/** 游标绑定查询、账号和页大小，换号或换分类后不能继续旧请求。 */
+/** 分页游标里绑定查询范围、账号和页大小，切号或切分类后旧游标自动失效。 */
 internal data class KugouContentPage(val page: Int, val size: Int, val scope: String, val owner: String,
     val previous: String = "", val received: Long = 0) {
     fun next(result: JSONObject, rows: List<JSONObject>): String? {

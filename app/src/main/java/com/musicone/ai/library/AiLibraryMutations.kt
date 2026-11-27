@@ -6,7 +6,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-/** 所有确认均在同一资料库事务内校验、写入和记账，重复确认返回同一执行结果。 */
+/** 校验、写入和记录收据都在同一个数据库事务里完成，重复点击确认会直接返回上次的执行结果。 */
 internal class AiLibraryMutations(
     private val store: MusicLibraryStore,
     private val validateTracks: (List<MusicTrack>) -> Unit = {},
@@ -56,7 +56,7 @@ internal class AiLibraryMutations(
     suspend fun prepareAdd(id: String, tracks: List<MusicTrack>): JSONObject = store.aiTransaction { db ->
         require(tracks.isNotEmpty()) { "请选择歌曲" }
         val change = change(db, id)
-        // 隐藏成员也是预先存在的成员，AI 不恢复、不覆盖它们。
+        // 被用户手动移出过（隐藏）的订阅曲目也算已存在，AI 不自动恢复也不覆盖。
         val existing = db.rawQuery("SELECT song_id FROM members WHERE playlist_id=?", arrayOf(id)).use { rows ->
             buildSet { while (rows.moveToNext()) add(rows.getString(0)) }
         }
@@ -158,7 +158,7 @@ internal class AiLibraryMutations(
                 require(db.aiVersion(id) == c.getLong("version")) { "歌单在确认前发生变化，请重新生成计划" }
             }
         }
-        // 同一次写事务内复核来源会话，校验失败时整批保持未执行。
+        // 在同一个写事务里复核音源账号状态，校验不过整批回滚。
         validateTracks(changes.flatMap { it.optJSONArray("tracks")?.objects().orEmpty() }.map { it.toStoredTrack() ?: error("歌曲资料无效") })
         validateTracks(changes.filter { it.optString("action") == "restore" }.flatMap {
             it.getJSONArray("songSnapshot").objects().map { song -> JSONObject(song.getString("data")).toStoredTrack() ?: error("歌曲资料无效") }

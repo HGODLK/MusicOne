@@ -127,7 +127,7 @@ internal class NeteaseApiClient(
         ).body
         response.requireSuccess("搜索失败")
         val tracks = response.parseSearchTracks(hasVipAccess)
-        // 搜索缺少歌曲权限时批量补详情，未知状态保留可重试，不能按 VIP 标签猜测版权。
+        // 搜索结果没返回播放权限时，批量查一次歌曲详情补齐；查不到就保持未知，不要光靠 VIP 标记猜权限
         val missing = response.optJSONObject("result")?.optJSONArray("songs")?.let { songs ->
             (0 until songs.length()).mapNotNull { index ->
                 songs.optJSONObject(index)?.takeIf { it.optJSONObject("privilege") == null }
@@ -217,7 +217,7 @@ internal class NeteaseApiClient(
             request(JSONArray().put(trackId.toLong()))
         } catch (error: NeteaseApiException) {
             if (error.apiCode != 512) throw error
-            // 与开源接口保持一致，仅针对 512 兼容重复编号；重试仍需明确返回成功。
+            // 接口返回 512 时把 trackId 传两遍重试一次（开源方案的已知兼容写法）
             request(JSONArray().put(trackId.toLong()).put(trackId.toLong()))
         }
     }
@@ -271,7 +271,7 @@ internal class NeteaseApiClient(
         response.requireSuccess("播放地址获取失败")
         return try { response.toPlaybackSource(quality) }
         catch (error: NeteaseProtocolException) {
-            // 账号接口未成功时，匿名接口无地址不能证明账号没有播放权限。
+            // 带账号请求失败了，即使匿名接口也没拿到播放地址，也不能算账号没权限，优先把账号接口的错抛出去
             throw (accountFailure ?: error)
         }
     }

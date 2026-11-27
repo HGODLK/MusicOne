@@ -2,7 +2,7 @@ package com.musicone
 
 import com.musicone.source.sdk.*
 
-/** 模板导航只保存公开实体引用，不根据平台前缀猜测专辑。 */
+/** 把 SDK 实体转成模板歌单对象，只保留公开的实体引用，不靠 ID 前缀硬猜专辑。 */
 internal fun SourceEntity.asTemplatePlaylist(source: MusicSource): MusicPlaylist = MusicPlaylist(
     "${source.id}:album:${reference.id}", source, reference.name, "", description,
     attributes["trackCount"]?.toIntOrNull() ?: 0, artwork.startArgb, artwork.endArgb, artwork.mark,

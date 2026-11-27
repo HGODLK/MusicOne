@@ -9,7 +9,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** 完整列表只改变位移；过渡留白来自已排版的歌词段，不新增裁剪边界。 */
+/** 计算竖屏歌词展开/收起时的窗口平移路径，保证平滑衔接顶部页眉空间。 */
 internal class PhoneLyricsSpatialTravel {
     var blurProtection = LyricBlurProtection.HANDOFF
         private set

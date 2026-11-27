@@ -72,7 +72,7 @@ class KugouHomeControllerTest {
             assertEquals("kugou-saved", controller.state.value.daily.single().stableId)
             withTimeout(5_000) { entered.await() }
             assertEquals(0, networkCalls.get())
-            // 可见入口仍可正常完成原网络核对，不等待封面准备。
+            // 加载首页时不应该被后台封面预热卡住
             withTimeout(5_000) { controller.load().join() }
             assertEquals(1, networkCalls.get())
             assertEquals("kugou-saved", controller.state.value.daily.single().stableId)
@@ -273,7 +273,7 @@ class KugouHomeControllerTest {
         }
         val controller = KugouHomeController(scope, { KugouHomeOwner("42", 1) }, Discovery(), daily, store)
         try {
-            // 同日重启复用成功快照；显式刷新才进入网络核验。
+            // 同一天重启直接用缓存，手动刷新才重新联网
             controller.load().join()
             val job = controller.refreshDaily()
             withTimeout(5_000) { entered.await() }

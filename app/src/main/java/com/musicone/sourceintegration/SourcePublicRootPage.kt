@@ -11,7 +11,7 @@ import com.musicone.ReportPrimaryHeaderScroll
 import com.musicone.source.sdk.SourcePageRequest
 import com.musicone.source.sdk.SourceRootScrollPosition
 
-/** 一级公共页只向宿主页头交付动作，标题和图标继续共用根翻页进度。 */
+/** 嵌入一级页只把按钮回调交给宿主页头，标题和图标动画继续由宿主统一控制。 */
 internal class SourcePublicRootHeader(
     val onSearch: () -> Unit,
     val onSettings: () -> Unit,

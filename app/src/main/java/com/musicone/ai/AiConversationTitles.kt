@@ -4,7 +4,7 @@ import kotlinx.coroutines.*
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 标题概括完整首条提问，后台短请求关闭思考和联网，不阻塞正文。 */
+/** 根据首条提问在后台异步生成会话标题（关掉思考和联网），不阻塞正常回复。 */
 internal class AiConversationTitles(private val scope: CoroutineScope, private val session: AiSessionStore,
     private val client: AiProviderClient, private val refresh: suspend () -> Unit) {
     private val pending = mutableSetOf<String>()
@@ -33,7 +33,7 @@ internal fun aiNormalizeConversationTitle(text: String): String {
     return aiEllipsizeConversationTitle(title)
 }
 
-/** 字数限制也保留省略标记，避免短标题在宽屏上看起来像一句被硬切断的话。 */
+/** 超出字数时截断并补省略号，避免宽屏上看着像半截话。 */
 internal fun aiEllipsizeConversationTitle(title: String, limit: Int = 12): String {
     if (title.codePointCount(0, title.length) <= limit) return title
     return title.substring(0, title.offsetByCodePoints(0, limit - 1)) + "…"

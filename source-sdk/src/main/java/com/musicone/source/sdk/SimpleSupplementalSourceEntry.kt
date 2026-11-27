@@ -2,7 +2,7 @@ package com.musicone.source.sdk
 
 import androidx.compose.runtime.Composable
 
-/** 简易入口的静态信息；额外能力仅在确实提供服务时声明。 */
+/** 简易音源的基本信息；其他能力有实现再声明。 */
 data class SimpleSupplementalSourceInfo(
     val id: String,
     val name: String,
@@ -19,7 +19,7 @@ data class SimpleSupplementalSourceInfo(
         useCustomPages = false, requiresLogin = requiresLogin, permissions = permissions, presentation = presentation)
 }
 
-/** 只需实现解析和取源；复杂服务、音质及页面仍可逐项替换，不改变旧 SourceEntry。 */
+/** 简化版音源入口，只需实现解析和取流；其他服务、音质和页面按需替换，兼容旧版 SourceEntry。 */
 abstract class SimpleSupplementalSourceEntry(info: SimpleSupplementalSourceInfo) : SourceEntry, SourceSupplementalPageProvider {
     final override val descriptor = info.descriptor()
     final override val implementedCapabilities get() = descriptor.capabilities
@@ -32,7 +32,7 @@ abstract class SimpleSupplementalSourceEntry(info: SimpleSupplementalSourceInfo)
     protected open fun onInitialize(environment: SourceEnvironment) {}
     protected open fun onClose() {}
 
-    /** 默认单档不推测编码或无损规格，多档由音源提供稳定标识及明确回退顺序。 */
+    /** 默认只提供单档，不猜测编码或无损规格；多档音质需由音源给出固定 ID 和回退顺序。 */
     protected open val qualityDefinitions: List<SourceQualityDefinition> = listOf(SourceQualityDefinition("default", "默认音质", "默认"))
     protected open val defaultQualityId: String get() = qualityDefinitions.first().id
     protected open fun fallbackQualityIds(preferredId: String): List<String> = listOf(preferredId)

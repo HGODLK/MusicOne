@@ -26,7 +26,7 @@ internal fun TrackThemeIdentity?.sharesThemeOwner(other: TrackThemeIdentity?): B
 
 internal val LocalCurrentTrackTheme = staticCompositionLocalOf { CurrentTrackTheme() }
 
-/** 只有当前曲目解析一次；列表和队列只消费结果，不各自调用外包。 */
+/** 只对当前播放曲目解析一次主题色，列表和队列直接复用结果，避免重复调用音源扩展。 */
 @Composable
 internal fun CurrentTrackThemeHost(playback: MusicPlaybackRuntime, content: @Composable () -> Unit) {
     val context = LocalContext.current

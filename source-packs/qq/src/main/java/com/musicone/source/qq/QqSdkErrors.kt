@@ -3,7 +3,7 @@ package com.musicone.source.qq
 import com.musicone.source.sdk.SourceOperationException
 import com.musicone.source.qq.internal.*
 
-/** 宿主只依据公开错误类别决定重试，不能识别包私有异常类型。 */
+/** 把 QQ 包内异常转换成宿主可识别的公开错误类型，方便宿主决定是否重试或提示登录。 */
 internal fun Exception.toQqSdkFailure(): Exception = when {
     this is SourceOperationException -> this
     this is QqCredentialExpiredException || this is PlatformApiException && apiCode in setOf(301, 401) ->

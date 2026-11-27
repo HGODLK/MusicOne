@@ -28,7 +28,7 @@ internal class KugouApiClient(private val membership: KugouMembershipClient = Ku
         if (query.isBlank()) return emptyList()
         val value = query.trim().urlEncoded()
         val headers = kugouMobileHeaders() + ("x-router" to "mobilecdn.kugou.com")
-        // 专辑和歌单属于附加结果，任一接口波动时仍保留歌曲搜索及另一个已成功分类。
+        // 专辑和歌单搜索失败时不影响单曲结果，能拉回哪个就展示哪个
         val albums = runCatchingCancellable { JSONObject(PlatformHttp.get(
             "$ALBUM_SEARCH_API?keyword=$value&format=json&page=1&pagesize=10", cookie, headers,
         ).text).parseKugouSearchAlbums() }.getOrDefault(emptyList())
@@ -156,7 +156,7 @@ internal class KugouApiClient(private val membership: KugouMembershipClient = Ku
     ): PlaybackSource {
         val login = cookie.requiredKugouSession()
         val credentials = cookie.cookieValues()
-        // 按当前目标档位换票，不再一次请求所有档位。
+        // 只请求当前目标音质的播放地址，不再一次把所有档位全查一遍
         val lowerHash = hash.lowercase()
         val key = KugouProtocol.md5(lowerHash + KugouProtocol.liteKey + KugouProtocol.appId + login.mid + login.userId)
         val body = JSONObject()
@@ -223,7 +223,7 @@ internal class KugouApiClient(private val membership: KugouMembershipClient = Ku
     ): JSONObject {
         val cacheKey = "${track.id}:${login.userId}:${login.token.hashCode()}:${quality.kugouQuality()}:$hash"
         privilegeCache[cacheKey]?.takeIf { System.currentTimeMillis() - it.first < 30_000L }?.second?.let { return it }
-        // 单档结果只能复用于同一账号、资源与目标音质。
+        // 缓存按账号、资源 hash 和目标音质隔离，不跨档位或跨账号复用
         return synchronized(privilegeCache) {
             privilegeCache[cacheKey]?.takeIf { System.currentTimeMillis() - it.first < 30_000L }
                 ?.second?.let { return@synchronized it }

@@ -42,11 +42,11 @@ internal fun JSONObject.toStoredPlaylist(): MusicPlaylist {
                     value.optString("artwork").takeIf(String::isNotBlank),
                     isOwned = value.optBoolean("owned"), isPlatformFavorites = value.optBoolean("platformFavorites"),
                     providerData = value.storedProviderData().toMutableMap().apply {
-                        // 旧目录号只迁入不透明数据，不由公共缓存层解释平台业务。
+                        // 兼容旧版 directory 字段，原样塞进 providerData 交给对应音源包自己处理。
                         if ("qqDirectoryId" !in this && value.optLong("directory") > 0L) {
                             put("qqDirectoryId", value.optLong("directory").toString())
                         }
-                        // 最早专辑快照只有旧稳定ID，在读取边界补成通用实体标记。
+                        // 兼容最早期的专辑缓存，按旧 ID 前缀补上通用的 album 标记。
                         if (value.optString("id").startsWith("qq-album-")) {
                             put("templateEntityKind", "album")
                             put("templateEntityId", value.optString("id").removePrefix("qq-album-"))

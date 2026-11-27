@@ -339,7 +339,7 @@ private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
             }
 
             if (settingsNavigation.destination == SettingsDestination.CLOSED) {
-                // 详情页玻璃仍采样根背景；详情层只进入迷你播放器的独立合成录制层。
+                // 详情页毛玻璃依然采样根背景；详情页本身只录给迷你播放器采样。
                 Box(Modifier.fillMaxSize().playerStableStatusBarsPadding()) {
                     EntityPageHost(entityNavigation, state, viewModel, barMeasurements.detailInset,
                         mainLibraryState.createdPlaylists, { mainLibraryViewModel.refresh() })
@@ -361,7 +361,7 @@ private fun MusicOneContent(viewModel: MusicPlaybackRuntime) {
 
             run {
                 val publicRootHeader = publicScene?.rootHeader
-                // AI 有自己的顶栏，进入时卸下根页透明命中层，离开后沿原动效恢复。
+                // AI 助手自带顶栏，进来时先卸掉根页的透明点击层，退出后再恢复。
                 if (settingsNavigation.destination != SettingsDestination.AI_ASSISTANT)
                     com.musicone.sourceintegration.SourcePublicSceneHeader(publicScene)
                 if (com.musicone.sourceintegration.sourcePrimaryHeaderVisible(sourcePages.isCustom, sourcePages.atRoot,

@@ -2,7 +2,7 @@ package com.musicone.source.runtime
 
 import kotlin.coroutines.CoroutineContext
 
-/** 同步宿主边界携带的租约；异步接收者须保存它，并在真正执行动作前重新检查。 */
+/** 跨越宿主边界时附带的租约；异步接收方需保存并在实际执行前再次校验。 */
 class SourceHostCallbackGuard private constructor(private val commitGuard: SourceCommitGuard, val sourceId: String?) {
     val context: CoroutineContext get() = commitGuard
     fun isCurrent(): Boolean = runCatching { commitGuard.check(); true }.getOrDefault(false)

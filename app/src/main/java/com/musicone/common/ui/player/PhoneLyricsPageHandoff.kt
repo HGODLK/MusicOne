@@ -2,7 +2,7 @@ package com.musicone
 
 import androidx.compose.ui.geometry.Offset
 
-/** 歌词沿用整页飞行中心的真实行程，字形和固定阅读视口不随迷你控件缩放。 */
+/** 整页飞行时让歌词跟着页面中心移动，但保持字形和阅读视口原尺寸，不随迷你条一起缩放。 */
 internal fun phoneLyricsPageOffset(motion: PageMotion, flight: PhonePlayerFlightRotation?, rotation: Int): Offset {
     if (!motion.moving) return Offset.Zero
     val source = playerSourceAnchor(motion, "surface")?.bounds ?: return Offset.Zero

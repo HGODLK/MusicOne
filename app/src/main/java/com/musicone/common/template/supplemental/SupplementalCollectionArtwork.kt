@@ -5,7 +5,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
-/** 每轮目录只处理已组合的卡片；离屏取消后允许再次进入时重试。 */
+/** 按需加载滑进屏幕的收藏夹封面，滑出屏幕取消，下次再滑进来还能重新拉。 */
 internal class SupplementalCollectionArtworkLoader(private val source: SourceRemoteCollectionArtwork) {
     private data class Request(val generation: Long, val revision: Long, val identity: TrackIdentity)
     private val completed = mutableMapOf<Request, SourceArtwork?>()

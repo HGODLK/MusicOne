@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** 连续进度只派生开关状态；开合中间帧不再让整个舞台参与重组。 */
+/** 从连续的歌词开合进度派生出离散的开关状态，避免动画每帧都触发整个舞台重组。 */
 internal data class PhonePlayerStagePresentation(
     val lyricsActive: Boolean,
     val fullyOpen: Boolean,

@@ -2,7 +2,7 @@ package com.musicone
 
 import kotlinx.coroutines.CoroutineScope
 
-/** 超时只撤掉目标的隐藏资格，沿既有互补渐变从最后实际来源交给同一歌词窗口。 */
+/** 切歌歌词窗口准备超时后的兜底：解除隐藏并从当前可见的旧窗口直接渐变切换到目标窗口。 */
 internal suspend fun recoverLyricWindow(target: LyricWindow, sources: List<LyricWindow>,
     motion: LyricWindowMotion, held: LyricHeldTrackTransition, scope: CoroutineScope,
     epoch: LyricDrawEpoch?, travel: Float) {

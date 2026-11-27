@@ -60,7 +60,7 @@ internal class KugouSourceAuthenticationPage(private val state: () -> KugouPacka
                 message = challenge?.message
             }
         }
-        // 沿用原版扫码页进入即加载的行为，切回扫码时创建新的挑战。
+        // 切到扫码登录时自动拉取新二维码
         LaunchedEffect(method) {
             if (method == "qr" && account.status != SourceSessionStatus.AUTHENTICATED) startQr()
         }

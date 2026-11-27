@@ -1,5 +1,6 @@
 package com.musicone
 
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -98,8 +99,15 @@ internal fun SettingsCard(content: @Composable () -> Unit) {
 
 /** 统一的开关设置行：标题、说明与开关，整行可点。 */
 @Composable
-internal fun SettingsSwitchRow(title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).toggleable(checked, role = Role.Switch, onValueChange = onChange)
+internal fun SettingsSwitchRow(title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) =
+    SettingsSwitchRow(title, subtitle, checked, enabled = true, onChange = onChange)
+
+/** 可置灰的开关设置行：不可用时整行降低不透明度且不响应点按。 */
+@Composable
+internal fun SettingsSwitchRow(title: String, subtitle: String?, checked: Boolean, enabled: Boolean,
+    onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).alpha(if (enabled) 1f else .38f)
+        .toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onChange)
         .padding(horizontal = SettingsRowInset, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)

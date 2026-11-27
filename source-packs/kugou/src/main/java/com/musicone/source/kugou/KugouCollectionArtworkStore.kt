@@ -3,7 +3,7 @@ package com.musicone.source.kugou
 import org.json.JSONObject
 import java.io.File
 
-/** 保存已核对的最新加入歌曲封面；目录和详情共用，排序不会改变封面。 */
+/** 缓存歌单里最新加入那首歌的封面（目录和详情页共用，改排序不影响封面）。 */
 internal class KugouCollectionArtworkStore(private val directory: File) {
     private fun customFile(owner: String, target: KugouManagedCollection) = File(directory,
         "${KugouProtocol.md5("$owner:${target.listId}")}.custom.json")

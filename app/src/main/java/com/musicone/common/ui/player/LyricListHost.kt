@@ -12,7 +12,7 @@ import androidx.compose.ui.node.GlobalPositionAwareModifierNode
 import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.platform.InspectorInfo
 
-/** 列表迁移时使旧滚动与预取句柄同步失效，正常挂载期间仍使用原预取策略。 */
+/** 监听歌词列表挂载状态，节点迁移或重新挂载时使旧的滚动租约失效。 */
 @OptIn(ExperimentalFoundationApi::class)
 internal class LyricListHost {
     var revision by mutableIntStateOf(0)
@@ -104,7 +104,7 @@ private class LyricListHostNode(var pane: LyricWindowPane, var turn: PhonePlayer
         pane.playbackStep.holdHostPosition(false)
     }
     override fun onGloballyPositioned(coordinates: LayoutCoordinates) {
-        // 同尺寸的正反横屏也会更换空间方向，固定宿主不能停留在旧的暂停资格。
+        // 正反横屏尺寸相同但方向变了，需要把 rotation 加入依赖避免停在旧的暂停状态。
         pane.listHost.place(coordinates)
         pane.playbackStep.holdHostPosition(false)
     }

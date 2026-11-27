@@ -4,7 +4,7 @@ import android.content.Context
 import com.musicone.source.sdk.SourceCursorRequest
 import com.musicone.sourceintegration.*
 
-/** 相似推荐标题与曲目由包完整交付，模板不解释远端编号。 */
+/** 拉取单首种子的相似推荐，标题和歌曲列表都直接用音源包返回的结果。 */
 internal class MainSourceSimilarRecommendationRepository(private val context: Context) {
     suspend fun load(baseTrack: MusicTrack, amount: Int = MAIN_SOURCE_SIMILAR_SIZE): MainSourceSimilarRecommendation {
         val discovery = requireNotNull(SourcePackageController.get(context).running(baseTrack.source.id)?.entry?.discovery)

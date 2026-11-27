@@ -1,6 +1,6 @@
 package com.musicone.source.sdk
 
-/** 一次解析的歌曲直接用于公共选择和导入；被淘汰的临时结果按原输入重新解析。 */
+/** 解析过的单曲可直接用于选择和导入；临时结果被淘汰后再按原输入重新解析。 */
 internal class SimpleSupplementalContents(
     private val sourceId: String,
     private val parse: suspend (String) -> List<SourceTrackDetails>,
@@ -28,7 +28,7 @@ internal class SimpleSupplementalContents(
     override suspend fun detail(content: SourceContent): SourceContent {
         if (content.payload.format != INPUT_FORMAT) return content
         val tracks = snapshot(content)
-        // 缓存淘汰后的新解析同时更新内容资料及单曲入口，不能继续沿用旧曲目。
+        // 缓存淘汰后重新解析时，要同步更新内容信息和单曲入口，不能沿用旧曲目。
         return content.copy(title = tracks.first().track.title, artwork = tracks.first().artwork,
             durationMs = tracks.sumOf { it.durationMs }, playableTrack = tracks.singleOrNull())
     }

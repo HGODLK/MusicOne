@@ -1,6 +1,6 @@
 package com.musicone.source.qq.internal
 
-/** 接收腾讯验证结果；只有 ret=2 算用户取消，题目结束后页面自行收起时交由宿主续接并由服务器判断。 */
+/** 监听腾讯验证码回调：只有 ret=2 算用户取消；页面自己关掉时交给上层重试原请求，让服务端确认是否通过。 */
 internal val qqCaptchaProofListener = """
     (function() {
       if (window.__musicOneProofListener) return;

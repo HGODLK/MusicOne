@@ -11,7 +11,7 @@ import android.text.style.MetricAffectingSpan
 import kotlin.math.max
 import kotlin.math.min
 
-/** 圆角行内代码保留原生换行与选择，不将整段替换成不可断行的图片或标签。 */
+/** 用 Span 画行内代码的圆角底色，保留 TextView 原生的自动换行和长按选词能力。 */
 internal class AiInlineCodeSpan(private val ink: Int, private val background: Int, private val density: Float) :
     MetricAffectingSpan(), LineBackgroundSpan {
     override fun updateMeasureState(paint: TextPaint) {

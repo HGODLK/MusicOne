@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 首页刷新入口统一分发，手动强制更新，自动触发由各内容的成功日期判定。 */
+/** 统一触发首页各区块刷新：手动刷新强制重拉，自动刷新按各自上次成功日期判断是否过期。 */
 internal class MainSourceHomeRefresh(
     private val recommendedTracks: (Boolean) -> Unit,
     private val similarRecommendations: (Boolean) -> Unit,

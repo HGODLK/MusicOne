@@ -1,6 +1,6 @@
 package com.musicone.source.kugou
 
-/** 基于原始云端快照叠加收藏操作，失败撤销时封面、歌曲和数量一并恢复。 */
+/** 在云端歌单快照基础上做本地乐观更新（收藏/取消收藏），请求失败时可以整套回滚。 */
 internal class KugouFavoriteArtwork {
     private var cloud: MusicPlaylist? = null
     private var previous: Map<String, Pair<MusicTrack, Boolean>> = emptyMap()
@@ -20,7 +20,7 @@ internal class KugouFavoriteArtwork {
         }
         previous = relevant
         val playlist = cloud ?: return null
-        // 云端已有歌曲的移除撤销保留原位，只有新收藏插到最前面。
+        // 撤销“取消收藏”时把歌放回原位置，只有新收藏的歌插到最前面
         val existingIds = playlist.tracks.mapTo(hashSetOf()) { it.id }
         val kept = playlist.tracks.filterNot { orderedChanges[it.id]?.second == false }
             .map { orderedChanges[it.id]?.first ?: it }

@@ -22,7 +22,7 @@ internal class SupplementalContentEntry(val collection: SourceRemoteCollection, 
     internal val mutex = Mutex()
 }
 
-/** 游标只由音源解释；刷新失败保留已显示的多页内容与原重试位置。 */
+/** 收藏夹内容分页仓库：游标交给音源解释，刷新失败时保留已拉出来的页面和重试位置。 */
 internal class SupplementalContentRepository(private val source: SourceRemoteCollections,
     private val revision: () -> Long) {
     private val entries = mutableMapOf<Triple<Long, String, String>, SupplementalContentEntry>()

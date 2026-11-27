@@ -37,7 +37,7 @@ internal fun offlineStandardQuality(stored: AudioQuality, recorded: Boolean, med
     else -> AudioQuality.LOSSLESS
 }
 
-/** 完整字节仍需排除试听；待校验的旧记录可以直接用本地媒体时长补验。 */
+/** 就算字节下全了也要排除试听版；旧版还没校验过的记录可以直接读本地文件时长补验。 */
 internal fun verifyOfflineRecord(
     record: JSONObject?, completeBytes: Boolean, readDuration: () -> Long?, saveVerification: (Boolean) -> Unit,
 ): Boolean {
@@ -49,7 +49,7 @@ internal fun verifyOfflineRecord(
     return full
 }
 
-/** 保存目录文案快照，包被卸载或目录更新后仍保留缓存的真实档位和说明。 */
+/** 把音质名称和说明一起存进记录，就算以后卸载音源包也能正常显示当时的音质标签。 */
 internal fun JSONObject.putStoredQuality(quality: AudioQuality): JSONObject = put("quality", quality.name).apply {
     if (quality.isCustom) {
         put("qualityLabel", quality.label).put("qualityCompactLabel", quality.compactLabel)

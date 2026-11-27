@@ -16,7 +16,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 
-/** 固定测量头图和内容，只在放置阶段响应折叠距离，避免拖动时反复测量整页。 */
+/** 头图和内容区只测一次，折叠距离只在 layout 放置阶段生效，避免拖动时反复触发整页重新测量。 */
 @Composable
 internal fun ArtistCollapsingLayout(
     heroHeight: Dp,

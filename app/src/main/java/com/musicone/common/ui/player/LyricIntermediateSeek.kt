@@ -7,7 +7,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
-/** 只接管开合中途的 seek；位置暂存和实时焦点分别处理。 */
+/** 歌词页展开/收起中途拖动或点击进度条时的接管控制器，负责暂停列表跟随并锁定目标行。 */
 internal class LyricIntermediateSeek(initialRevision: Long, initialCommitRevision: Long = 0L) {
     var engaged by mutableStateOf(false)
         private set
@@ -51,7 +51,7 @@ internal class LyricIntermediateSeek(initialRevision: Long, initialCommitRevisio
             revision++
             requestedLine = if (newTap) tapLine else null
             if (newTap || seeking && !wasSeeking) {
-                // 新输入取代上一轮提交保护，向后拖动也必须立即跟随最新预览句。
+                // 新的拖动或点击会取消上一轮提交保护，让歌词立刻跟随最新目标句。
                 protectingCommit = false
                 pendingRequest?.targetReady?.complete(Unit)
                 pendingRequest = null
@@ -66,7 +66,7 @@ internal class LyricIntermediateSeek(initialRevision: Long, initialCommitRevisio
             requestedLine = commitLine
             protectingCommit = true
         } else if (protectingCommit) {
-            // 正式进度未追上时维持目标保护，追上或自然推进到下一句后解除，不长期锁死。
+            // 播放器正式进度还没追上 seek 目标前先锁住高亮，追上后自动解除。
             val target = requestedLine
             if (target == null || current >= target) {
                 requestedLine = null
@@ -132,14 +132,14 @@ internal fun LyricIntermediateSeekEffect(
         onOwnership(state.engaged && enabled)
         if (!wasEngaged && state.engaged) onTakeover()
         if (state.engaged && enabled) {
-            // 接管期间保持目标句为唯一有效目标，杜绝旧焦点闪现与错误灭灯。
+            // 接管期间强制保持目标句高亮，防止旧焦点闪现或灭灯。
             controller.updatePlaybackLine(state.target(current), presentDuringTransition = true)
         }
         pane.playbackStep.holdPosition(state.holding)
     }
     DisposableEffect(pane) { onDispose { pane.playbackStep.holdPosition(false) } }
     DisposableEffect(controller) { onDispose { onOwnership(false) } }
-    // 连续输入只改目标，不取消并重建寻焦，保留同一列表的位移和速度。
+    // 连续拖动时只更新目标行，不取消重建滚动协程，保持列表位移和速度连续。
     LyricAnimationEffect(controller, enabled) {
         if (!enabled) return@LyricAnimationEffect
         val owner = state.attachOwner()
@@ -160,7 +160,7 @@ internal fun LyricIntermediateSeekEffect(
                         windowVelocity = { latestWindowVelocity() })
                     when (result) {
                         LyricIntermediateSeekResult.ALIGNED -> {
-                            // 当前实测位置已经到位，旧入场锚点不能再启动一次补滚。
+                            // 已经滚动到位，通知入场对齐逻辑直接结束，不要再补滚一次。
                             latestAligned()
                             val target = state.target(latestCurrent)
                             controller.updatePlaybackLine(target, presentDuringTransition = true)
@@ -176,7 +176,7 @@ internal fun LyricIntermediateSeekEffect(
                                 onTargetReady = { state.targetReady(requestRevision) },
                                 prepareTarget = { it.transitionHistory.releaseForSeek() },
                                 positionHeld = { state.holding })
-                            // 不等待展开或跨屏动画结束，目标列表立即参与同一寻焦过程。
+                            // 跨屏跳转启动后直接进入下一轮循环，新列表会立刻接手对齐。
                         }
                         LyricIntermediateSeekResult.RELEASED -> Unit
                     }

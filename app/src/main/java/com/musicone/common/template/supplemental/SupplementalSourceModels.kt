@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.compose.runtime.*
 import com.musicone.source.runtime.SourceInstance
 
-/** 设置层拥有已访问补充页的业务状态，层级切换只卸载视图，不丢弃输入和导航。 */
+/** 在设置层缓存各补充音源的页面状态，切去别的设置页再回来时保留输入内容和浏览位置。 */
 internal class SupplementalSourceModels {
     private val models = mutableMapOf<String, Pair<SourceInstance, SupplementalSourceModel>>()
 

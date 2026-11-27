@@ -37,7 +37,7 @@ internal fun MainSourceHomeText(
     val base = MaterialTheme.typography.bodyMedium.copy(
         fontWeight = if (emphasis) FontWeight.SemiBold else FontWeight.Normal,
     )
-    // 卡片层提供实际排版宽度，标题、歌手和推荐文案共用一次约束读取。
+    // 由外层卡片统一量好宽度传进来，避免标题、歌手和推荐文案各测一遍。
     val width = widthPx.coerceAtLeast(1)
     val maximum = if (emphasis) {
         if (compact) 16 else 18

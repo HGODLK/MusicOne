@@ -3,7 +3,7 @@ package com.musicone
 import androidx.compose.runtime.*
 import kotlinx.coroutines.flow.first
 
-/** 封面手势独立登记归位请求，不能用句号是否变化代替实际到位。 */
+/** 手势拖动歌词结束后登记一次回焦请求，确保列表真正滚回阅读锚点（不能只看当前句号没变就跳过）。 */
 internal class LyricGestureRefocus {
     var pending by mutableStateOf(false)
         private set
@@ -59,7 +59,7 @@ internal fun LyricGestureRefocusEffect(
                 }
                 if (latestCurrent != index) continue
             }
-            // 跨屏或实测定位未完成，沿用双窗口动画；不能把失败当成已经到位。
+            // 目标行在屏外或屏内滚动未到位时，改走双窗口切换动画。
             val transition = controller.beginTransition(index,
                 if (index > pane.listState.firstVisibleItemIndex) 1f else -1f,
                 pane.listState.layoutInfo.viewportSize.height.toFloat(), this) ?: return@LyricAnimationEffect

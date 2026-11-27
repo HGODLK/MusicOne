@@ -40,7 +40,9 @@ private fun isOpeningPunctuationChar(c: Char): Boolean = when (c) {
 private fun isClosingOrClausePunctuationChar(c: Char): Boolean = when (c) {
     '”', '’', '』', '」', '》', '〉', ')', '）', ']', '】', '}', '〕', '⟩', '»',
     ',', '，', '.', '。', '、', '?', '？', '!', '！', ':', '：', ';', '；',
-    '…', '—', '–', '~', '～', '·' -> true
+    '…', '—', '–', '~', '～', '·',
+    // 阿拉伯语／波斯语常用标点：逗号、分号、问号、句号、百分号
+    '\u060C', '\u061B', '\u061F', '\u06D4', '\u066A' -> true
     else -> false
 }
 
@@ -76,11 +78,24 @@ private fun isPurePunctuation(text: String): Boolean {
     }
 }
 
+private fun isCombiningMark(c: Char): Boolean = when (Character.getType(c)) {
+    Character.NON_SPACING_MARK.toInt(),
+    Character.COMBINING_SPACING_MARK.toInt(),
+    Character.ENCLOSING_MARK.toInt(),
+    -> true
+    else -> false
+}
+
 private fun safeBoundary(text: String, index: Int): Int {
     if (index <= 0) return 0
     if (index >= text.length) return text.length
-    if (Character.isLowSurrogate(text[index])) return index - 1
-    return index
+    var pos = index
+    if (Character.isLowSurrogate(text[pos])) pos--
+    // 保护组合音标（如阿拉伯元音符号）与紧邻的 ZWNJ/ZWJ，避免从基础字母后切开导致孤立音标。
+    while (pos < text.length && (isCombiningMark(text[pos]) || text[pos] == '\u200C' || text[pos] == '\u200D')) {
+        pos++
+    }
+    return pos.coerceAtMost(text.length)
 }
 
 /**

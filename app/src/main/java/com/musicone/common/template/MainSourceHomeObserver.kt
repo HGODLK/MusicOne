@@ -18,7 +18,7 @@ import androidx.lifecycle.repeatOnLifecycle
 
 internal val LocalRecommendationVisible = androidx.compose.runtime.staticCompositionLocalOf { true }
 
-/** 只在首页可见时预取；滚动状态仍由可保存的网格持有。 */
+/** 监听首页滚动位置，只有首页可见且滑近底部时才触发下一页加载。 */
 @Composable
 internal fun ObserveMainSourceHome(
     viewModel: MainSourceHomeViewModel,

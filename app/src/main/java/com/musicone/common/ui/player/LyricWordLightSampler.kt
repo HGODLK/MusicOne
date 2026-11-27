@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 词级绘制值最高 60fps；低刷新率跟随实际帧，逐字亮度门控，端点及时收敛。 */
+/** 逐字高亮采样节流器：最高按 60fps 更新绘制值，低刷屏跟随实际帧率并在端点及时收敛。 */
 internal class LyricWordLightSampler(private val lowerEndpoint: Float = .7f) {
     private var sampledAt = Long.MIN_VALUE
     private var left = Float.NaN

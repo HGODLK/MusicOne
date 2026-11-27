@@ -8,7 +8,7 @@ import androidx.compose.ui.unit.IntSize
 
 internal enum class PlayerOpeningLayer { BODY, FLYING, GLASS }
 
-/** 只确认本轮显示列表引用已备好，不持有像素，也不增加一套动画或等待预算。 */
+/** 追踪展开前各飞行图层是否已完成首次录制，不持有像素，也不额外增加等待超时。 */
 internal class PlayerOpeningLayerPreparation {
     var generation by mutableIntStateOf(0)
         private set

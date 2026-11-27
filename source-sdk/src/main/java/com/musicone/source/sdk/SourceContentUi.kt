@@ -3,9 +3,9 @@ package com.musicone.source.sdk
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 
-/** 可选的公共页面与展示组件。专属页面可按需调用，不改变包的页面声明。 */
+/** 可选的公共页面和展示组件，自定义页面也可以按需调用。 */
 interface SourceContentUi {
-    /** 完整公共页面；默认页面选择不限制包主动打开或嵌入公共页面。 */
+    /** 完整公共页面入口；即使默认用自定义页面，也可以主动打开或嵌入公共页面。 */
     val pages: SourcePageUi? get() = null
     /** 可组合公共组件；宿主未提供此能力时返回空，调用方应提供兼容页面或标明所需宿主版本。 */
     val components: SourceComponentUi? get() = null

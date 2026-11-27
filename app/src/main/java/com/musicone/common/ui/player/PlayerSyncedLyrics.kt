@@ -52,8 +52,11 @@ internal fun PlayerSyncedLyricsContent(
     val progressLyricSeek = viewModel.seekPreview.progressLyricSeek.collectAsStateWithLifecycle()
     val progressCommit = viewModel.seekPreview.progressCommit.collectAsStateWithLifecycle()
     val lyricSeek = viewModel.seekPreview.lyricSeek.collectAsStateWithLifecycle()
+    // 自然过渡：交接后歌词仍停在上一首，等下一首开唱再按正常切歌切换（见 AutoMixLyricHold）。
+    val autoMixHeld = rememberAutoMixLyricHold(viewModel, track)
+    val latestAutoMixHeld by rememberUpdatedState(autoMixHeld)
     var current by remember {
-        mutableStateOf(request.presentation?.let {
+        mutableStateOf(autoMixHeld?.let(::autoMixHeldLyricWindow) ?: request.presentation?.let {
             LyricWindow(it).also { window ->
                 window.playback.update(viewModel.playbackProgress.value, viewModel.seekPreview.position.value,
                     browsing = viewModel.rapidTrackSwitch.presentation.value != null)
@@ -113,7 +116,7 @@ internal fun PlayerSyncedLyricsContent(
                 observedCommit = commit, latestCommit = viewModel.seekPreview.progressCommit.value)
         }
     }
-    // 页面显隐及方向变化不能重启跨曲事务；只在真正收到下一首请求时选择表现方式。
+    // 页面显隐和横竖屏切换不要重启切歌流程，只在真正切歌时决定用滑动还是渐变。
     LyricAnimationEffect(Unit) {
         outgoing.forEach {
             it.cleanup?.cancel()
@@ -122,27 +125,34 @@ internal fun PlayerSyncedLyricsContent(
         held.clearSlides()
         preparing = false
         if (!latestAnimateChange && !held.active) motion.show(current?.slot ?: 0f)
-        // 最新目标可取消仍在等待的准备，运动与旧页退出任务仍属于外层作用域。
+        // 新歌请求会取消上一首还在等待准备的任务，但正在播的滑动动画和旧窗口清理留在外层协程继续完成。
         snapshotFlow {
             Triple(requested, direction to (rapid?.phase == RapidTrackSwitchPhase.BROWSING),
-                playbackProgress.value.generation)
+                playbackProgress.value.generation to latestAutoMixHeld)
         }.collectLatest {
-            // 不可见歌词的新窗口避开开合和转向；重新可见立即准备，并只读取最后一首。
+            // 歌词不可见且正在开合或转向时，推迟构建新歌窗口；等动画停稳或歌词重新可见后再直接准备最新那首。
             if (deferHiddenLyricTrackChange(latestMoving, latestDisplayed)) {
                 snapshotFlow { !deferHiddenLyricTrackChange(latestMoving, latestDisplayed) }.first { it }
             }
-            // 通知只负责唤醒：旧请求与新轮次不能拼成一次虚假的切歌。
+            // snapshotFlow 只用来唤醒，真正处理时直接读取最新状态，防止旧请求和新播放轮次错配成一次假切歌。
             val pending = viewModel.rapidTrackSwitch.presentation.value
             val latest = currentLyricPresentationRequest(viewModel.state.value, pending) ?: return@collectLatest
+            val holding = viewModel.autoMixHeldLyricPlan()
+            // 下一首尚未开唱：保持上一首窗口，不触发切歌；释放时由保持状态变化再次唤醒。
+            if (pending == null && !preparing && holding != null && latest.trackId == holding.to.id &&
+                current?.presentation.isAutoMixHeldFrom(holding)) return@collectLatest
             val target = latest.presentation
-            val travelDirection = latest.direction
+            // 自然过渡释放后沿“下一首”方向交接，不受上一次手动切歌方向影响。
+            val travelDirection = AutoMixLyricHold.releasedPlan()?.takeIf {
+                pending == null && latest.trackId == it.to.id && current?.presentation.isAutoMixHeldFrom(it)
+            }?.let { TrackTransitionDirection.NEXT } ?: latest.direction
             val browsing = pending?.phase == RapidTrackSwitchPhase.BROWSING
             val progress = viewModel.playbackProgress.value
             val generation = progress.generation
             val animateChange = latestAnimateChange
             if (preparing && current?.presentation != target) {
-                // 尚未入场的旧目标不算来源；包括最新歌曲还没有缓存歌词的情况。
-                // 先接回真实画面，再处理新请求，不能留下永久隐藏的 current。
+                // 如果上一首还在屏外准备没进场，不能把它当成切歌来源；
+                // 先把屏幕上的旧窗口接回 current 再处理新歌，避免 current 一直隐藏。
                 val displayed = outgoing.lastOrNull()
                 displayed?.cleanup?.cancelAndJoin()
                 androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
@@ -152,14 +162,14 @@ internal fun PlayerSyncedLyricsContent(
                 }
             }
             if (target == null) {
-                // 无本地歌词的目标不造空白页，让已有窗口停止连续追踪后正常收束。
+                // 新歌暂时没有本地歌词时不创建空白窗口，让当前窗口停在原地自然收尾。
                 if (animateChange && !held.active) current?.let { motion.request(this, it.slot) }
                 return@collectLatest
             }
             if (!preparing && target.source == current?.presentation?.source && target.id == current?.presentation?.id &&
                 (pending == null || current?.playback?.positionMs == 0L) &&
                 (current?.playback?.generation == generation || current?.playback?.generation == -1L)) {
-                // 同一首中间歌曲的本地歌词稍后命中时，只替换内容，不重播整窗切歌动画。
+                // 同一首歌的歌词稍后加载完成时，直接原地更新内容，不重播切歌动画。
                 current?.presentation = target
                 if (animateChange && !held.active) current?.let { motion.request(this, it.slot, browsing) }
                 return@collectLatest
@@ -167,7 +177,7 @@ internal fun PlayerSyncedLyricsContent(
             if (pending == null && !held.active && !preparing && current?.let { motion.settledAt(it.slot) } == true) {
                 if (current?.refreshPlaybackRound(target, progress) == true) return@collectLatest
             }
-            // 本次渐变锁定到完成；外层停稳不会把同一首再补播一次滑动。
+            // 走渐变切歌时一直播到结束，即使外层动画停稳也不会对同一首歌再补播滑动。
             if (lyricTrackUsesFade(latestMoving, latestHeldTrackChange, held.active, latestDisplayed)) {
                 val source = current
                 val gesturePreparation = latestHeldTrackChange
@@ -192,13 +202,13 @@ internal fun PlayerSyncedLyricsContent(
                 preparing = false
                 outgoing.clear()
                 held.clearSlides()
-                // 来源已保存真实位移，只有新的歌词窗口使用正常阅读坐标。
+                // 旧窗口已各自冻结当前位移，新窗口直接落到正常阅读位置即可。
                 motion.show(incoming.slot)
                 return@collectLatest
             }
             val released = held.releaseForSlide()
             released.filter { it !in outgoing }.forEach(outgoing::add)
-            // 取消等待只淘汰隐藏目标，来源仍取正在退场的最后一个真实窗口。
+            // 还没进场的准备窗口直接丢弃，切歌来源仍取屏幕上正在退场的最后一个真实窗口。
             val pendingWindow = current?.takeIf { preparing && it.presentation == target }
             val previous = (released.lastOrNull() ?: if (preparing) outgoing.lastOrNull() else current)
                 .takeIf { animateChange }
@@ -227,7 +237,7 @@ internal fun PlayerSyncedLyricsContent(
             if (animateChange) {
                 if (returning != null) withFrameNanos { }
                 else if (!incoming.preparationBudget.await(incoming.ready, parentDeadline())) {
-                    // collectLatest 已取消过期请求；超时只恢复仍由本事务持有的目标。
+                    // 如果等待准备超时，仅当当前窗口仍是本轮目标时才执行兜底显示。
                     if (current !== incoming) return@collectLatest
                     preparing = false
                     recoverLyricWindow(incoming, outgoing.toList(), motion, held, heldScope, drawEpoch, travelPx)
@@ -240,7 +250,7 @@ internal fun PlayerSyncedLyricsContent(
                     old.cleanup?.cancelAndJoin()
                     val exitDirection = if (old.slot < incoming.slot) TrackTransitionDirection.NEXT
                         else TrackTransitionDirection.PREVIOUS
-                    // 全部窗口共用位移，快速连点和反向也不会让两页文字互相追越。
+                    // 所有窗口共用同一套位移坐标，快速连切或反向切歌时两页歌词不会互相穿插。
                     old.cleanup = launch {
                         snapshotFlow { lyricWindowOutside(motion.offset.value + old.slot, exitDirection) }
                             .first { it }
@@ -265,6 +275,8 @@ internal fun PlayerSyncedLyricsContent(
         if (resumeSignal == 0) return@LaunchedEffect
         kotlinx.coroutines.delay(LyricResumeRepairDelayMs)
         if (!latestDisplayed || rapid != null) return@LaunchedEffect
+        // 自然过渡保持中的上一首是有意停留，不当作“停在旧歌”修复。
+        if (current?.presentation.isAutoMixHeldFrom(viewModel.autoMixHeldLyricPlan())) return@LaunchedEffect
         repairLyricWindowAfterResume(requested, current, preparing, outgoing.toList(), motion, held, heldScope,
             drawEpoch, travelPx, viewModel.playbackProgress.value, viewModel.seekPreview.position.value) { window ->
             current = window
@@ -272,7 +284,7 @@ internal fun PlayerSyncedLyricsContent(
             outgoing.clear()
         }
     }
-    // 播放跟随可以先停，歌词仍在开合或转向时必须继续提交实际绘制帧。
+    // 播放跟随可以暂停，但歌词还在开合或转向动画期间，必须继续驱动绘制帧。
     BoxWithConstraints(modifier.lyricWindowFrameDrive(current != null &&
         (active || lyricsDisplayed || pageMoving || turnMoving || heldTrackChange))
         .playerLyricsRegion(active, topExtensionPx).onGloballyPositioned {
@@ -308,7 +320,9 @@ internal fun PlayerSyncedLyricsContent(
                 val stageRole = remember(window, held) {
                     { lyricTrackWindowStageRole(window, current, outgoing, held) }
                 }
-                val matchesPlayback = shown.id == track.id && shown.source == track.source
+                // 保持中的上一首窗口仍按正常播放态显示，只是不再接收进度（停在最后画面）。
+                val heldFrom = !old && shown.isAutoMixHeldFrom(autoMixHeld)
+                val matchesPlayback = heldFrom || shown.id == track.id && shown.source == track.source
                 val settled by remember(window, motion) {
                     derivedStateOf { motion.settledAt(window.slot) }
                 }
@@ -339,8 +353,11 @@ internal fun PlayerSyncedLyricsContent(
                     shown,
                     windowProgress,
                     { fraction ->
-                        viewModel.seekPreview.requestLyricSeek(track.id, fraction)
-                        viewModel.seekTo(fraction)
+                        // 保持中的上一首已不在播放，点它的歌词不能拿去跳转下一首。
+                        if (!heldFrom) {
+                            viewModel.seekPreview.requestLyricSeek(track.id, fraction)
+                            viewModel.seekTo(fraction)
+                        }
                     },
                     Modifier.fillMaxSize().lyricHeldWeight {
                         if (held.active) held.weight(window) else held.slidingWeight(window)
@@ -376,9 +393,9 @@ internal fun PlayerSyncedLyricsContent(
                     exitAlignment = if (old) null else exitAlignment,
                     openingAlignment = if (old || !matchesPlayback) null else openingAlignment,
                     residentStandby = residentStandby.takeIf { !old && matchesPlayback && !held.active },
-                    // 转向中渐变的零权重目标也必须主动定位，不能关闭跟随后只等待一份永远不到的就绪。
+                    // 转向期间正在渐变切歌的新窗口（此时权重为 0）也必须主动滚动定位，否则一直等不到就绪回调。
                     prepareWhileHidden = !old && !fallbackDisplay && (fadePreparing || !held.active && (preparing || (prepareWhileHidden && matchesPlayback))),
-                    // 切歌窗口仍按原锚点就绪；完整顶行仅用于单栏歌词开关入场。
+                    // 切歌新窗口直接按阅读锚点准备，只有竖屏展开歌词页时才需要提前铺满顶部行。
                     revealTopLineBeforeEntrance = revealTopLineBeforeEntrance && !old && !preparing && !fadePreparing,
                     limitTransitionHistory = geometry.limitTransitionHistory && (!old || held.active) && !preparing && !fadePreparing,
                     heldPreparation = if (heldPreparing) held.preparation else null,

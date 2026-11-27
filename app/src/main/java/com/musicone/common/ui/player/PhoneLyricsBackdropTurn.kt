@@ -6,7 +6,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
-/** 只保存模糊边界和权重，字形仍由同一份实时歌词图层提供。 */
+/** 转屏期间平滑过渡歌词上下模糊遮罩的边界和强度，字形仍由实时歌词图层提供。 */
 internal data class PhoneLyricsBackdropFrame(
     val top: Float, val topEnd: Float, val peak: Float,
     val bottomStart: Float, val bottomEnd: Float, val pivot: Float,

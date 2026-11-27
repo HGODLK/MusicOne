@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 角色随控制器事务更新，不依赖 UI 重组是否已追上歌词动画帧。 */
+/** 歌词窗口在跳转过渡中的角色（当前 / 退场 / 已脱离），实时按控制器状态计算位移和透明度。 */
 internal enum class LyricWindowStageRole {
     CURRENT, OUTGOING, DETACHED;
 
@@ -20,7 +20,7 @@ internal fun lyricWindowStageRole(paneId: Long, currentId: Long, outgoingId: Lon
     else -> LyricWindowStageRole.DETACHED
 }
 
-/** 外层变换和行内边界读取同一窗口身份，避免重组滞后一帧时错用目标坐标。 */
+/** 读取窗口当前的纵向位移，供外层图层和行内边缘渐隐共用，避免重组滞后导致坐标错位。 */
 internal fun LyricLayerTransitionController.paneTranslation(pane: LyricWindowPane): Float =
     lyricWindowStageRole(pane.id, currentPane.id, outgoingPane?.id).translation(
         state == LyricLayerTransitionState.PREPARING, drawingOffset, seekTravel)

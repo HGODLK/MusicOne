@@ -5,7 +5,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.audio.AudioSink
 
-/** 输出设备错误单独交接，不进入歌曲换票或跳过流程。 */
+/** USB 输出异常单独处理，不要当成歌曲播不了去刷新地址或自动跳下一首。 */
 internal class UsbOutputException(cause: Throwable) : IllegalStateException("USB 音频输出已中断", cause)
 
 @OptIn(UnstableApi::class)
@@ -19,7 +19,7 @@ internal fun isUsbOutputFailure(
             (it is AudioSink.WriteException || it is AudioSink.InitializationException)
     }
 
-/** 等待旧输出释放期间，用户的新曲目和播放意图始终优先。 */
+/** 等待旧 USB 输出释放期间，如果用户切了歌或点了暂停，以用户最新操作为准。 */
 internal suspend fun reprepareUsbRoute(
     player: Player,
     awaitSystemRoute: suspend () -> Unit = {},
@@ -37,7 +37,7 @@ internal suspend fun reprepareUsbRoute(
     player.prepare()
 }
 
-/** 写线程退出后才可调用；回收失败先关闭拥有该文件描述符的连接，再释放原生缓冲。 */
+/** 必须在写线程退出后调用；如果流释放失败，先关掉 USB 设备连接再释放底层缓冲。 */
 internal fun releaseUsbStream(release: () -> Unit, closeDevice: () -> Unit, releaseAfterClose: () -> Unit) {
     try {
         release()

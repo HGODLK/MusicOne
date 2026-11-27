@@ -2,7 +2,7 @@ package com.musicone.source.qq.internal
 
 import java.util.concurrent.CancellationException
 
-/** 目录接口可能把花体字母和 emoji 截成 16 位；只用可逐字核对的详情原文校正。 */
+/** 目录接口有时会把带花体字或 emoji 的歌单名截断，这里用详情接口返回的完整标题校正。 */
 internal fun restoreQqPlaylistTitles(
     playlists: List<MusicPlaylist>,
     detailTitle: (MusicPlaylist) -> String?,

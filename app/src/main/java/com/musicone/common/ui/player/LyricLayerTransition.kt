@@ -45,8 +45,8 @@ internal class LyricWindowPane(
 }
 
 /**
- * 同曲内图层定位控制器：
- * 负责管理来源窗口冻结、目标窗口屏外准备、布局/绘制确认就绪、图层滑动交接及窗口释放。
+ * 同曲内跨屏跳转歌词时的双窗口切换控制器：
+ * 冻结当前画面，在屏外准备好目标位置后再平滑滑入，最后释放旧窗口。
  */
 internal class LyricLayerTransitionController(
     val trackId: String,
@@ -106,7 +106,7 @@ internal class LyricLayerTransitionController(
         if (!previewActive) {
             previewActive = true
             previewPreparing = state != LyricLayerTransitionState.NORMAL
-            // 先使旧请求失效，旧任务的 finally 不得清除接管中的来源画面。
+            // 先递增 requestId 让旧任务失效，防止旧任务的 finally 把正在接管的画面清掉。
             requestId++
             val interrupted = animationJob
             animationJob = null
@@ -124,12 +124,12 @@ internal class LyricLayerTransitionController(
         suspend fun placePreview() {
             position(pane, line)
             pane.playbackStep.consume(line, enabled = false)
-            // 隐藏目标直接准备完整焦点，已显示的预览仍保留原行内接续效果。
+            // 屏外准备的新窗口直接重置到目标行焦点；当前可见窗口的预览则保留行内过渡效果。
             pane.playbackStep.reset(if (previewPreparing) line else null)
             pane.currentLine = line
         }
         val prepared = if (previewPreparing) {
-            // 未挂载列表的 scrollToItem 也可能等待首轮布局，定位和绘制必须共用预算。
+            // 未挂载列表调用 scrollToItem 可能会挂起等首轮布局，所以定位和绘制共用同一超时预算。
             withTimeoutOrNull(budget.remainingMillis(preparationDeadline())) {
                 placePreview()
                 budget.await(ready, preparationDeadline())
@@ -165,7 +165,7 @@ internal class LyricLayerTransitionController(
         if (owner != null && owner != previewOwner) return
         if (trackFadeFrozen) return
         if (!previewActive) return
-        // 隐藏预览尚未就绪时取消，继续显示已经呈现的窗口，不能放出未绘制目标。
+        // 如果屏外预览还没准备好就取消，切回当前已显示的旧窗口，避免闪出空白页。
         val displayed = if (state == LyricLayerTransitionState.PREPARING) outgoingPane ?: currentPane else currentPane
         seekOffset.snapTo(0f)
         if (owner != null && owner != previewOwner) return
@@ -182,7 +182,7 @@ internal class LyricLayerTransitionController(
         previewTarget = null
     }
 
-    /** 转屏准备取得唯一位置所有权；旧 seek 的收尾不能再覆盖本轮目标。 */
+    /** 转屏准备时中止正在进行的跳转动画并锁定当前行，防止旧 seek 收尾覆盖新布局。 */
     suspend fun settleForLayout(line: Int) {
         if (trackFadeFrozen) return
         val req = ++requestId
@@ -217,7 +217,7 @@ internal class LyricLayerTransitionController(
         }
     }
 
-    /** 跨曲退场保留已显示的 seek 姿态，旧任务的清理不能把它复位到另一个端点。 */
+    /** 切歌退场时冻结当前画面状态，防止旧的 seek 清理逻辑把退场中的歌词复位。 */
     fun freezeForTrackFade() {
         if (trackFadeFrozen) return
         trackFadeFrozen = true
@@ -251,8 +251,7 @@ internal class LyricLayerTransitionController(
         animationJob?.cancel()
         val preparation = beginLyricTracePhase("MusicOne:seek-prepare")
 
-        // 1. 冻结实际来源窗口
-        // 连续寻焦替换隐藏目标时，保留仍在屏幕上的来源，不能把未入场目标当成旧页。
+        // 1. 冻结当前屏幕上的旧窗口（连续跳转时不能把还在屏外准备的半成品当成旧窗口）
         val source = if (state == LyricLayerTransitionState.PREPARING) outgoingPane ?: currentPane else currentPane
         source.isFrozen = true
 
@@ -269,10 +268,10 @@ internal class LyricLayerTransitionController(
             state = LyricLayerTransitionState.PREPARING
         }
 
-        // 3. 来源隔离完成：即可提交音频 seek，不需要等整个滑动动画结束
+        // 3. 旧画面已冻结，此时就可以提交音频 seek，不用等滑动动画播完
         onSourceIsolated()
 
-        // 所有入口先进入收尾保护，首帧前被转屏或重新开关接管也必须解除来源冻结。
+        // 立刻启动协程进入 try-finally 保护，确保首帧前若被转屏或取消打断也能解除旧窗口冻结。
         animationJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             var completed = false
             var motion: LyricTracePhase? = null
@@ -301,7 +300,7 @@ internal class LyricLayerTransitionController(
                 if (positionHeld == null) seekOffset.animateTo(0f, lyricPlaybackMotionSpec(travel, purpose))
                 else runLyricHeldLayerTravel(seekOffset, travel, purpose, positionHeld)
 
-                // 8. 完成后由目标接管，再释放来源，主动补接最新播放句
+                // 8. 动画结束后切到目标窗口、释放旧窗口，并同步最新的播放行
                 if (requestId == req) {
                     Snapshot.withMutableSnapshot {
                         state = LyricLayerTransitionState.NORMAL
@@ -318,7 +317,7 @@ internal class LyricLayerTransitionController(
             } finally {
                 endLyricTracePhase(motion ?: preparation)
                 if (!completed && requestId == req) {
-                    // 普通寻焦同样回到最后已显示窗口，不能留下不可交互的冻结来源。
+                    // 跳转被取消时恢复到最后显示的窗口并解除冻结，避免列表卡死无法交互。
                     withContext(NonCancellable) {
                         seekOffset.snapTo(0f)
                         if (requestId == req) Snapshot.withMutableSnapshot {

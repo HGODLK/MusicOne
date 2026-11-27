@@ -30,6 +30,7 @@ internal class SettingsNavigation {
     fun openSources() { forward = true; destination = SettingsDestination.SOURCES }
     fun openLibrary() { forward = true; destination = SettingsDestination.MUSIC_LIBRARY }
     fun openAiAssistant() { forward = true; destination = SettingsDestination.AI_ASSISTANT }
+    fun openCustomFonts() { forward = true; destination = SettingsDestination.CUSTOM_FONTS }
     fun openSupplemental() { forward = true; supplementalEntryRevision++; supplementalSourceId = null; supplementalReturn = SettingsDestination.SETTINGS; destination = SettingsDestination.SUPPLEMENTAL }
     fun openSupplementalSource(sourceId: String) {
         forward = true
@@ -64,6 +65,7 @@ internal class SettingsNavigation {
             SettingsDestination.CACHED_MUSIC -> SettingsDestination.SETTINGS
             SettingsDestination.MUSIC_LIBRARY -> SettingsDestination.SETTINGS
             SettingsDestination.AI_ASSISTANT -> SettingsDestination.SETTINGS
+            SettingsDestination.CUSTOM_FONTS -> SettingsDestination.SETTINGS
             SettingsDestination.SUPPLEMENTAL -> supplementalReturn
             SettingsDestination.SOURCE_MANAGEMENT -> managementReturn
             SettingsDestination.PLATFORM_LOGIN -> loginReturn

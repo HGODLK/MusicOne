@@ -9,7 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-/** 完整曲目按行保存在本机，模型和原生界面都按页读取，避免长歌单反复全量编码。 */
+/** 查询到的完整歌曲按行存在本地数据库，模型和界面都分页读取，避免大歌单反复整表序列化。 */
 internal class AiLibraryTools(
     context: Context,
     private val store: MusicLibraryStore = MusicLibraryStore.get(context),
@@ -91,7 +91,7 @@ internal class AiLibraryTools(
         val id = UUID.randomUUID().toString()
         val db = store.database()
         var count = 0
-        // 只保存结果表，不发布音乐库快照；metadata 和行在同一事务中可见。
+        // 只写临时结果表，不触发音乐库刷新；元信息和歌曲行在同一次事务里落库。
         db.beginTransaction()
         try {
             val seen = hashSetOf<Pair<String, String>>()
@@ -164,7 +164,7 @@ internal class AiLibraryTools(
         }
     }
 
-    /** 每个句柄只展开本机已经保存的完整结果，远端后续页仍需先读取取得各自句柄。 */
+    /** 只展开本地结果表里已经存好的歌曲，远程还没拉取的下一页需要先分页读取。 */
     suspend fun resolveResultHandles(handles: List<String>): List<MusicTrack> = io { AiResultOperations(store.database()).tracks(handles) }
 
     suspend fun compareResults(operation: String, left: List<String>, right: List<String>): JSONObject = io {

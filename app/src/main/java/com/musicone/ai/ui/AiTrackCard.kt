@@ -15,7 +15,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** 卡片只观察当前曲目和播放状态，进度更新不牵动聊天卡片。 */
+/** 卡片只订阅当前播的哪首歌和是否在播，播放进度每秒刷新不会触发卡片重组。 */
 internal data class AiCardPlayback(val trackId: String? = null, val source: MusicSource? = null, val playing: Boolean = false)
 
 internal val LocalAiCardPlayback = compositionLocalOf { AiCardPlayback() }

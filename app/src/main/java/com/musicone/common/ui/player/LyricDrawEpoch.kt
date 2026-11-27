@@ -4,7 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.setValue
 
-/** 只在窗口引用变化时更新录制资格，正常逐字帧继续复用原子图层。 */
+/** 追踪歌词窗口结构变化的版本号，只有切窗或视口变化时才递增，普通逐字帧直接复用缓存图层。 */
 internal class LyricDrawEpoch {
     private val owners = mutableMapOf<Any, List<Any?>>()
     var revision by mutableLongStateOf(0L)
@@ -15,6 +15,6 @@ internal class LyricDrawEpoch {
         revision++
     }
     fun remove(owner: Any) { if (owners.remove(owner) != null) revision++ }
-    /** 已知显示交接失效时只补录一次引用，保留歌词窗口和行内动画。 */
+    /** 兜底刷新版本号，触发外层重新录制一次，不影响歌词窗口和行内动画。 */
     fun refresh() { revision++ }
 }

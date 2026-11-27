@@ -12,7 +12,7 @@ import java.io.IOException
 
 internal data class LibraryFileAvailability(val id: String, val uri: String, val readable: Boolean)
 
-/** 只检查授权与文件可达性，不解码音频；暂时的提供程序错误不当作文件丢失。 */
+/** 只检查文件权限和能不能打开，不解码音频；ContentProvider 临时报错不当成文件丢失。 */
 internal suspend fun inspectLibraryFiles(context: Context, tracks: List<MusicTrack>): List<LibraryFileAvailability> = withContext(Dispatchers.IO) {
     tracks.mapNotNull { track ->
         currentCoroutineContext().ensureActive()

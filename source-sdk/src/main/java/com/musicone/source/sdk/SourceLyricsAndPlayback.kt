@@ -36,7 +36,7 @@ interface SourceMediaPlayback {
     }
     suspend fun enrich(track: SourceTrackDetails): SourceTrackDetails = track
     suspend fun qualities(track: SourceTrackDetails): List<SourceAudioQuality>
-    /** 逐档探测的包可在每确认一档后回报当前已确认的完整列表；默认查完后一次性回报。 */
+    /** 支持逐档探测的音源可每确认一档就回调一次已确认列表；默认全部查完后一次性返回。 */
     suspend fun qualities(track: SourceTrackDetails, onProgress: (List<SourceAudioQuality>) -> Unit): List<SourceAudioQuality> =
         qualities(track).also(onProgress)
     suspend fun resolve(request: SourcePlaybackRequest): SourcePlaybackResource

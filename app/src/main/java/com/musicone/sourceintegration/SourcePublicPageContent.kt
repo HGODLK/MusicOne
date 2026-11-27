@@ -27,7 +27,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.musicone.*
 import com.musicone.source.sdk.*
 
-/** 完整模板共用一套导航、封面交接和搜索上下文，嵌入与根层打开走同一路径。 */
+/** 公共模板页统一入口，不管是嵌入根页还是独立弹出都共用一套导航、转场和搜索。 */
 @Composable
 internal fun SourcePublicPageContent(request: SourcePageRequest, player: MusicPlaybackRuntime,
     modifier: Modifier, bottomInsetDp: Float, onClose: () -> Unit, interactive: Boolean = true,
@@ -50,11 +50,11 @@ internal fun SourcePublicPageContent(request: SourcePageRequest, player: MusicPl
     DisposableEffect(pageLifecycle) { onDispose { pageLifecycle.close() } }
     key(source, instance, request) {
     SourcePublicPageState(source, instance) {
-        // 整页自建导航，其锚点与动效宿主都使用当前 Compose 根坐标；首页共享卡片仍保留外层偏移。
+        // 公共整页自己管理内部导航，锚点直接用当前 ComposeView 的坐标，清掉外层偏移。
         CompositionLocalProvider(LocalLifecycleOwner provides pageLifecycle,
             LocalMotionRootOffset provides Offset.Zero,
             LocalMotionRootOffsetReader provides null) {
-        // 同一根的弹出页已经继承消费链，只有独立 ComposeView 需要接回外层实际消费量。
+        // 同一个根里的弹出页已经自动继承了 WindowInsets，只有独立 ComposeView 要手动补上外层消费量。
         val sceneModifier = if (surface?.separateRoot == true) modifier.consumeWindowInsets(surface.consumedInsets) else modifier
         SourcePublicPageScene(request, player, sceneModifier, bottomInsetDp, onClose, pageInteractive, rootPage)
         }

@@ -6,7 +6,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 
-/** 系统歌曲信息与应用共用同一曲目身份，不把预期整曲时长当作实际音源时长。 */
+/** 构造给系统媒体控制栏用的 Metadata；不拿预估时长冒充真实音频时长。 */
 @androidx.annotation.OptIn(UnstableApi::class)
 internal fun systemMediaMetadata(
     track: MusicTrack,
@@ -31,7 +31,7 @@ internal fun systemMediaMetadata(
     return builder.build()
 }
 
-/** 后补信息只替换当前媒体项的 metadata，保留音源、缓存键和播放位置。 */
+/** 歌曲详情补全后，只原地更新当前 MediaItem 的元数据，不影响正在播的音频和进度。 */
 @androidx.annotation.OptIn(UnstableApi::class)
 internal fun refreshSystemMediaMetadata(player: Player, track: MusicTrack): Boolean {
     val item = player.currentMediaItem ?: return false

@@ -9,7 +9,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-/** 复用既有歌曲读取和公共歌单页面，仅适配酷狗账号下的云歌单管理。 */
+/** 酷狗云歌单管理服务（增删改查、收藏同步），歌曲读取和页面展示复用公共实现。 */
 internal class KugouCollectionService(
     private val state: () -> KugouPackageState,
     private val catalog: KugouSourceCatalog,
@@ -61,7 +61,7 @@ internal class KugouCollectionService(
             require(request.cursor == null) { "酷狗云歌单目录已全部返回" }
             val guard = { state().check(captured) }
             val owner = captured.cookie.requiredKugouSession().userId
-            // 首次展示先用账号缓存，目录按既有后台核对更新；主动刷新仍读取云端。
+            // 首次打开先展示本地缓存，后台再静默更新；用户主动刷新时直接拉云端
             val library = directory.read(owner, captured.generation, section, request.policy, guard,
                 { client.library(captured.cookie, beforeWrite(captured)) }, { work ->
                     state().scope.launch(Dispatchers.IO) { work() }
@@ -89,7 +89,7 @@ internal class KugouCollectionService(
             } else withArtwork(target, captured)
         }
         val fresh = collection
-        // 原解析负责曲目和封面；管理信息回填，避免公共映射丢失收藏来源编号。
+        // 歌曲和封面走原解析，再把云歌单管理字段（是否自建、来源 ID 等）补回去
         return catalog.detail(fresh).copy(owned = fresh.owned, accountFavorites = fresh.accountFavorites,
             payload = fresh.payload, description = fresh.kugouAlbumDetailDescription())
     }
@@ -112,7 +112,7 @@ internal class KugouCollectionService(
             } else catalog.tracks(collection, request).withKugouAlbumCollectionMetadata(collection)
         }
 
-    // 宿主“添加到歌单”的刷新会紧接着为每个歌单核对归属，目录确认结果在这段时间内共用，不重复请求。
+    // “添加到歌单”弹窗会连续检查多个歌单是否包含当前歌曲，短时间内共用同一次目录拉取结果
     override suspend fun writableCollections(): List<SourceCollection> = state().request { captured ->
         verifiedDirectory(captured).filter { it.writable }.map { mapped(it, captured) }
     }
@@ -122,7 +122,7 @@ internal class KugouCollectionService(
             ?.filter { it.writable }?.map { mapped(it, captured) }
     }
 
-    /** 归属用快照里的歌曲 hash 判断：CACHE_FIRST 只读本地目录与版本一致的快照；REFRESH 先确认目录，只重拉 list_ver 变了的歌单。 */
+    /** 判断歌曲是否已在歌单里：CACHE_FIRST 只查本地缓存；REFRESH 先核对目录，只重拉 list_ver 变了的歌单。 */
     override suspend fun containedTracks(collection: SourceCollection, tracks: List<SourceTrackDetails>,
         policy: SourceFetchPolicy): Set<String>? = state().request { captured ->
         requireAccount(collection, captured.cookie)
@@ -199,7 +199,7 @@ internal class KugouCollectionService(
     override suspend fun favoriteTrackIds(): Set<String> = state().request { captured ->
         val target = favorites(captured, fresh = true)
         val ids = trackSnapshot(captured, target, SourceFetchPolicy.REFRESH).favoriteTrackIds(beforeWrite(captured))
-        // 后台核对完成后让卡片读取已更新的快照，不用播放动作触发封面刷新。
+        // 后台更新完后通知卡片刷新缓存，不在点播放时顺带刷封面
         state().check(captured)
         changes.tryEmit(SourceLibraryChange(captured.cookie.requiredKugouSession().userId,
             setOf(SourceLibrarySection.FAVORITE_TRACKS)))
@@ -257,7 +257,7 @@ internal class KugouCollectionService(
 
     private suspend fun favorites(captured: KugouAccountRequest, fresh: Boolean = false): KugouManagedCollection {
         val guard = beforeWrite(captured)
-        // 喜欢状态核对也发布同一份目录版本，避免新曲目快照被旧目录再次覆盖。
+        // 检查喜欢状态时同步更新目录版本，防止旧目录把刚拉到的新歌曲列表覆盖掉
         val lists = if (fresh) directory.read(captured.cookie.requiredKugouSession().userId,
             captured.generation, SourceLibrarySection.FAVORITE_TRACKS, SourceFetchPolicy.REFRESH, guard,
             { client.library(captured.cookie, guard) }, { work -> state().scope.launch(Dispatchers.IO) { work() } })
@@ -279,12 +279,12 @@ internal class KugouCollectionService(
     private suspend fun withArtwork(target: KugouManagedCollection, captured: KugouAccountRequest): SourceCollection {
         val owner = captured.cookie.requiredKugouSession().userId
         if (target.playlist.isPlatformFavorites) {
-            // 卡片与详情统一采用收藏顺序首曲封面，不退回目录爱心图或旧封面缓存。
+            // 卡片和详情页统一用最新收藏那首歌的封面，不用默认的爱心图标或旧封面
             val snapshot = trackSnapshot(captured, target)
             state().check(captured)
             return snapshot.withFavoriteArtwork(mapped(target, captured))
         }
-        // 收藏副本保留歌单本身封面，不能复用旧版按歌曲派生的封面缓存。
+        // 收藏的外部歌单直接用它自己的封面，不拿歌单第一首歌的封面覆盖
         if (!target.created) return mapped(target, captured)
         val stored = artwork.read(owner, target)
         if (stored == null) {
@@ -360,7 +360,7 @@ internal class KugouCollectionService(
 
 }
 
-/** 创建回执可不含编号；只接受本次写前不存在、写后唯一同名且可写的真实歌单。 */
+/** 创建歌单接口有时不返回新歌单 ID，这里从写前写后的目录差集里找唯一同名且可写的新歌单。 */
 internal fun kugouCreatedCollection(beforeIds: Set<String>, after: List<KugouManagedCollection>, title: String,
     responseId: String?): KugouManagedCollection {
     val candidates = after.filter { it.listId !in beforeIds && it.writable && it.playlist.title == title }
@@ -368,7 +368,7 @@ internal fun kugouCreatedCollection(beforeIds: Set<String>, after: List<KugouMan
         ?: throw kugouCreateUnconfirmed()
 }
 
-/** 一首歌的全部档位 hash 与远端编号，与快照里 `kugouFavoriteHash()` 的口径一致。 */
+/** 收集歌曲各音质档位的 hash 和远端 ID，用于和本地歌单快照里的记录做匹配。 */
 internal fun kugouTrackIdentities(track: SourceTrackDetails): Set<String> =
     (KugouSourceMapping.track(track).qualityIds.values + track.track.identity.remoteId)
         .map { "kugou-${it.removePrefix("kugou-").lowercase()}" }.toSet()

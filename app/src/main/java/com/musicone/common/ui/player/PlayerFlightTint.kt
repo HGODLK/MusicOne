@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 
-/** 保留原离屏及源入混合，只改原生图层滤镜，不因颜色进度重录文字、图标。 */
+/** 飞行途中用 GraphicsLayer 的 ColorFilter 动态变色，避免每帧重录文字和图标。 */
 internal fun Modifier.playerFlightTint(from: Color, to: Color, motion: PageMotion): Modifier = graphicsLayer {
     compositingStrategy = CompositingStrategy.Offscreen
     colorFilter = playerFlightTintFilter(from, to, motion.value)

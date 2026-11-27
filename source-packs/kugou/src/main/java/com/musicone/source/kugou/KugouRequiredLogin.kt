@@ -15,7 +15,7 @@ import com.musicone.source.sdk.SourceAuthentication
 import com.musicone.source.sdk.SourceAuthenticationPage
 import com.musicone.source.sdk.SourceSessionStatus
 
-/** 自定义根页也走已有认证页；不可见的相邻页不创建第二份扫码任务。 */
+/** 未登录时渲染登录页；不可见的相邻 Tab 不重复初始化扫码任务。 */
 @Composable internal fun KugouRequiredLogin(preferences: SharedPreferences, authentication: SourceAuthentication,
     page: SourceAuthenticationPage, active: Boolean, content: @Composable () -> Unit) {
     var account by remember(authentication) { mutableStateOf(authentication.currentAccount()) }

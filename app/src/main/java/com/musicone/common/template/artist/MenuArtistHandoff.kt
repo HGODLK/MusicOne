@@ -4,7 +4,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 
-/** 与菜单来源矩形同时保存，详情挂载后的搜索页重测不能改写本次交接起点。 */
+/** 进入详情前同时记下头像起点和菜单位置，防止详情页挂载触发底页重测把起点改乱。 */
 internal data class MenuArtistHandoff(
     val key: String,
     val bounds: Rect,

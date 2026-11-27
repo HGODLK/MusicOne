@@ -3,7 +3,7 @@ package com.musicone.source.netease
 import org.json.JSONObject
 import java.util.UUID
 
-/** 与 api-enhanced 的 EAPI 保持一致：header 是对象，登录凭据也进入加密上下文。 */
+/** 对齐 api-enhanced 的 EAPI 写法：header 放 JSON 对象，登录 Cookie 也会一起参与加密。 */
 internal fun neteaseRequestHeader(cookie: String, deviceId: String): JSONObject {
     val cookies = cookie.split(';').mapNotNull { part ->
         val pair = part.trim().split('=', limit = 2)

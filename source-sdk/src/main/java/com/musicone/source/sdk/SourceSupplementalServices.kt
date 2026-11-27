@@ -30,6 +30,6 @@ data class SourceSubscriptionIdentity(val sourceId: String, val accountId: Strin
     val remoteCollectionId: String, val localCollectionId: String)
 data class SourceSubscriptionItem(val remoteMemberId: String, val tracks: List<SourceTrackDetails>, val position: Long)
 interface SourceSubscriptions {
-    // 宿主收齐全部成功分页后原子提交；失败或取消保留旧内容、手动成员和资料覆盖。
+    // 所有分页拉取成功后宿主才会整体提交；中途失败或取消时保留原有内容、手动编辑项和自定义信息。
     suspend fun page(collection: SourceRemoteCollection, request: SourceCursorRequest): SourcePage<SourceSubscriptionItem>
 }

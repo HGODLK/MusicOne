@@ -36,7 +36,7 @@ internal fun rememberMainSourceFeedTextPreparer(width: Dp, height: Dp, widthPx: 
     }
 }
 
-/** 复用固定列瀑布流的整数像素分配，覆盖列宽相差一个像素的情况。 */
+/** 按瀑布流的整数像素列宽算法算出各列真实宽度（含差 1px 的情况），用于后台预排版。 */
 internal fun mainSourceFeedCardPixelWidths(width: Int, gutter: Int, spacing: Int, columns: Int): List<Int> {
     val available = (width - gutter * 2 - spacing * (columns - 1)).coerceAtLeast(columns)
     val base = available / columns

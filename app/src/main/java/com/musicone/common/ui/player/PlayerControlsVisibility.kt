@@ -86,7 +86,7 @@ internal class PlayerControlsVisibilityState(
 
     fun show() = animateTo(0f)
 
-    /** 旧画面及屏外姿态已经捕获，准备期只交付可见目标，入场交给原转向弹簧。 */
+    /** 转屏准备时直接把控件设为可见状态，具体入场动画交给转向弹簧处理。 */
     fun prepareRotation() {
         animationJob?.cancel()
         animationJob = null

@@ -9,7 +9,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
-/** 按真实播放链路验证，每次最多两档；已确认档位立即交付菜单。 */
+/** 按真实播放流程探测可用音质（每次最多并发 2 档），每测出一档立刻回调更新菜单。 */
 internal suspend fun probeQqAvailableQualities(
     requested: List<AudioQuality>,
     onProgress: (List<AudioQuality>) -> Unit = {},

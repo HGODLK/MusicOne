@@ -42,7 +42,7 @@ internal fun ArtistIntroduction(profile: MainSourceArtistProfile, modifier: Modi
             drawRect(Brush.verticalGradient(
                 0f to Color.Transparent, .25f to shade.copy(alpha = 0f), .55f to shade.copy(alpha = .6f), .85f to shade, 1f to shade))
         })
-            // 固定信息槽位，简介和轮播异步出现不能改变共享头像的落点。
+            // 固定高度占位，避免简介和轮播图异步加载出来后把共享头像的落点顶歪。
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(304.dp)
                 .padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 ArtistAvatar(avatar, profile.name.take(1),

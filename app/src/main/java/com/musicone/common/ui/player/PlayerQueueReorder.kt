@@ -15,7 +15,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import kotlinx.coroutines.flow.first
 
-/** 接管单行时先释放原生动画，再提交重排，避免两条动画时间线交接闪帧。 */
+/** 队列“下一首播放”插队飞行动效：先隐藏原行并关闭 LazyColumn 的 animateItem，再提交重排并由浮层接管飞行。 */
 internal class PlayerQueueReorder(
     private val list: LazyListState,
     private val presentation: () -> PlayerQueuePresentation,
@@ -31,7 +31,7 @@ internal class PlayerQueueReorder(
     val exits = mutableStateListOf<PlayerQueueRowExit>()
     val scrollConnection = object : NestedScrollConnection {
         override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-            // 只累计列表实际消耗的距离，拖动与惯性同样直接跟随，不经过弹簧追赶。
+            // 累计列表实际滚动距离，让飞行中的副本直接跟着列表一起动。
             if (exits.isNotEmpty()) scroll += consumed.y
             return Offset.Zero
         }
@@ -54,7 +54,7 @@ internal class PlayerQueueReorder(
             it.offset + it.size > 0 && it.offset < viewportHeight
         }
         val row = rows[track.id]
-        // 行与视口在同一本地坐标系比较，宿主旋转后不再混入窗口纵轴。
+        // 相对列表视口计算行位置，横屏旋转时不会混入物理屏幕坐标系。
         val coordinates = row?.coordinates
         val viewport = viewportCoordinates
         val top = if (coordinates != null) {
@@ -74,7 +74,7 @@ internal class PlayerQueueReorder(
 
     fun commit(exit: PlayerQueueRowExit) {
         if (exit !in exits || !exit.sourceReleased || exit.committed) return
-        // onGloballyPositioned 已确认源行不带 animateItem 完成布局，旧原生图层已释放。
+        // 源行已在不带 animateItem 的状态下完成布局，可以安全提交队列重排。
         val state = presentation()
         val source = state.queue.indexOfFirst { it.id == exit.track.id }
         val current = state.queue.indexOfFirst { it.id == state.currentTrackId }
@@ -122,7 +122,7 @@ internal class PlayerQueueReorder(
         if (exit !in exits || !layoutReady(exit)) return false
         val top = contentTop + scrollShift(exit)
         val destination = destination(exit) + scrollShift(exit)
-        // 整行离开窗口立即撤层，真实行已在目标处；屏内仍须连续飞到真实位置。
+        // 副本完全滚出视口或已经飞到目标位置时，撤掉浮层交回真实列表行。
         if (!queueRowOutsideViewport(top, exit.height, viewportHeight) &&
             kotlin.math.abs(top - destination) > .1f) return false
         exits.remove(exit)
@@ -144,7 +144,7 @@ internal class PlayerQueueReorder(
 
     fun forgetRow(id: String) {
         rows.remove(id)
-        // 未重排前源行因用户滚动离开，副本可以直接撤销，插入动作仍须执行。
+        // 如果还没来得及重排源行就被滚出屏幕了，直接撤掉浮层但照常执行插队操作。
         exits.firstOrNull { it.track.id == id && !it.committed }?.let {
             exits.remove(it)
             delegate.insertNext(it.track)
@@ -170,7 +170,7 @@ internal class PlayerQueueRowExit(
     var committed by mutableStateOf(false)
 }
 
-/** 目标自然行进入窗口后使用真实位置；列表滚动单独应用，不混入弹簧当前位置。 */
+/** 计算飞行副本的目标纵坐标：目标行在屏内时用其真实位置，在屏外时飞向视口外侧（已扣除列表滚动偏移）。 */
 internal fun queueReorderDestination(naturalTop: Float?, upward: Boolean, viewportHeight: Int,
     rowHeight: Int, scrollShift: Float): Float =
     (naturalTop ?: if (upward) -rowHeight * 2f else viewportHeight + rowHeight.toFloat()) - scrollShift

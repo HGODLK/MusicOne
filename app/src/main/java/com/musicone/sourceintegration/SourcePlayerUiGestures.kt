@@ -33,7 +33,7 @@ internal class SourcePlayerSeekGesture(private val playback: MusicPlaybackRuntim
 
     fun commit(trackId: String, generation: Long, fromPositionMs: Long, positionMs: Long, durationMs: Long) {
         val fraction = positionMs.toFloat() / durationMs
-        // 在预览清空前封存目标，中间态歌词不能回读上一帧正式位置。
+        // 清空拖动预览前先把目标位置存下来，防止过渡瞬间歌词闪回旧进度。
         val commit = playback.seekPreview.prepareProgressCommit(trackId, generation, positionMs)
         val dragged = previewTrack == trackId
         previewTrack = null

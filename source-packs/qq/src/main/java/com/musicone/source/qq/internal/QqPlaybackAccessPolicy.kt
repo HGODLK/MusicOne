@@ -1,6 +1,6 @@
 package com.musicone.source.qq.internal
 
-/** 只有当前账号、有效时间内的明确权益结果才允许判定不可播放。 */
+/** 只有当前账号在有效期内明确查到的限制信息，才能直接拦截播放。 */
 internal fun confirmedQqPlaybackRestriction(info: QqTrackAccessInfo?, accountId: String,
     membership: QqMembership?, nowMs: Long = System.currentTimeMillis()): String? {
     if (info == null || !info.complete || info.trial || accountId.isBlank() ||
@@ -15,6 +15,6 @@ internal fun confirmedQqPlaybackRestriction(info: QqTrackAccessInfo?, accountId:
     return "当前账号无权播放这首歌曲".takeIf { denied }
 }
 
-/** 先恢复短卡片缺少的时长与歌曲身份，真实音源验证仍由播放解析执行。 */
+/** 判断歌曲是否缺时长或 songMid，缺的话播放前先补一次详情。 */
 internal fun MusicTrack.requiresQqPlaybackMetadata(): Boolean =
     source == MusicSource.QQ && (durationMs <= 0L || qqPlaybackMid().isBlank())

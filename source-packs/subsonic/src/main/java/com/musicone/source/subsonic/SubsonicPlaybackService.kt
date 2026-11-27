@@ -17,7 +17,7 @@ internal val SUBSONIC_QUALITY_CATALOG = listOf(
     SourceQualityDefinition(QUALITY_MP3_128, "MP3 128k", "128k", "由服务器实时转码，适合移动网络", "STANDARD"),
 )
 
-/** 曲目可用档位；原始档带上真实格式和码率，转码档不猜测实际规格。 */
+/** 生成歌曲可用音质列表：原始档带真实格式和码率，转码档不填猜测规格。 */
 internal fun subsonicTrackQualities(suffix: String, bitRate: Int): List<SourceAudioQuality> {
     val format = suffix.uppercase(Locale.ROOT)
     val original = listOf(format.takeIf(String::isNotBlank), bitRate.takeIf { it > 0 }?.let { "${it}kbps" })
@@ -45,7 +45,7 @@ internal fun subsonicMimeType(suffix: String, contentType: String, bitRate: Int)
 
 private const val ALAC_MIN_BIT_RATE = 600
 
-/** 播放取址、音质、计入播放次数和随机电台。媒体地址只靠 URL 里的认证参数，不需要额外请求头。 */
+/** 负责播放地址解析、音质选择、播放次数上报和随机电台；认证参数拼在 URL 里，不需要额外请求头。 */
 internal class SubsonicPlaybackService(
     private val requests: SubsonicRequests,
     private val client: SubsonicClient,

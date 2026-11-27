@@ -83,7 +83,7 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
         playerVisible && motion.phase == MotionPhase.SHOWN && motion.wantsOpen && state.playerExpanded,
         drawAtRest || !playerVisible, continuousAllowed = phoneTurn?.isTurning != true)
     val latestDrawingAtRest by rememberUpdatedState(drawingAtRest)
-    // 图层放置、玻璃遮罩和文字边界在绘制时共读待命状态，避免各自沿用旧坐标。
+    // 绘制阶段统一读取待命状态，保证歌词位置、遮罩和边界裁剪拿到同一份偏移。
     val boundaryWindow = remember(lyricsMotion, lyricTopExtension) {
         LyricBoundaryWindow(lyricTopExtension.toFloat(),
             offset = { if (latestDrawingAtRest.value) 0f else lyricsMotion.windowOffsetPx },
@@ -101,7 +101,7 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
     val textMarquee = playerTextMarqueeEnabled(motion.phase, motion.targetContentHandoff)
     val playingScale = rememberPlayerCoverScale(state.isPlaying, motion)
     val presentation = rememberPhonePlayerStagePresentation(lyricsMotion, lyrics, playerVisible, actionTrack.source)
-    // 开始开合后旧的关闭态确认作废，下次必须重新绘制到阅读锚点。
+    // 一旦开始展开/收起，清掉关闭态的直开标记，下次重新关上后再重新确认。
     SideEffect { if (presentation.intermediate || presentation.fullyOpen) residentStandby?.clearDrawn() }
     val headerFollow = remember(motion) { PlayerFlightHeaderFollow() }
     var origin by remember { mutableStateOf(Offset.Zero) }
@@ -130,7 +130,7 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
         }
         return Offset(0f, (focus / size.height.coerceAtLeast(1f)).coerceIn(0f, 1f))
     }
-    // 同一份封面、文字、爱心和歌词始终保留，只在放置阶段改变位置与图层缩放。
+    // 封面、标题、红心和歌词始终复用同一批节点，切换歌词页只在布局放置阶段改位置和缩放。
     Layout(modifier = modifier.onGloballyPositioned {
         origin = it.positionInRoot()
         playerTouchRegions?.lyricsGestureBounds = if (lyrics || lyricsMotion.lyricsProgress > .0005f)
@@ -153,10 +153,16 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
             badgeOnDark = ink.luminance() > .5f, showBadges = false, primaryTitleOnly = true)
         }
         PhoneTurnElement("artist", uniformScale = true) {
-        Text(musicOneUiAnnotatedString(playerPrimaryArtists(visualTrack.artists)), style = MusicOneTextStyles.playerArtist.copy(fontSize = spec.artistSize),
-            color = ink.copy(alpha = .62f), maxLines = 1,
-            modifier = shared("subtitle", text = true).phonePortraitInformationAnchor("artist")
-                .basicMarquee(iterations = if (textMarquee) Int.MAX_VALUE else 0))
+        val artistText = playerPrimaryArtists(visualTrack.artists)
+        val artistDirection = if (isRtlStrongText(artistText)) androidx.compose.ui.unit.LayoutDirection.Rtl
+            else androidx.compose.ui.platform.LocalLayoutDirection.current
+        CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides artistDirection) {
+            Text(musicOneUiAnnotatedString(artistText),
+                style = MusicOneTextStyles.playerArtist.copy(fontSize = spec.artistSize, textDirection = contentTextDirection(artistText)),
+                color = ink.copy(alpha = .62f), maxLines = 1,
+                modifier = shared("subtitle", text = true).phonePortraitInformationAnchor("artist")
+                    .basicMarquee(iterations = if (textMarquee) Int.MAX_VALUE else 0))
+        }
         }
         PhoneTurnElement("favorite") {
         PlayerFavoriteButton(actionTrack, visualTrack.id in favorites.state.ids, { favorites.toggle(actionTrack) },
@@ -180,7 +186,7 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
                 active = presentation.lyricsActive,
                 followPlayback = playerVisible && lyrics && !lyricsMotion.dragging,
                 animateTrackChange = playerVisible && !lyricsMotion.dragging,
-                // 手势展开时尚未提交 lyrics，不能被关闭态的旧对齐请求挡住。
+                // 手势正在拉开歌词时 lyrics 状态还没切过去，此时不要传入关闭对齐请求挡路。
                 exitAlignment = if (lyricsMotion.dragging && !lyrics) null else lyricExitAlignment,
                 openingAlignment = lyricsMotion.openingAlignment,
                 prepareWhileHidden = drawAtRest && !residentLyrics,
@@ -205,7 +211,7 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
         } else {
             Box(Modifier.fillMaxSize())
         }
-        // 封面态整块歌曲资料都可点击；歌词态撤销此入口，保留曲名的歌词操作。
+        // 封面页整个歌曲信息区都可以点开菜单；切到歌词页后取消整块点击，只保留点歌名调偏移。
         Box(Modifier.playerRelatedInformation(actionTrack, informationMenuEnabled))
     }) { children, constraints ->
         val width = constraints.maxWidth
@@ -215,7 +221,6 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
         val coverContentHeight = (height - controlsBottomInset.roundToPx()).coerceAtLeast(1)
         val header = phoneLyricsHeaderHeight(spec.lyricCoverSize.value).dp.roundToPx()
         lyricsMotion.dragTravelPx = phoneLyricsWindowTravel(height, header, lyricTopExtension, lyricTopExtension)
-        // 使用原有开合行程；底部玻璃绘制仍保持现有参数。
         lyricsMotion.controlsSpacePx = controlsBottomInset.toPx().coerceAtLeast(0f) + PLAYER_CONTROLS_BLUR_FADE_HEIGHT.toPx()
         val infoHeight = 70.dp.roundToPx()
         val targetWidth = (contentWidth * spec.coverWidthFraction).roundToInt()
@@ -266,12 +271,10 @@ internal fun PhonePlayerStage(state: MusicOneUiState, track: MusicTrack, visualT
                 contentScale = textScale, textSizeSp = spec.titleSize.value)
             anchor("subtitle", titleX, artistY, artist.width * textScale, artist.height * textScale,
                 contentScale = textScale, textSizeSp = spec.artistSize.value)
-            // 整页手势中歌词仍在开合时，飞行端点继续跟随实际页眉，回到播放页不瞬移。
+            // 如果整页拖动时歌词页眉也在动，实时刷新飞行目标锚点，防止松手回到播放页时瞬移。
             if (headerFollow.changed(motion.moving && phoneTurn?.orientationChanging != true, p))
                 motion.refreshCapturedTargets(PLAYER_HEADER_FLIGHT_KEYS)
-            // 先绘制扩展到屏幕顶端的歌词，再盖上原位的封面、标题和收藏按钮。
-            // 固定阅读槽位，位移与歌词遮罩都在图层阶段读取当前进度，首帧从屏外接入。
-            // 空槽只登记原生位置，实际歌词的开合位移由固定宿主统一绘制。
+            // 先放歌词空槽（实际歌词由统一宿主绘制），再在上方叠加封面、标题、歌手和红心。
             lines.place(0, header - lyricTopExtension)
             cover.placeWithLayer(coverX.roundToInt(), coverY.roundToInt()) {
                 transformOrigin = TransformOrigin(0f, 0f)

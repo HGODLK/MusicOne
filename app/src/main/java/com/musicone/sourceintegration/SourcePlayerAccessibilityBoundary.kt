@@ -10,7 +10,7 @@ import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.core.view.accessibility.AccessibilityNodeProviderCompat
 import java.util.IdentityHashMap
 
-/** Compose 的虚拟节点动作直接进入节点提供者，不能依靠父 View 的触摸捕获。 */
+/** 拦截子 ComposeView 的无障碍节点操作异常，避免包页面无障碍回调抛错把宿主弄崩。 */
 internal class SourcePlayerAccessibilityBoundary(
     private val boundary: SourcePlayerInputBoundary,
     private val interactive: () -> Boolean,

@@ -28,7 +28,7 @@ internal fun MainSourceSearchGlass(backdrop: GraphicsLayer, bounds: Rect, motion
     Box(Modifier.fillMaxSize().drawWithCache {
         val factor = 1f / 4f
         val snapshot = motion.backdropSnapshot
-        // 准备中沿用原玻璃，像素快照就绪后再交接；读取失败才使用底色，避免准备首帧白闪。
+        // 截图还没好时先用实时玻璃顶着，截好了再切静态快照，彻底失败才退回纯底色，防止闪白。
         val frozen = motion.snapshotUnavailable || snapshot != null
         texture.renderEffect = if (!ExperiencePreferences.options.disableBlur && Build.VERSION.SDK_INT >= 31) BlurEffect(18.dp.toPx() * factor,
             18.dp.toPx() * factor, TileMode.Clamp) else null

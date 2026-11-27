@@ -42,7 +42,7 @@ internal class QqArtistRepository(
         return ArtistPage(items, (begin + raw.size).takeIf { raw.isNotEmpty() && it < total }, total)
     }
 
-    /** 详情总数单独轻量读取，不为计数解析歌曲、封面或播放权限。 */
+    /** 单独查歌手歌曲总数，不解析列表里的歌曲详情。 */
     fun songCount(mid: String): Int? = request("music.musichallSong.SongListInter", "GetSingerSongList",
         JSONObject().put("singerMid", mid).put("order", ArtistSongSort.Popular.order)
             .put("num", 1).put("begin", 0))
@@ -105,7 +105,7 @@ internal class QqArtistRepository(
     }
 }
 
-/** 头像沿用入口资源；写真按官方 SingerPageGetHeadPicUtils 的 ImageMid 规则解析。 */
+/** 组装歌手资料：头像直接用入口传的，背景写真按官方 ImageMid 规则解析。 */
 internal fun artistProfileFromHeader(header: JSONObject?, singer: QqSearchSinger, intro: String): ArtistProfile {
     val info = header?.optJSONObject("Singer")
     val base = header?.optJSONObject("BaseInfo")

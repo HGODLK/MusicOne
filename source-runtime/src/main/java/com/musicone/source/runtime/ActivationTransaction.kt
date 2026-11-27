@@ -2,7 +2,7 @@ package com.musicone.source.runtime
 
 import java.io.File
 
-// 完成备份以目录原子改名发布；不完整 staging 永远不能覆盖仍有效的数据。
+// 备份完成后通过目录重命名原子切换，避免未写完的临时目录覆盖有效数据。
 internal class ActivationTransaction(private val directory: File, private val data: File) {
     private val staging = File(directory.parentFile, directory.name + ".staging")
     fun recover(activeVersion: Long?, pendingVersion: Long?, activeInstallId: String? = null,

@@ -9,7 +9,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-/** 包私有成功快照，不保存凭据；按账号隔离，每日推荐按酷狗所在自然日更新。 */
+/** 酷狗首页本地缓存（按账号隔离，不存登录凭证，每日推荐按自然日过期）。 */
 internal class KugouHomeSnapshotStore(private val directory: File, private val today: () -> String = ::kugouHomeDayKey) {
     private val publication = Any()
     fun dayKey(): String = today()

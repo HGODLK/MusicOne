@@ -6,7 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 
-/** 每个歌词窗口只接收自己的进度，其他歌曲的归零不能让旧列表倒滚。 */
+/** 单个歌词窗口的播放进度状态：只接收当前歌曲和当前播放轮次的进度，防止切歌归零时把旧歌词滚回开头。 */
 internal class LyricWindowPlayback(private val trackId: String) {
     private var awaitingObservedHandoff = true
     private val intermediateSeekHandoff = LyricIntermediateSeekHandoff()
@@ -22,7 +22,7 @@ internal class LyricWindowPlayback(private val trackId: String) {
         private set
     var intermediatePositionOwned by mutableStateOf(false)
 
-    // 屏外预览尚未绑定轮次；同曲重新起播后也不能接收上一轮保留的定位请求。
+    // 只响应当前歌曲且属于同一播放轮次的进度条 seek 请求。
     fun progressSeek(request: ProgressLyricSeek?): ProgressLyricSeek? =
         request?.takeIf { it.trackId == trackId && it.generation == generation }
 
@@ -34,14 +34,14 @@ internal class LyricWindowPlayback(private val trackId: String) {
             latestPreviewMs, intermediateSeek || intermediatePositionOwned, active && !browsing && !latestBrowsing &&
                 latest.trackId == trackId && (generation < 0L || generation == latest.generation),
             observedCommit, latestCommit)
-        // 只在窗口接管或播放轮次不同步时读取实时值；同曲 seek 保留原页面通知节奏。
+        // 刚接管窗口或播放轮次未同步时直接读最新进度；同曲正常播放沿用订阅流快照。
         val samePlayback = snapshot.trackId == latest.trackId &&
             snapshot.generation == latest.generation && browsing == latestBrowsing
         if (!samePlayback) awaitingObservedHandoff = true
         else if (previewMs == latestPreviewMs) awaitingObservedHandoff = false
         val handingOff = awaitingObservedHandoff || !samePlayback
         Snapshot.withMutableSnapshot {
-            // 目标与时间同时发布，行内强调和列表位置不能各接到一半交接状态。
+            // 在同一快照事务里同步更新提交状态和播放时间，避免高亮与列表滚动读到不一致的状态。
             intermediateCommit = intermediateSeekHandoff.acceptedCommit
             intermediateCommitPending = intermediateSeekHandoff.pendingCommit != null
             if (handingOff || protectSeek) update(latest, intermediateSeekHandoff.pendingCommit?.positionMs ?: latestPreviewMs, latestBrowsing)
@@ -72,12 +72,12 @@ internal class LyricWindowPlayback(private val trackId: String) {
         }
     }
 
-    // 尚未真正切走的当前歌曲可以原位接回；已播放过的旧窗口不能冒充从头起播的新窗口。
+    // 快速切回时判断是否可以复用退场中的旧窗口：同曲同轮次，或从未开始播放过的 0ms 窗口才允许接回。
     fun canReturnTo(snapshot: PlaybackProgressSnapshot, restarting: Boolean = false): Boolean =
         (!restarting && trackId == snapshot.trackId && generation == snapshot.generation) ||
             (generation < 0L && positionMs == 0L)
 
-    // 词内时钟可直接使用同轮次的最新采样；定位事务仍保留窗口持有的目标。
+    // 非中间态保护期时，逐字时钟直接读当前轮次的最新采样；保护期内则沿用窗口锁定的进度。
     fun wordSnapshot(latest: PlaybackProgressSnapshot, previewMs: Long?): PlaybackProgressSnapshot =
         if (latest.trackId == trackId && latest.generation == generation &&
             !intermediateCommitPending && !intermediatePositionOwned) {

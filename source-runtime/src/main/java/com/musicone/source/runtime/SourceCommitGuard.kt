@@ -3,7 +3,7 @@ package com.musicone.source.runtime
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
 
-/** 随音源请求传递到宿主事务，最终提交与实例失效使用同一个锁。 */
+/** 随请求传给宿主事务，保证最终提交和实例失效共用同一把锁。 */
 class SourceCommitGuard internal constructor(
     private val gate: Any,
     private val checkActive: () -> Unit,

@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 
-/** 深绿海报以斜向声波形成构图，爱心、大字标题和状态图形保持稳定。 */
+/** 私人漫游/电台卡片：斜向声波背景 + 固定位置的图标、标题和播放状态指示器。 */
 @Composable
 internal fun MainSourceRadioCard(active: Boolean, playing: Boolean, loading: Boolean, visible: Boolean,
     onClick: () -> Unit, modifier: Modifier, label: String = "猜你喜欢", colorArgb: Long? = null,

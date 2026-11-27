@@ -23,12 +23,12 @@ internal data class PlayerTextGeometry(
     private val capturedSource: MotionAnchor,
     private val capturedTarget: MotionAnchor,
 ) {
-    // 退场可先于重组开始，旧尺寸计算不能覆盖本次刚捕获的歌词页眉位置。
+    // 只替换与捕获快照匹配的锚点，避免旧尺寸覆盖退场时刚抓到的新页眉位置。
     fun sourceFor(anchor: MotionAnchor): MotionAnchor = if (anchor == capturedSource) source else anchor
     fun targetFor(anchor: MotionAnchor): MotionAnchor = if (anchor == capturedTarget) target else anchor
 }
 
-/** 仅更新文字尺寸，位置、字号及其余飞行锚点仍沿用当前页面事务。 */
+/** 飞行途中如果切歌导致标题或歌手长度变化，平滑过渡文字的宽高尺寸，其余飞行参数不变。 */
 @Composable
 internal fun playerTextGeometry(motion: PageMotion, key: String, track: MusicTrack,
     targetRotation: Int = 0): PlayerTextGeometry? {
@@ -36,7 +36,7 @@ internal fun playerTextGeometry(motion: PageMotion, key: String, track: MusicTra
         ?: motion.sourceSnapshot[key] ?: return null
     val capturedTarget = (if (motion.moving) motion.targetSnapshot[key] else motion.targets[key])
         ?: motion.targetSnapshot[key] ?: return null
-    // 横屏仍使用原来的文字尺寸补偿，只把输入尺寸还原到文字本地坐标。
+    // 横屏下先把目标锚点还原到未旋转的本地坐标系，再做宽高过渡。
     val target = if (targetRotation == 0) capturedTarget else capturedTarget.copy(
         bounds = phonePlayerFlightTarget(capturedTarget.bounds, targetRotation))
     val handoff = LocalPlayerTextHandoff.current
@@ -60,7 +60,7 @@ internal fun playerTextGeometry(motion: PageMotion, key: String, track: MusicTra
     val targetHeight by animateFloatAsState(
         if (ready) frame.size.height.toFloat() else nativeHeight(target), spec, label = "目标文字高度")
     SideEffect {
-        // 飞行层退出后继续收敛同一宽度，真实文字不能突然露出尚未展开的尾部。
+        // 如果飞行结束时文字宽度还没收敛完，继续把裁剪宽度交给真实文字，防止尾部突然蹦出来。
         if (changed && ready && abs(targetWidth - frame.size.width) > .5f) handoff.clipWidths[key] = targetWidth
         else handoff?.clipWidths?.remove(key)
         if (!motion.moving && (!changed || ready && abs(targetWidth - frame.size.width) <= .5f &&

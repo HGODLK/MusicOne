@@ -1,6 +1,6 @@
 package com.musicone.source.qq.internal
 
-/** 刷新期限不等于会员到期；失败保留已确认结果，服务端明确变更才替换。由权益层持锁访问。 */
+/** 缓存已查到的会员状态（调用方加锁）：查询失败时保留上次结果，接口明确返回变化再更新。 */
 internal class QqMembershipCache {
     var member: QqMembership? = null; private set
     var loading = false; private set

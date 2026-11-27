@@ -7,7 +7,7 @@ import com.musicone.source.qq.internal.qqNetworkAvailability
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.filterNotNull
 
-/** QQ 协议与会话只在独立包内初始化，宿主使用公共模板展示资料。 */
+/** QQ 音乐音源入口，业务页面复用宿主公共模板。 */
 class QqSourceEntry : SourceEntry, SourceMembershipProvider {
     override val descriptor = SourceDescriptor(QQ_SOURCE_ID, "QQ音乐", SourceKind.MAIN, 4, "1.3",
         setOf(SourceCapability.HOME, SourceCapability.SEARCH, SourceCapability.ACCOUNT, SourceCapability.PLAYBACK,

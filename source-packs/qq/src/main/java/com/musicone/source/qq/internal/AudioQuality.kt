@@ -79,7 +79,7 @@ internal val PLAYER_AUDIO_QUALITIES = listOf(
     AudioQuality.STANDARD,
 )
 
-/** Hi-Res 使用独立音源，仅合并历史音质名称。 */
+/** 兼容旧版音质枚举名，映射到当前播放音质档位（Hi-Res 单独保留）。 */
 internal fun AudioQuality.playbackEquivalent(): AudioQuality = when (this) {
     AudioQuality.HIGHER -> AudioQuality.EXHIGH
     else -> this

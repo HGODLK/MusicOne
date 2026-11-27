@@ -37,9 +37,11 @@ internal class LyricWordPreparation(val layout: TextLayoutResult, ranges: List<L
 }
 
 internal fun lyricRasterOverhang(layout: TextLayoutResult): Float {
-    val ink = if (lyricWordInkIsolationRequired(layout.layoutInput.text.text))
+    val text = layout.layoutInput.text.text
+    val arabic = containsArabicOrPersian(text)
+    val ink = if (arabic || lyricWordInkIsolationRequired(text))
         (0 until layout.lineCount).maxOfOrNull {
-            (layout.getLineBottom(it) - layout.getLineTop(it)) * .12f + 1f
+            (layout.getLineBottom(it) - layout.getLineTop(it)) * (if (arabic) .18f else .12f) + 1f
         } ?: 0f else 0f
     return ceil(maxOf(4f * layout.layoutInput.density.density, ink))
 }

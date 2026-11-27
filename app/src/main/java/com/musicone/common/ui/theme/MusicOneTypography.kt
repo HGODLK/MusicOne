@@ -8,11 +8,12 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.intl.LocaleList
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
 import java.util.Locale
 
-internal enum class MusicOneScript { SC, TC, JA, KO, LATIN }
+internal enum class MusicOneScript { SC, TC, JA, KO, LATIN, ARABIC }
 
 internal object MusicOneUiFontFamilies {
     val sc = FontFamily(
@@ -24,6 +25,12 @@ internal object MusicOneUiFontFamilies {
     val tc = FontFamily(Font(R.font.sarasa_ui_tc_regular, FontWeight.Normal))
     val ja = FontFamily(Font(R.font.sarasa_ui_j_regular, FontWeight.Normal))
     val ko = FontFamily(Font(R.font.sarasa_ui_k_regular, FontWeight.Normal))
+    val arabic = FontFamily(
+        Font(R.font.vazirmatn_regular, FontWeight.Normal),
+        Font(R.font.vazirmatn_semibold, FontWeight.Medium),
+        Font(R.font.vazirmatn_semibold, FontWeight.SemiBold),
+        Font(R.font.vazirmatn_bold, FontWeight.Bold),
+    )
 }
 
 internal object MusicOneDisplayFontFamilies {
@@ -40,6 +47,11 @@ internal object MusicOneDisplayFontFamilies {
         Font(R.font.source_serif_4_semibold, FontWeight.SemiBold),
     )
     val displayLatin = FontFamily(Font(R.font.source_serif_4_display_regular, FontWeight.Normal))
+    val arabic = FontFamily(
+        Font(R.font.noto_naskh_arabic_regular, FontWeight.Normal),
+        Font(R.font.noto_naskh_arabic_medium, FontWeight.Medium),
+        Font(R.font.noto_naskh_arabic_semibold, FontWeight.SemiBold),
+    )
 }
 
 internal object MusicOneTextStyles {
@@ -84,6 +96,7 @@ internal fun musicOneUiFontFamily(script: MusicOneScript): FontFamily = when (sc
     MusicOneScript.TC -> MusicOneUiFontFamilies.tc
     MusicOneScript.JA -> MusicOneUiFontFamilies.ja
     MusicOneScript.KO -> MusicOneUiFontFamilies.ko
+    MusicOneScript.ARABIC -> MusicOneUiFontFamilies.arabic
 }
 
 internal fun musicOneDisplayFontFamily(script: MusicOneScript): FontFamily = when (script) {
@@ -92,14 +105,19 @@ internal fun musicOneDisplayFontFamily(script: MusicOneScript): FontFamily = whe
     MusicOneScript.JA -> MusicOneDisplayFontFamilies.ja
     MusicOneScript.KO -> MusicOneDisplayFontFamilies.ko
     MusicOneScript.LATIN -> MusicOneDisplayFontFamilies.latin
+    MusicOneScript.ARABIC -> MusicOneDisplayFontFamilies.arabic
 }
 
 internal fun musicOneScriptOf(text: String, hint: MusicOneScript? = null): MusicOneScript {
     if (text.any(::isKorean)) return MusicOneScript.KO
     if (text.any(::isJapanese)) return MusicOneScript.JA
-    if (text.any(::isCjk)) return hint?.takeIf { it != MusicOneScript.LATIN } ?: defaultCjkScript()
+    if (text.any(::isCjk)) return hint?.takeIf { it != MusicOneScript.LATIN && it != MusicOneScript.ARABIC } ?: defaultCjkScript()
+    if (containsArabicOrPersian(text)) return MusicOneScript.ARABIC
     return MusicOneScript.LATIN
 }
+
+private val persianLocaleList = LocaleList("fa")
+private val arabicLocaleList = LocaleList("ar")
 
 internal fun musicOneUiAnnotatedString(text: String, hint: MusicOneScript? = null,
     mode: AppFontMode = ExperiencePreferences.options.fontMode): AnnotatedString =
@@ -120,21 +138,54 @@ private fun musicOneAnnotatedString(
     hint: MusicOneScript?,
     mode: AppFontMode,
 ): AnnotatedString {
-    if (mode == AppFontMode.SYSTEM) return AnnotatedString(text)
     if (text.isEmpty()) return AnnotatedString("")
-    val cjkScript = musicOneScriptOf(text, hint)
-    return buildAnnotatedString {
-        var start = 0
-        var current = scriptFor(text[0], cjkScript)
-        for (index in 1 until text.length) {
-            val next = scriptFor(text[index], cjkScript)
-            if (next != current) {
-                appendFontSpan(text.substring(start, index), current, display, editorial)
-                start = index
-                current = next
+    val arabicLocale = if (containsArabicOrPersian(text)) {
+        if (containsPersianSpecific(text)) persianLocaleList else arabicLocaleList
+    } else null
+    if (mode == AppFontMode.CUSTOM) {
+        val customConfig = CustomFontStore.config
+        CustomFontStore.revision
+        val fallbackMode = customConfig.fallback.asBaseFontMode()
+        val fallbackDisplay = display && fallbackMode != AppFontMode.SANS_SERIF
+        val cjkScript = musicOneScriptOf(text, hint)
+        return buildAnnotatedString {
+            for (run in musicOneScriptRuns(text, cjkScript)) {
+                val slice = text.substring(run.start, run.end)
+                val customId = if (display) customConfig.resolveLyricFontId(run.script)
+                else customConfig.resolveUiFontId(run.script)
+                val customFamily = customId?.let(CustomFontStore::fontFamily)
+                val family = customFamily ?: if (fallbackMode == AppFontMode.SYSTEM) null else {
+                    if (!fallbackDisplay) musicOneUiFontFamily(run.script)
+                    else if (editorial && run.script == MusicOneScript.LATIN) MusicOneDisplayFontFamilies.displayLatin
+                    else musicOneDisplayFontFamily(run.script)
+                }
+                val locale = if (run.script == MusicOneScript.ARABIC) arabicLocale else null
+                if (family != null || locale != null) {
+                    withStyle(SpanStyle(fontFamily = family, localeList = locale)) { append(slice) }
+                } else {
+                    append(slice)
+                }
+            }
+        }.withMusicOneSymbolFallback(fallbackMode)
+    }
+    if (mode == AppFontMode.SYSTEM) {
+        if (arabicLocale == null) return AnnotatedString(text)
+        // 系统字体模式不指定内置字体，仅对阿拉伯／波斯段声明地区以修正波斯字形变体。
+        val cjkScript = musicOneScriptOf(text, hint)
+        return buildAnnotatedString {
+            for (run in musicOneScriptRuns(text, cjkScript)) {
+                val slice = text.substring(run.start, run.end)
+                if (run.script == MusicOneScript.ARABIC) {
+                    withStyle(SpanStyle(localeList = arabicLocale)) { append(slice) }
+                } else append(slice)
             }
         }
-        appendFontSpan(text.substring(start), current, display, editorial)
+    }
+    val cjkScript = musicOneScriptOf(text, hint)
+    return buildAnnotatedString {
+        for (run in musicOneScriptRuns(text, cjkScript)) {
+            appendFontSpan(text.substring(run.start, run.end), run.script, display, editorial, arabicLocale)
+        }
     }.withMusicOneSymbolFallback(mode)
 }
 
@@ -143,6 +194,7 @@ private fun AnnotatedString.Builder.appendFontSpan(
     script: MusicOneScript,
     display: Boolean,
     editorial: Boolean,
+    arabicLocale: LocaleList?,
 ) {
     val family = if (!display) {
         musicOneUiFontFamily(script)
@@ -151,7 +203,8 @@ private fun AnnotatedString.Builder.appendFontSpan(
     } else {
         musicOneDisplayFontFamily(script)
     }
-    withStyle(SpanStyle(fontFamily = family)) {
+    val locale = if (script == MusicOneScript.ARABIC) arabicLocale else null
+    withStyle(SpanStyle(fontFamily = family, localeList = locale)) {
         append(text)
     }
 }
@@ -160,6 +213,7 @@ internal fun scriptFor(char: Char, cjkScript: MusicOneScript): MusicOneScript = 
     isKorean(char) -> MusicOneScript.KO
     isJapanese(char) -> MusicOneScript.JA
     isCjk(char) -> cjkScript
+    isArabicOrPersianChar(char) -> MusicOneScript.ARABIC
     isLatin(char) -> MusicOneScript.LATIN
     else -> cjkScript
 }

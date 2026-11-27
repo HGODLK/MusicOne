@@ -44,7 +44,7 @@ internal suspend fun preloadMainSourceFeedArtwork(cards: List<MainSourceHomeCard
         async(Dispatchers.IO) {
             feedArtworkPreloadLimit.withPermit {
                 try {
-                    // 提前准备纹理，避免卡片首次绘制时才集中上传；复用显示端的尺寸缓存。
+                    // 提前按显示尺寸解码封面，避免卡片刚滑进来时扎堆解码掉帧。
                     if (cachedOnlyContext != null) {
                         ArtworkRepository.cached(request.url, cachedOnlyContext, request.maxSide)
                     } else ArtworkRepository.load(request.url, maxSide = request.maxSide)?.prepareToDraw()

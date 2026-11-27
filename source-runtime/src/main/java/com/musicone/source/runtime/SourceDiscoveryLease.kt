@@ -2,7 +2,7 @@ package com.musicone.source.runtime
 
 import com.musicone.source.sdk.*
 
-/** 保留可选能力的真实存在性；旧包不能被包装成具有独立每日推荐的新包。 */
+/** 保持可选能力的真实有无，不要把未实现的旧包包装成支持独立每日推荐。 */
 internal fun guardSourceDiscovery(service: SourceDiscovery, operations: SourceOperationLease): SourceDiscovery {
     val guarded = object : SourceDiscovery {
         override val supportsSimilar get() = operations.read { service.supportsSimilar }

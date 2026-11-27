@@ -6,7 +6,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
-/** 只保存一次最近播放打开意图；读取和导航仍由现有控制器及公共入口完成。 */
+/** 暂存用户点击“最近播放”的打开请求，等数据拉完后再跳转。 */
 internal class KugouRecentOpenRequest(
     private val scope: CoroutineScope,
     private val owner: () -> KugouHomeOwner,
@@ -44,7 +44,7 @@ internal class KugouRecentOpenRequest(
                 currentCoroutineContext().ensureActive()
                 val result = state()
                 if (!available || generation != version || owner() != expected || result.owner != expected) return@launch
-                // 读取期间的新上报会产生后继核验，打开意图继续等待最新一次读取。
+                // 如果正在拉取期间又触发了新一轮刷新，继续等最新这轮拉完再打开
                 if (result.loadingRecent) {
                     request = read()
                     continue

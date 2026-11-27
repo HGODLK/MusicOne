@@ -3,7 +3,7 @@ package com.musicone.source.sdk
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 
-/** 公共完整页面的公开请求。页面归属始终由请求决定，与宿主当前选择的音源无关。 */
+/** 打开公共完整页面的请求参数；页面归属由请求决定，不受宿主当前选中音源影响。 */
 sealed interface SourcePageRequest {
     val sourceId: String
     data class Home(override val sourceId: String) : SourcePageRequest
@@ -34,7 +34,7 @@ sealed interface SourcePageRequest {
     data class Settings(override val sourceId: String) : SourcePageRequest
 }
 
-/** 补充模板可以直接进入既有目录、链接导入或内容子项目选择流程。 */
+/** 补充音源模板可直接跳到目录页、链接导入页或子项选择页。 */
 sealed interface SourceSupplementalTarget {
     data object Home : SourceSupplementalTarget
     data object Account : SourceSupplementalTarget
@@ -47,7 +47,7 @@ sealed interface SourceSupplementalTarget {
 /** 自定义页面可以打开公共导航，也可以把完整公共页面嵌入自己的布局。 */
 interface SourcePageUi {
     fun open(request: SourcePageRequest, onClosed: () -> Unit = {})
-    /** onClose 仅请求调用方退出当前嵌入导航；业务完成与账号结果不得放在这个回调中提交。 */
+    /** onClose 只负责通知调用方退出当前嵌入页，不要在这个回调里提交业务或账号结果。 */
     @Composable fun Content(request: SourcePageRequest, modifier: Modifier = Modifier,
         bottomInsetDp: Float = 0f, onClose: () -> Unit = {})
 }

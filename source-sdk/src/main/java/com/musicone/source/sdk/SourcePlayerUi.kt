@@ -76,7 +76,7 @@ data class SourcePlayerSnapshot(
     val artworkColors: List<Int>? = null,
 )
 
-/** 位置携带歌曲与播放代际；无歌曲时 trackId 为空字符串。 */
+/** 携带当前歌曲 ID 和播放代际的进度快照；没有歌曲时 trackId 为空字符串。 */
 data class SourcePlayerTimeline(
     val trackId: String,
     val positionMs: Long,
@@ -92,7 +92,7 @@ data class SourcePlayerTransition(
     val reduceMotion: Boolean,
 )
 
-/** 仅提供状态与受宿主管理的动作，不暴露核心播放器或底部栏组件。 */
+/** 只提供状态和受控操作，不直接暴露底层播放器或底栏组件。 */
 interface SourcePlayerUiContext {
     val snapshot: SourcePlayerSnapshot
     val timeline: SourcePlayerTimeline

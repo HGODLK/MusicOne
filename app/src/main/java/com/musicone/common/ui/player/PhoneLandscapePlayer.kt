@@ -40,7 +40,7 @@ internal fun PhoneLandscapePlayer(state: MusicOneUiState, track: MusicTrack, vis
     val playingScale = rememberPlayerCoverScale(state.isPlaying, motion)
     val retainedLyrics = LocalRetainedPhoneLyricsMotion.current
     val localPanel = remember { Animatable(if (showLyrics) 1f else 0f) }
-    // 共用当前实际开合进度，半途转向也从正在显示的位置继续退场。
+    // 复用竖屏的歌词开合进度，中途转屏时直接从当前位置继续过渡。
     val panel = retainedLyrics?.lyrics ?: localPanel
     val lyricsDisplayed by remember(panel, showLyrics, visible) { derivedStateOf {
         visible && (showLyrics || panel.value > 0f)
@@ -58,7 +58,7 @@ internal fun PhoneLandscapePlayer(state: MusicOneUiState, track: MusicTrack, vis
     }
     val residency = rememberLyricResidency(residentLyrics, standby, closed,
         continuousAllowed = presentation?.turn?.isTurning != true)
-    // 与竖屏共用逐行边界明暗，横屏没有页眉扩展和独立的列表窗口位移。
+    // 横屏复用逐行边缘渐隐逻辑，但没有顶部页眉扩展和额外的窗口位移。
     val lyricBoundary = remember { LyricBoundaryWindow(topBuffer = 0f, offset = { 0f }, partialTop = true) }
     DisposableEffect(presentation) { onDispose { presentation?.additionalMotion("landscapeLyrics", false) } }
     LaunchedEffect(showLyrics, preparingTurn, fadingTurn) {
@@ -141,11 +141,17 @@ internal fun PhoneLandscapePlayer(state: MusicOneUiState, track: MusicTrack, vis
                     badgeOnDark = ink.luminance() > .5f, showBadges = false, primaryTitleOnly = true)
                 }
                 PhoneTurnElement("artist", uniformScale = true) {
-                Text(musicOneUiAnnotatedString(playerPrimaryArtists(visualTrack.artists)),
-                    style = MusicOneTextStyles.playerArtist.copy(fontSize = CompactPlayerLayoutSpec.artistSize),
-                    color = ink.copy(alpha = .62f), maxLines = 1,
-                    modifier = shared("subtitle", text = true).landscapePlayerInformation(actionTrack, visible, showLyrics)
-                        .basicMarquee(iterations = if (visible) Int.MAX_VALUE else 0))
+                val artistText = playerPrimaryArtists(visualTrack.artists)
+                val artistDirection = if (isRtlStrongText(artistText)) androidx.compose.ui.unit.LayoutDirection.Rtl
+                    else androidx.compose.ui.platform.LocalLayoutDirection.current
+                CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides artistDirection) {
+                    Text(musicOneUiAnnotatedString(artistText),
+                        style = MusicOneTextStyles.playerArtist.copy(fontSize = CompactPlayerLayoutSpec.artistSize,
+                            textDirection = contentTextDirection(artistText)),
+                        color = ink.copy(alpha = .62f), maxLines = 1,
+                        modifier = shared("subtitle", text = true).landscapePlayerInformation(actionTrack, visible, showLyrics)
+                            .basicMarquee(iterations = if (visible) Int.MAX_VALUE else 0))
+                }
                 }
                 PhoneTurnElement("favorite") {
                 PlayerFavoriteButton(actionTrack, visualTrack.id in favorites.state.ids,
@@ -217,7 +223,7 @@ internal fun PhoneLandscapePlayer(state: MusicOneUiState, track: MusicTrack, vis
                 val clock = children[5].measure(Constraints.fixed(w, y(.65f)))
                 val progress = children[6].measure(Constraints.fixed(x(.86f), with(density) { 64.dp.roundToPx() }))
                 layout(w, h) {
-                    // 与实际放置共用本帧尺寸和暂停缩放，一批登记封面、标题和歌手，避免逐元素回调互相抢占。
+                    // 统一登记封面、标题和歌手的本地锚点（含暂停缩放），避免各元素各自回调时互相覆盖。
                     val scale = playingScale.value
                     val coverBounds = Rect(x(.0716f).toFloat(), y(.067f).toFloat(),
                         x(.0716f) + coverSide.toFloat(), y(.067f) + coverSide.toFloat())
@@ -232,16 +238,15 @@ internal fun PhoneLandscapePlayer(state: MusicOneUiState, track: MusicTrack, vis
                         "subtitle" to MotionAnchor(Rect(informationLeft.toFloat(), informationTop + informationGeometry.artistTop.roundToInt().toFloat(),
                             informationLeft + artists.width.toFloat(), informationTop + informationGeometry.artistTop.roundToInt() + artists.height.toFloat()),
                             textSizeSp = CompactPlayerLayoutSpec.artistSize.value))
-                    // 信息区固定在封面下方，内部纵向间距与竖屏共用；屏幕锚点不参与静态排版。
+                    // 歌名、歌手和红心固定排在封面下方，内部间距与竖屏保持一致。
                     progress.place(x(.07f), h - progress.height, zIndex = 1f)
                     cover.place(x(.0716f), y(.067f), zIndex = 2f)
                     title.place(informationLeft, informationTop, zIndex = 2f)
                     artists.place(informationLeft, informationTop + informationGeometry.artistTop.roundToInt(), zIndex = 2f)
                     favorite.place(favoriteLeft, informationTop + informationGeometry.favoriteTop.roundToInt(), zIndex = 2f)
-                    // 此处只是空槽；正文列宽与竖屏一致，关闭时也登记横屏高度以提前准备阅读位置。
-                    // 正文仍由独立宿主沿原位移隐藏，交互资格保持关闭。
+                    // 这里只是占位空槽，实际歌词由独立宿主绘制；关闭时仍保留布局以提前准备位置。
                     lyrics.place(lyricsLeft, 0)
-                    // 时钟由物理窗口的常驻宿主绘制，此占位仅保持原测量索引。
+                    // 时钟实际由物理窗口层的常驻宿主绘制，这里只留一个占位。
                 }
             }
             }

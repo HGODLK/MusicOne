@@ -7,7 +7,7 @@ import org.json.JSONObject
 
 internal data class AiMusicMemorySnapshot(val text: String, val revision: Long)
 
-/** 会话和归档共用同一份简短记忆，导入后旧的后台请求不能覆盖新资料。 */
+/** 聊天和归档导入共用这份音乐偏好，导入新归档后不能让旧的后台请求覆盖掉。 */
 internal class AiMusicMemoryStore private constructor(context: Context) {
     private val file = AtomicFile(File(context.applicationContext.filesDir, "ai/memory.txt"))
     private var revision = 0L
@@ -37,7 +37,7 @@ internal class AiMusicMemoryStore private constructor(context: Context) {
     @Synchronized fun restore(data: JSONObject?) {
         if (data == null) return
         require(data.optInt("version") == 1 && data.opt("preferences") is String) { "归档中的音乐偏好格式无效" }
-        // 归档导入沿用曲库合并语义，现有偏好优先，旧归档不清除本机记忆。
+        // 导入归档时采用合并策略，保留本机已有偏好，不会用旧归档把本地清空。
         save(listOf(snapshot().text, data.getString("preferences")).filter(String::isNotBlank).joinToString("\n"))
     }
 

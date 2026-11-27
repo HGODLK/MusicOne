@@ -8,7 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-/** DASH 只记录清单和音轨身份；离线恢复前重新检查整个音轨的缓存区间。 */
+/** DASH 离线索引只记 MPD 清单和音轨缓存 key，离线播放前按实际磁盘区间核对是否下全。 */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class SupplementalOfflineMusicStore(private val context: Context) {
     private val preferences = context.getSharedPreferences("supplemental_audio_index", Context.MODE_PRIVATE)

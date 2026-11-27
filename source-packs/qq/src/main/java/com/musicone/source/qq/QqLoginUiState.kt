@@ -3,7 +3,7 @@ package com.musicone.source.qq
 import com.musicone.source.qq.internal.PlatformLoginMethod
 import com.musicone.source.qq.internal.PlatformQrLoginStatus
 
-/** 沿用 0.2.0 登录页的展示状态，不向宿主暴露 QQ 认证流程。 */
+/** QQ 登录页的界面状态。 */
 internal data class QqLoginUiState(
     val loginMethod: PlatformLoginMethod = PlatformLoginMethod.SMS,
     val countryCode: String = "86",

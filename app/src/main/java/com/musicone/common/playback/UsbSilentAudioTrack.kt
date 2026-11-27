@@ -7,7 +7,7 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
 
-/** 静音占位轨走内置扬声器的普通媒体通道，真实音乐仍由既有 USB 输出链路处理。 */
+/** 打开一条走内置扬声器的静音 AudioTrack 占位（用来接管系统音量键），真实音乐仍走 USB 独占输出。 */
 internal fun openUsbSilentAudioTrack(context: Context): UsbSilenceTrack {
     val manager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     val speaker = manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
@@ -31,7 +31,7 @@ internal fun openUsbSilentAudioTrack(context: Context): UsbSilenceTrack {
     return object : UsbSilenceTrack {
         override fun play() = track.play()
         override fun write(samples: ShortArray, offset: Int, count: Int): Int {
-            // 首次供数前路由可能尚未建立；建立后必须核对，不能把占位数据混入 USB 或蓝牙输出。
+            // 刚开始写数据时路由可能还没就绪，一旦就绪就校验必须走扬声器，别混进 USB 或蓝牙。
             val routed = track.routedDevice
             check(routed == null || routed.id == speaker.id) { "静音占位轨未使用内置扬声器" }
             return track.write(samples, offset, count, AudioTrack.WRITE_BLOCKING)

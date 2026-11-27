@@ -5,7 +5,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-/** 首页只调用既有公开播放操作；私人电台另走原 source-radio 入口。 */
+/** 酷狗首页的点击播放操作封装（私人电台单独走 radio 入口）。 */
 internal class KugouHomeActions(private val owner: KugouPackageState, private val collections: SourceCollections) {
     private var collectionJob: Job? = null
 

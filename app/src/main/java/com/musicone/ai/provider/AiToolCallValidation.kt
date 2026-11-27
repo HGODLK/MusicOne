@@ -3,7 +3,7 @@ package com.musicone
 import org.json.JSONObject
 import org.json.JSONTokener
 
-/** 参数在进入协议历史前检查，截断调用不得执行或在下一次请求中重发。 */
+/** 写入历史前先校验工具参数是不是完整 JSON，截断残缺的调用绝不执行也不发给下一次请求。 */
 private fun completeAiArguments(arguments: String): Boolean = runCatching {
     val parser = JSONTokener(arguments)
     parser.nextValue() is JSONObject && parser.nextClean() == '\u0000'
@@ -30,7 +30,7 @@ internal fun repairAiToolHistory(history: MutableList<JSONObject>): Boolean {
         val calls = entry.optJSONArray("tool_calls") ?: return@mapNotNull entry
         val retained = calls.objects().filter { call ->
             val function = call.optJSONObject("function")
-            // 旧版允许空参数按空对象执行，不能把这类可能已成功的调用删除后重放。
+            // 兼容旧版：以前空参数会当成 {} 执行，这类记录别删，防止误重放。
             val valid = completeAiArguments(function?.optString("arguments").orEmpty().ifBlank { "{}" })
             if (!valid) { invalidIds += call.optString("id"); changed = true }
             valid

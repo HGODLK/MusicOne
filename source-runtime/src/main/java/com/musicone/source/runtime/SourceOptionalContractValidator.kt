@@ -2,7 +2,7 @@ package com.musicone.source.runtime
 
 import com.musicone.source.sdk.*
 
-/** 新能力按可选接口校验；未使用接口的旧包不补默认服务，也不改变缺省页面行为。 */
+/** 新能力按可选接口分别校验；旧包未实现时不补默认服务，也不改变默认页面行为。 */
 internal object SourceOptionalContractValidator {
     fun check(entry: SourceEntry) {
         val pages = entry.supplementalPageProviderOrNull()

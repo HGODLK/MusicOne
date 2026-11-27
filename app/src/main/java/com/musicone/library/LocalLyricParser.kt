@@ -20,7 +20,7 @@ private data class LocalLyricRow(
     val ruby: String? = null,
 )
 
-/** LRC 同时刻按文件顺序配对；XLRC 和 SPL 的扩展标记只在各自格式内解释。 */
+/** 解析 LRC/XLRC/SPL 歌词：同一时间戳的多行按文件顺序配对原文和翻译，扩展语法只在对应格式里生效。 */
 internal fun parseLocalLrc(raw: String, extension: String): List<TimedLyric> {
     val format = extension.lowercase()
     val spl = format == "spl"
@@ -141,7 +141,7 @@ internal fun parseLocalLrc(raw: String, extension: String): List<TimedLyric> {
     }
 }
 
-/** 必须有一个跟在正文后、且不早于行首的时间标记；连续行首时间戳仍是 LRC 复唱。 */
+/** 判断 [] 是不是行内逐字时间戳（正文后面跟着时间标签）；连续写在行首的 [] 只是普通 LRC 复唱。 */
 internal fun hasSquareLyricWords(raw: String): Boolean = raw.lineSequence().any { line ->
     val text = line.trim().removePrefix("\uFEFF")
     val first = localLineStamp.matchAt(text, 0) ?: return@any false

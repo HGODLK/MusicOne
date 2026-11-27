@@ -186,12 +186,12 @@ internal fun PlayerProgressTimeline(viewModel: MusicPlaybackRuntime, motion: Pag
             }
         }, "播放进度", onFinished = {
             val target = seeking ?: return@PlayerThinSlider
-            // 在任何挂起或预览清空之前封存目标，中间态歌词不能回读上一帧正式位置。
+            // 在清空预览或挂起前先记录本次提交目标，防止开合中途歌词回读到上一帧的旧进度。
             val commit = viewModel.seekPreview.prepareProgressCommit(timeline.trackId,
                 viewModel.playbackProgress.value.generation, (timeline.durationMs * target).toLong())
             if (userDragged) {
                 scope.launch {
-                    // 拖动过程已经跟手，松手只需把权威进度接到同一像素，不能先跳回旧位置。
+                    // 拖动过程中进度条已经跟手，松手时直接把动画值同步到落点，避免闪回旧位置。
                     progressMotion.snapTo(target)
                     if (!viewModel.seekToForTrack(timeline.trackId, target, commit.revision)) return@launch
                     seeking = null
@@ -199,7 +199,7 @@ internal fun PlayerProgressTimeline(viewModel: MusicPlaybackRuntime, motion: Pag
                 }
             } else {
                 val revision = progressMotion.beginSeek(target)
-                // 先记录歌词的真实起点，再提交音频；歌词和时间轴分别从各自当前帧续接。
+                // 先通知歌词记录当前起点并准备跳转，再提交音频 seek。
                 val lyricRequest = viewModel.seekPreview.requestProgressLyricSeek(
                     timeline.trackId,
                     position,
@@ -208,7 +208,7 @@ internal fun PlayerProgressTimeline(viewModel: MusicPlaybackRuntime, motion: Pag
                 )
                 tapSeekJob?.cancel()
                 tapSeekJob = scope.launch {
-                    // 先完成目标歌词准备，避免新窗口构建与音频跳转解码同时竞争；未挂载时仍按原上限放行。
+                    // 最多等 120ms 让目标歌词窗口准备好再执行音频 seek，避免和解码抢主线程。
                     withTimeoutOrNull(120L) { lyricRequest.targetReady.await() }
                     if (!viewModel.seekToForTrack(timeline.trackId, target, commit.revision)) return@launch
                     seeking = null

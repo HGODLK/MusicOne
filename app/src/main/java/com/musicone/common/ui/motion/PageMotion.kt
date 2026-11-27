@@ -89,7 +89,7 @@ internal class PageMotion(
         hostBounds = bounds
         if (resized && mounted && phase != MotionPhase.SHOWN) {
             if (sharedAnchorKeys.isNotEmpty()) {
-                // 播放页改窗保留进度及速度，快照同步到新坐标，不取消整个行程。
+                // 播放页窗口尺寸变化时保留动画进度和速度，按比例缩放锚点快照，不中断当前动画。
                 fun Map<String, MotionAnchor>.resized() = mapValues { (_, anchor) ->
                     anchor.copy(bounds = Rect(
                         bounds.left + (anchor.bounds.left - previous.left) * bounds.width / previous.width,
@@ -128,7 +128,7 @@ internal class PageMotion(
         gestureSettling = continueGesture
         if ((fromDrag && !wasOpeningDrag) || (!open && phase == MotionPhase.SHOWN)) targetContentHandoff = true
         else if (open && phase == MotionPhase.HIDDEN) targetContentHandoff = false
-        // 等布局的打开手势此时画面还在起点，从起点带速度出发；不等布局的页面没有可见延迟，直接接手指。
+        // 需要等布局就绪的打开手势此时画面还停在起点，从起点带速度起飞；不用等布局的页面直接从当前手指位置接续。
         val start = if (preparingDrag && !waitForTarget) dragProgress else value
         if (openingDragLag > 0f) {
             dragProgress = start
@@ -172,7 +172,7 @@ internal class PageMotion(
             if (ExperiencePreferences.options.reduceMotion) {
                 progress.snapTo(end)
             } else if (continueGesture && dragAnimation != null) {
-                // 松手及中途反向共用弹簧，位置和速度连续，不重新进入零斜率补间。
+                // 松手和中途反向都用同一套弹簧动画，保证位置和速度连续，避免切回初速度为 0 的补间造成卡顿。
                 progress.animateToWithGestureHandoff(end, dragAnimation, initialVelocity, releaseTimeNanos)
             } else if (!open && exitAnimation != null) {
                 progress.animateTo(end, exitAnimation, initialVelocity = initialVelocity)
@@ -186,7 +186,7 @@ internal class PageMotion(
                 progress.animateTo(end, musicMotion(if (open) enterMillis else exitMillis),
                     initialVelocity = initialVelocity)
             }
-            // 附属手势位移也归位后再交回真实控件，进度已到终点不代表封面已归位。
+            // 等附加的手势位移（如封面归位）也结束后再切回真实页面，进度到终点不代表封面已经归位。
             settling?.join()
             if (open) beforeShownHandoff?.invoke(this@PageMotion)
             // 保留终点画面一帧，再交回真实控件，避免移除动画层时跳过终点。
@@ -218,7 +218,7 @@ internal class PageMotion(
             var matches = 0
             while (matches < 2) {
                 withFrameNanos { }
-                // 只有播放页显式要求共享内容整体就绪，其他页面仍只等待原封面锚点。
+                // 只有播放页要求所有共享元素都就绪，其他页面只等封面锚点即可。
                 val bounds = if (sharedAnchorKeys.isEmpty()) listOf(targets[coverKey]?.bounds)
                 else sharedAnchorKeys.flatMap { key -> listOf(sources[key]?.bounds, targets[key]?.bounds) }
                 val ready = prepareSharedAnchors?.invoke(this@PageMotion) != false &&
@@ -227,7 +227,7 @@ internal class PageMotion(
                 last = bounds
             }
         }
-        // 沿用原布局准备预算；未能提交本轮端点时撤销打开，不取旧快照，也不永久遮挡底页。
+        // 超时仍未拿到本轮所有共享锚点就取消打开，避免复用旧快照或一直盖住底页。
         return prepareSharedAnchors?.invoke(this) != false &&
             (prepareSharedAnchors == null || sharedAnchorsReady())
     }
@@ -248,7 +248,7 @@ internal class PageMotion(
         anchor.visible?.let { return partialAnchorUsable(it, hostBounds) }
         if (anchorFits(anchor.bounds, hostBounds)) return true
         val b = anchor.bounds
-        // 空标题或歌手没有字形，但测量完成的空端点仍属于完整交接批次。
+        // 标题或歌手为空时宽高可能为 0，只要已在宿主范围内完成测量，也算有效锚点。
         return key in setOf("title", "subtitle") && hostBounds.width > 1f && hostBounds.height > 1f &&
             b.width >= 0f && b.height >= 0f && (b.width <= 1f || b.height <= 1f) &&
             b.left >= hostBounds.left - 1f && b.top >= hostBounds.top - 1f &&
@@ -264,7 +264,7 @@ internal class PageMotion(
         targetSnapshot = targetSnapshot + (coverKey to anchor)
     }
 
-    /** 飞行途中端点本身在动时，只更新本批次已捕获的目标，不重启整页进度。 */
+    /** 飞行途中目标位置有变化时，只刷新已捕获的目标锚点，不重置整页动画进度。 */
     internal fun refreshCapturedTargets(keys: Set<String>) {
         var next = targetSnapshot
         keys.forEach { key ->

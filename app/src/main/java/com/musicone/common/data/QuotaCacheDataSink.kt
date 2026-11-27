@@ -7,7 +7,7 @@ import java.io.IOException
 
 internal class CacheQuotaException(message: String) : IOException(message)
 
-/** 正常播放在容量不足时继续流播；主动缓存与预取立即停止，不空下载整首歌曲。 */
+/** 缓存满了时：正常听歌继续走在线流播（只是不落盘），主动下载和预加载则直接报错停止。 */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class QuotaCacheDataSink(private val disk: MusicDiskCache, private val strict: Boolean) : DataSink {
     private var sink: DataSink? = null

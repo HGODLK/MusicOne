@@ -54,7 +54,7 @@ internal class DirectUsbStreamingThread(
         bufferFrames = { buffer ->
             buffer.data.size.toLong() / (channelCount * bytesPerSample(buffer.encoding))
         },
-        // 软件队列按时长限流，原生在途请求另有约 80ms 容量。
+        // 软件队列最多缓存 200ms，底层原生 USB 传输队列里还另有约 80ms 缓冲。
         maxBufferedFrames = sampleRate.toLong() * 200 / 1000,
     )
 

@@ -2,7 +2,7 @@ package com.musicone
 
 import org.json.JSONObject
 
-/** 参数与缺页错误必须先恢复输入，同一参数重复请求不会修复它。 */
+/** 参数错或数据缺页时，拿同样参数重试没用，必须先修正输入或补全读取。 */
 internal class AiToolInputFailure(val code: String, message: String, val recovery: JSONObject? = null) : IllegalArgumentException(message) {
     fun result(): JSONObject = JSONObject().put("status", "error").put("code", code).put("retryable", false)
         .put("message", message).apply { recovery?.let { put("recovery", it) } }
@@ -31,7 +31,7 @@ internal fun aiResultOffset(handle: String, cursor: String?, count: Int): Int {
     return offset
 }
 
-/** 同一真人任务中，必要读取未恢复前不生成依赖残缺资料的歌单修改。 */
+/** 这一轮里如果有必要的读取失败了，在恢复之前不允许基于残缺数据生成歌单修改计划。 */
 internal class AiReadDependencies(private val checkpoint: JSONObject) {
     private fun state(): JSONObject {
         val turn = checkpoint.optString("activeTurnId")
@@ -52,7 +52,7 @@ internal class AiReadDependencies(private val checkpoint: JSONObject) {
         val key = key(call) ?: return
         val failed = state()
         if (aiToolResultFailed(output)) failed.put(key, JSONObject(output.toString()).put("readArguments", JSONObject(call.arguments))) else failed.remove(key)
-        // 比较成功说明该组句柄已由本地完整性校验，可以消除同组比较缺页状态。
+        // 集合比较成功说明这组句柄的数据已经完整，清除之前的缺页失败记录。
         if (call.name == "compare_results" && !aiToolResultFailed(output)) {
             val args = JSONObject(call.arguments)
             val handles = (args.getJSONArray("leftHandles").strings() + args.getJSONArray("rightHandles").strings()).toSet()

@@ -2,7 +2,7 @@ package com.musicone
 
 internal const val MAX_PLAYBACK_QUEUE_SIZE = 99_999
 
-/** 超出容量时保留前段顺序，并确保当前或明确点选的歌曲仍在队列中。 */
+/** 队列超长时截断末尾，但保证当前播放的歌或刚点选的歌不会被截掉。 */
 internal fun limitPlaybackQueue(
     queue: List<MusicTrack>,
     requiredTrack: MusicTrack? = null,

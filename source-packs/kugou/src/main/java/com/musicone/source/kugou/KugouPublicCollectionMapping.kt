@@ -32,7 +32,7 @@ internal fun SourceCollection.withKugouPublicInfo(info: JSONObject): SourceColle
         payload = SourcePayload("kugou.collection", 1, data.toString()))
 }
 
-/** 新公开歌单只是字段结构不同，音质档位与稳定 hash 仍交给既有解析器。 */
+/** 把新版公开歌单里的歌曲字段转成通用格式，再交给原有解析器提取音质和 hash。 */
 internal fun JSONObject.kugouPublicCollectionTrack(vip: Boolean): MusicTrack {
     val normalized = JSONObject(toString())
     optJSONObject("albuminfo")?.let { album ->
@@ -44,16 +44,16 @@ internal fun JSONObject.kugouPublicCollectionTrack(vip: Boolean): MusicTrack {
         if (!normalized.has("singername")) normalized.put("singername", singers.contentObjects()
             .map { it.contentText("name") }.filter(String::isNotBlank).joinToString(" / "))
     }
-    // 下载收费不能作为播放购买限制；播放权益只读取歌曲资料及标准档权限。
+    // 下载收费不等于播放收费，播放权限只看歌曲信息和标准档权限
     return normalized.toKugouContentTrack(vip)
 }
 
-/** 公开歌单会用仅含 fileid/shield 的占位记录保留屏蔽歌曲，不能因此中断整页或丢失曲数。 */
+/** 公开歌单里被屏蔽的歌只有 fileid/shield 字段，转成不可播放占位项保留下来，不中断整页解析。 */
 internal fun JSONObject.kugouPublicCollectionItem(gid: String, account: String?, vip: Boolean): SourceTrackDetails {
     if (optInt("shield") != 1) return KugouSourceMapping.track(kugouPublicCollectionTrack(vip), account)
     val fileId = contentText("fileid").toLongOrNull()?.takeIf { it > 0 }
         ?: throw PlatformApiException("酷狗屏蔽歌曲缺少歌单项编号")
-    // fileid 只标识当前歌单的占位项，不写入歌曲编号、音质 hash 或播放参数。
+    // 屏蔽曲目只用 fileid 做占位 ID，不填音质 hash 和播放参数
     val remote = "unavailable:$gid:$fileId"
     return SourceTrackDetails(
         track = SourceTrack(TrackIdentity(KUGOU_SOURCE_ID, account, remote), "暂不可用的歌曲"),

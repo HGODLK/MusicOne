@@ -15,7 +15,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** 子项目身份与默认选择均由音源给出，宿主不解释平台编号和不透明载荷。 */
+/** 子项（如分P）列表和默认勾选都由音源返回，宿主只管展示和透传，不解析具体平台编号。 */
 @Composable
 internal fun SupplementalImportSection(state: SupplementalState, model: SupplementalSourceModel) {
     val content = state.content ?: return

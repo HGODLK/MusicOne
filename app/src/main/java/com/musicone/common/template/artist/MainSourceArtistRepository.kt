@@ -12,7 +12,7 @@ internal data class MainSourceEntityPage<T>(val items: List<T>, val next: Int?, 
 internal data class MainSourceArtistProfile(val name: String, val artwork: String?, val introduction: String,
     val backgrounds: List<String> = emptyList(), val trackCount: Int? = null)
 
-/** 歌手页面的分页只保存公开 SDK 游标，不能构造平台协议。 */
+/** 歌手页分页只存 SDK 返回的游标，不在这里拼装具体平台参数。 */
 internal class MainSourceArtistRepository(context: Context, private val artist: MainSourceArtist) {
     private val controller = SourcePackageController.get(context)
     private fun service() = requireNotNull(controller.running(artist.source.id)?.entry?.entities) { "此音源未启用歌手资料" }

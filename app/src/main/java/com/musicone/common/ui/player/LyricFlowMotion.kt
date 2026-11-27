@@ -4,7 +4,7 @@ import kotlin.math.exp
 
 internal data class LyricFlowSample(val position: Float, val velocity: Float)
 
-/** 连点时持续追踪新目标，不为每首重启计时；解析式推进保证不同刷新率下轨迹一致。 */
+/** 切歌连续滑动动画：连点切歌时无缝改追新目标，解析式推进保证不同刷新率下轨迹一致。 */
 internal fun advanceLyricFlow(
     sample: LyricFlowSample, target: Float, seconds: Float, response: Float = 12f,
 ): LyricFlowSample {

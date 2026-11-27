@@ -14,14 +14,14 @@ internal data class CachePlaylistCleanupPlan(val playlists: List<MusicPlaylist>,
 internal class CacheDirectoryUnconfirmedException(sources: Set<MusicSource>) : IllegalStateException(
     "无法确认${sources.joinToString("、") { it.label }}的完整歌单目录，已保留缓存，请启用音源并联网后重试")
 
-/** 删除只能使用已经确认完整的目录；缺包、缺权限及失败都不是空歌单。 */
+/** 清理歌单外缓存前必须确认歌单目录已完整拉齐；缺音源包、没登录或拉取失败绝不能当成空歌单全删了。 */
 internal suspend fun clearOutsideConfirmedCachePlaylists(plan: CachePlaylistCleanupPlan,
     clear: suspend (Set<String>) -> Unit) {
     if (plan.unresolvedSources.isNotEmpty()) throw CacheDirectoryUnconfirmedException(plan.unresolvedSources)
     clear(plan.playlists.flatMap { it.tracks }.mapTo(hashSetOf()) { it.cacheIdentity() })
 }
 
-/** 目录按账号保存；缺包仍保留公开缓存资料，网络请求只交给正在运行的包。 */
+/** 缓存歌单目录按账号分开存；音源包没装时保留旧数据可看，联网刷新只交给已运行的音源包。 */
 internal class CachePlaylistDirectory(private val context: Context) {
     private val preferences = PlatformPreferences(context)
     private val snapshots = CachedPlaylistStore(context)

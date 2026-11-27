@@ -5,7 +5,7 @@ import com.musicone.source.sdk.*
 import com.musicone.source.qq.internal.*
 import kotlinx.coroutines.*
 
-/** 包内只装配既有登录页与认证服务；页面布局复用 0.2.0。 */
+/** 组装 QQ 登录页和安全验证弹窗。 */
 internal class QqPackagePages(private val auth: QqAuthentication) : SourceAuthenticationPage {
     @Composable override fun Content() {
         val scope = rememberCoroutineScope()
@@ -162,7 +162,7 @@ internal class QqPackagePages(private val auth: QqAuthentication) : SourceAuthen
                 cancelVerification("已取消验证，可重新尝试")
             }, onComplete = { result ->
                 if (!isCurrentVerification()) return@QqVerificationDialog
-                // 播放验证的单次重试由协调器保证，这里只限制登录流程。
+                // 播放验证的重试次数由协调器控制，这里只限制登录验证页自动关闭后的重试次数
                 if (!verifyingPlayback && result.closedByPage && !pageCloseRetry.tryUse()) {
                     cancelVerification("验证未通过，请重试")
                     return@QqVerificationDialog
@@ -176,7 +176,7 @@ internal class QqPackagePages(private val auth: QqAuthentication) : SourceAuthen
                     loginVerification = null
                     if (qrVerification) {
                         qrVerification = false
-                        // QQ验证后重新取码，旧qrsig不能混入新二维码，验证凭据只用于换票。
+                        // 安全验证后重新拉取二维码（旧 qrsig 不能复用），验证拿到的凭证只用来换票
                         if (!qrController.restartAfterVerification(credential))
                             qrController.start(MusicSource.QQ, state.loginMethod, auth.session().deviceId, credential)
                     } else retry?.let { block -> retry = null; execute(block) }

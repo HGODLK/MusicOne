@@ -5,7 +5,7 @@ import com.musicone.source.sdk.*
 import com.musicone.sourceintegration.*
 import org.json.JSONObject
 
-/** 公共模板只消费 SDK 已完成的首页分区，不参与平台协议分页或元数据补查。 */
+/** 直接消费音源 SDK 返回的首页分区数据，不在这里拼装具体平台协议或补拉详情。 */
 internal class MainSourceHomePager(
     private val load: suspend (SourceCursorRequest) -> SourcePage<SourceHomeSection>,
     private val presentation: (SourceHomeSection) -> SourceHomePresentation? = { null },
@@ -31,7 +31,7 @@ internal class MainSourceHomePager(
         val previous = if (replace) emptyList() else displayed
         pending = normalizeMainSourceHomeCards(unseenMainSourceHomeCards(pending, previous))
         var requests = 0
-        // 重复页可以继续沿有效游标探测；刷新不使用旧画面作为排重集合。
+        // 如果这一页全被去重过滤掉了，只要还有游标就接着往后拉几页；下拉刷新时不拿旧列表去重。
         while (pending.isEmpty() && !finished && requests++ < if (replace || displayed.isEmpty()) 3 else 8) {
             val page = load(SourceCursorRequest(cursor, size, if (replace) SourceFetchPolicy.REFRESH else SourceFetchPolicy.CACHE_FIRST))
             check(page.nextCursor == null || page.nextCursor != cursor) { "音源推荐分页没有前进" }

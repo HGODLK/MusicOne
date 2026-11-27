@@ -3,7 +3,7 @@ package com.musicone
 import androidx.compose.runtime.*
 import kotlinx.coroutines.flow.collectLatest
 
-/** 显示任务单独登记所有权，旧入口的收尾不能清除新入口，也不能留下无人续接的半程。 */
+/** 管理横屏时钟动画任务的所有权，防止旧任务结束时误清状态或中断后卡在半路。 */
 internal class PhoneClockHandoff {
     var running by mutableStateOf(false)
         private set
@@ -34,7 +34,7 @@ private data class PhoneClockRecoveryCheck(val request: PhoneClockTransitionRequ
     val track: Pair<MusicSource, String>, val running: Boolean, val turning: Boolean,
     val endpointReady: Boolean)
 
-/** 只观察切歌、任务结束和转向交接边界，正常时分秒及飞行帧不触发重启。 */
+/** 监听切歌和转向结束等边界状态，如果时钟动画意外卡在半路则自动触发恢复。 */
 @Composable
 internal fun PhoneClockHandoffRecovery(handoff: PhoneClockHandoff, request: PhoneClockTransitionRequest,
     track: MusicTrack, turn: PhonePlayerTurn?, flight: PhoneClockFlight,
@@ -50,7 +50,7 @@ internal fun PhoneClockHandoffRecovery(handoff: PhoneClockHandoff, request: Phon
         }.collectLatest { check ->
             if (check.running || check.request.target != 1f || check.request.preparing || check.request.fading)
                 return@collectLatest
-            // 让本轮正常入口先取得所有权，避免切歌重组与入口启动同帧时抢断原动画。
+            // 先等两帧让正常动画启动，避免切歌重组同帧时误触发兜底恢复。
             repeat(2) { withFrameNanos { } }
             if (latestRequest != check.request) return@collectLatest
             handoff.recoverIfIdle(flight.progress.value, flight.velocity, latestExposure(),

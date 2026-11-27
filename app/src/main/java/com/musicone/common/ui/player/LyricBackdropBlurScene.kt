@@ -20,7 +20,7 @@ internal fun lyricBottomBlurBand(start: Float, height: Float): LyricBlurBand? =
 internal fun lyricTopBlurBand(top: Float, end: Float): LyricBlurBand? =
     if (end <= top) null else LyricBlurBand(top, end)
 
-/** 只采样可见带及卷积留白；80px 缓冲块固定在原图网格上，控件运动不使纹理逐像素抖动。 */
+/** 只采样可见模糊带和卷积留白，并按 80px 对齐原图网格，防止控件移动时纹理逐像素抖动。 */
 internal fun lyricBlurSampleBounds(top: Float, bottom: Float, height: Float, radius: Float): Pair<Float, Float> {
     val padding = radius * 3f + 8f
     return (floor((top - padding) / 80f) * 80f).coerceIn(0f, height) to
@@ -31,7 +31,7 @@ internal fun lyricBlurSampleBounds(top: Float, bottom: Float, height: Float, rad
 internal fun lyricBlurSampleFits(visibleHeight: Float, capacity: Float, radius: Float): Boolean =
     capacity >= visibleHeight + (radius * 3f + 8f) * 2f + 80f
 
-/** 原始分辨率模糊。容量从小到大排列，平时只用局部纹理；没有绘制到的图层不占纹理。 */
+/** 按原分辨率做局部模糊：缓存槽从小到大排列，平时只用小槽位，未绘制的槽位不占显存。 */
 internal class LyricBackdropBlurScene(
     cache: CacheDrawScope,
     source: GraphicsLayer,

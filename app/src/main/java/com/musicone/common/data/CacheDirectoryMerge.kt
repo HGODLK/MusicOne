@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 刷新目录时一次建立索引，避免大量歌单逐项扫描旧目录。 */
+/** 刷新歌单目录时先建 Map 索引合并旧歌曲，避免大量歌单嵌套遍历。 */
 internal fun mergeCacheDirectoryTracks(fresh: List<MusicPlaylist>, previous: List<MusicPlaylist>): List<MusicPlaylist> {
     val byKey = buildMap<String, MusicPlaylist> { previous.forEach { playlist -> getOrPut(cachePlaylistKey(playlist)) { playlist } } }
     return fresh.map { playlist ->

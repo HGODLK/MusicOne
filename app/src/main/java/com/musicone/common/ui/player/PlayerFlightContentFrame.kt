@@ -5,7 +5,7 @@ import androidx.compose.ui.geometry.Rect
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** 同一帧共用系数，保留原旋转函数的浮点运算顺序。 */
+/** 缓存同一帧飞行背景的几何结果，供封面、标题等子元素复用，避免重复计算。 */
 internal data class PlayerFlightRotation(val cosine: Float, val sine: Float) {
     fun rotate(point: Offset): Offset {
         val center = Offset.Zero

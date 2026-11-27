@@ -19,7 +19,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
 
-/** 输入框独立采样聊天与未裁剪的飞行封面，前景玻璃始终留在采样源之外。 */
+/** 输入框毛玻璃单独采样聊天列表和未裁切的飞行封面，玻璃自己不进采样层。 */
 internal class AiComposerBackdrop(val layer: GraphicsLayer, val artwork: GraphicsLayer) {
     var bounds by mutableStateOf(Rect.Zero)
     var artworkBounds by mutableStateOf(Rect.Zero)
@@ -27,7 +27,7 @@ internal class AiComposerBackdrop(val layer: GraphicsLayer, val artwork: Graphic
 
 internal val LocalAiComposerBackdrop = staticCompositionLocalOf<AiComposerBackdrop?> { null }
 
-/** 合成层只引用原生子层；封面逐帧更新沿用播放条的宿主绘制通知，不牵动聊天布局。 */
+/** 把聊天层和封面层合成到输入框的背景采样层里，封面动画只触发重绘，不触发聊天布局重算。 */
 internal fun Modifier.aiChatBackdrop(chat: GraphicsLayer, bounds: () -> Rect, sampling: AiComposerBackdrop?): Modifier =
     drawWithContent {
         chat.record { this@drawWithContent.drawContent() }
@@ -44,7 +44,7 @@ internal fun Modifier.aiChatBackdrop(chat: GraphicsLayer, bounds: () -> Rect, sa
         drawLayer(chat)
     }
 
-/** 先完整录制飞行封面供玻璃取样，再沿原圆角遮挡绘制，不能让清晰封面盖过输入框。 */
+/** 先把飞行封面完整录进采样层给毛玻璃用，再正常画出来，避免清晰封面盖住输入框。 */
 internal fun Modifier.aiComposerArtworkBackdrop(sampling: AiComposerBackdrop?): Modifier {
     if (sampling == null) return this
     val path = Path()

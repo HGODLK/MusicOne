@@ -8,7 +8,7 @@ data class SourceAccount(
 enum class SourceSessionStatus { GUEST, AUTHENTICATED, EXPIRED }
 data class SourceAccountState(val status: SourceSessionStatus, val account: SourceAccount?, val revision: Long)
 
-// 完整会话是不透明内容，不得将其写入日志，也不能只迁移头像或已登录标记。
+// 完整会话视为不透明数据，不要写入日志，迁移时也不能只搬头像或登录标记。
 class SourceSessionSnapshot(val format: String, val version: Int, val fields: Map<String, String>) {
     override fun toString(): String = "SourceSessionSnapshot(format=$format, version=$version, fields=<已隐藏>)"
 }
@@ -35,6 +35,6 @@ interface SourceAuthentication {
     suspend fun refreshAccount(): SourceAccountState
     suspend fun logout()
     fun exportSession(): SourceSessionSnapshot?
-    // 持久化成功后才返回收据；实现必须幂等，空白输入不得覆盖有效会话。
+    // 保存成功后再返回收据；实现需幂等，空输入不能覆盖已有有效会话。
     fun importLegacySession(session: SourceLegacySession): SourceMigrationReceipt
 }

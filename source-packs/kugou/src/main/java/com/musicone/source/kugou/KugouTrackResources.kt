@@ -2,7 +2,7 @@ package com.musicone.source.kugou
 
 import org.json.JSONObject
 
-/** 云歌单主 hash 属于收藏时的档位，不能一律当成标准音质。 */
+/** 提取歌曲各音质档位对应的 hash（云歌单的主 hash 可能是高音质，不能一律当标准档）。 */
 internal fun JSONObject.kugouQualityHashes(): Map<AudioQuality, String> = buildMap {
     fun hash(item: JSONObject, vararg names: String): String? = names.firstNotNullOfOrNull { name ->
         item.optString(name).trim().takeIf { it.isNotEmpty() && it.any { char -> char != '0' } && it != "null" }

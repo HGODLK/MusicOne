@@ -15,7 +15,7 @@ class SourceArchiveVerifier(private val androidApi: Int = Build.VERSION.SDK_INT,
         var manifestText: String? = null
         var hasDex = false
         var totalBytes = 0L
-        // 完整读取每个载荷，触发 JAR v1 摘要和证书验证；不能只读取清单中的自报身份。
+        // 完整读取每个条目以触发 JAR v1 签名和摘要校验，不能轻信 manifest 里自报的身份。
         JarFile(file, true).use { jar ->
             val seen = HashSet<String>()
             val entries = jar.entries()

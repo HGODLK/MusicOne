@@ -4,13 +4,13 @@ import androidx.compose.ui.geometry.Offset
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** 起点距离固定于本轮补偿，正文平移不能改变分母并让遮罩反向展开。 */
+/** 按初始总距离和当前剩余位移计算转向完成度（带 smoothstep 缓动），避免分母变化引起进度倒退。 */
 internal fun phoneTurnDrawingProgress(distance: Float, remaining: Float): Float {
     val progress = if (distance <= .5f) 1f else (1f - remaining / distance).coerceIn(0f, 1f)
     return progress * progress * (3f - 2f * progress)
 }
 
-/** 晚到布局更换枢轴时，先换算同一幅画面的新枢轴，不能直接挪动正在显示的内容。 */
+/** 更换旋转枢轴比例时，同步换算等价的新枢轴坐标，保证当前画面位置不动。 */
 internal fun phoneTurnReanchor(pose: PhoneTurnPose, fraction: Offset): PhoneTurnPose {
     val local = Offset(pose.size.width * (fraction.x - pose.pivotFraction.x),
         pose.size.height * (fraction.y - pose.pivotFraction.y))
@@ -20,7 +20,7 @@ internal fun phoneTurnReanchor(pose: PhoneTurnPose, fraction: Offset): PhoneTurn
     return pose.copy(pivot = pose.pivot + shift, pivotFraction = fraction)
 }
 
-/** 新枢轴同时继承旋转及缩放产生的切向速度，保留真实运动的连续性。 */
+/** 换枢轴时一并换算线速度（叠加缩放和角速度带来的切向速度），保持运动连续。 */
 internal fun phoneTurnReanchorVelocity(pose: PhoneTurnPose, fraction: Offset, velocity: Offset,
     extentVelocity: Offset, angularVelocity: Float): Offset {
     val delta = fraction - pose.pivotFraction

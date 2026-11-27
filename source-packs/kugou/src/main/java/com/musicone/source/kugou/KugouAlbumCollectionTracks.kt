@@ -2,7 +2,7 @@ package com.musicone.source.kugou
 
 import com.musicone.source.sdk.*
 
-/** 旧专辑曲目读取只补展示资料，歌曲身份、播放参数和权益保持原样。 */
+/** 给旧专辑接口返回的曲目补齐封面和专辑名等展示字段，不改动歌曲 ID、播放参数和权限信息。 */
 internal fun SourcePage<SourceTrackDetails>.withKugouAlbumCollectionMetadata(collection: SourceCollection): SourcePage<SourceTrackDetails> {
     val remote = collection.identity.remoteId
     val albumId = remote.takeIf { it.startsWith("album:") }?.removePrefix("album:")

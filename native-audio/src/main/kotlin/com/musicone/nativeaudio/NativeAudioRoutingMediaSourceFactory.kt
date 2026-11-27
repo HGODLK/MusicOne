@@ -95,8 +95,8 @@ class NativeAudioRoutingMediaSourceFactory(
             return native
         }
 
-        // 3. 对 M4A/MP4 容器、无后缀、.audio 或 content:// URI：使用原生探针对内容进行权威探测
-        // 完美支持 moov atom 位于文件尾部的 24-bit ALAC，以及 SAF 虚拟 content:// 路径
+        // 3. M4A/MP4 容器、无后缀、.audio 或 content:// URI 交给原生探针按内容识别
+        // 兼容 moov atom 在文件尾部的 24-bit ALAC，以及 SAF 的 content:// 路径
         val isNativeSupported = runCatching {
             val ds = dataSourceFactory.createDataSource()
             val spec = DataSpec.Builder().setUri(uri).build()

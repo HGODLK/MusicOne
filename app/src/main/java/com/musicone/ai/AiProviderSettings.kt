@@ -6,7 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** 服务配置独立处理；手动模型验证不要求服务实现模型列表接口。 */
+/** 供应商配置单独管理；手动填的模型直接用最小请求验证，不强制要求接口支持拉取模型列表。 */
 internal class AiProviderSettings(
     private val store: AiConfigurationStore,
     private val client: AiProviderClient,

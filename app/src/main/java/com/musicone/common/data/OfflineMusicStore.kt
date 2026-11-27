@@ -9,7 +9,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-/** 播放索引与音频数据分离；完整性始终根据磁盘区间重新判断。 */
+/** 离线元数据索引和实际音频缓存分开存，是否完整始终以磁盘上真实缓存的字节区间为准。 */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class OfflineMusicStore(private val context: Context) {
     private val store = context.getSharedPreferences("offline_music_index", Context.MODE_PRIVATE)
@@ -69,7 +69,7 @@ internal class OfflineMusicStore(private val context: Context) {
             verifications[key] = OfflineIndexVerificationBasis(aliases.first().second) to full
         }, checkActive)
         if (verifications.isNotEmpty()) {
-            // 补验结果批量写回最新记录，既保留并发更新的资料，也避免逐曲重读整份索引。
+            // 把补验结果批量写回最新的记录，既不覆盖并发更新的歌曲信息，也不用每首歌重读一遍索引。
             val latest = records(checkActive = checkActive).groupBy { physical(it.first, it.second) }
             val edit = store.edit()
             val applied = linkedMapOf<String, Boolean>()
@@ -120,7 +120,7 @@ internal class OfflineMusicStore(private val context: Context) {
         val cache = MusicDiskCache.get(context).audio
         val referenced = records(track.source).filter { it.second.optString("id") == track.id }
             .map { physical(it.first, it.second) }
-        // DASH 音轨仍经清单恢复，不能被普通音频的前缀扫描直接拿来解码。
+        // DASH 音轨要靠 MPD 清单恢复，这里排除掉，防止被普通音频的前缀匹配扫进去。
         val dashKeys = supplemental.recordedKeys(track).toSet()
         return (referenced + cache.keys.filter { it.startsWith(prefix(track)) }).distinct()
             .filter { it !in dashKeys && cache.getCachedSpans(it).isNotEmpty() }
@@ -137,7 +137,7 @@ internal class OfflineMusicStore(private val context: Context) {
         }
     }
 
-    /** 管理页一次扫描共享索引，不能为每一行反复解析整份离线元数据。 */
+    /** 一次性扫完离线索引生成快照给管理页用，避免每渲染一行就重解析一遍索引。 */
     fun snapshot(): OfflineCacheSnapshot {
         val cache = MusicDiskCache.get(context).audio
         val bytes = cache.keys.associateWith { key -> cache.getCachedSpans(key).sumOf { it.length } }.filterValues { it > 0 }
@@ -210,7 +210,7 @@ internal class OfflineMusicStore(private val context: Context) {
         return (records(source).mapNotNull { it.second.toStoredTrack() } + supplemental.savedTracks(source)).distinctBy { it.id }
     }
 
-    // 两类已有离线索引只读取宿主持有的公共曲目资料，不触碰包私有账号文件。
+    // 合并读取普通和补充音源两份离线索引，只读宿主保存的公开歌曲信息，不碰音源包私有数据。
     private fun retainedRecords(): List<Pair<String, JSONObject>> = (store.all.entries.toList() +
         context.getSharedPreferences("supplemental_audio_index", Context.MODE_PRIVATE).all.entries.toList()).mapNotNull { (key, value) ->
         runCatching { key to JSONObject(value as String) }.getOrNull()

@@ -3,7 +3,7 @@ package com.musicone
 import kotlinx.coroutines.CancellationException
 import org.json.JSONObject
 
-/** 不完整的工具请求尚未执行，可以重新请求模型；执行后的错误由工具台账处理。 */
+/** 模型返回的工具调用如果截断不完整，还没实际执行，可以直接重试；已经执行过的错误由工具日志处理。 */
 internal suspend fun retryAiModelResponse(onRetry: (Int) -> Unit, request: suspend () -> AiChatResponse): AiChatResponse {
     var retries = 0
     while (true) {

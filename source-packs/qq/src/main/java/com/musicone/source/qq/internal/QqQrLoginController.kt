@@ -8,7 +8,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
-/** 扫码任务独立于设置页；取消或换码后丢弃旧请求的所有迟到结果。 */
+/** 扫码登录控制器：取消或刷新二维码后自动丢弃旧轮询的迟到结果。 */
 internal class QqQrLoginController(
     private val scope: CoroutineScope,
     private val create: suspend (MusicSource, PlatformLoginMethod, String) -> PlatformQrChallenge,

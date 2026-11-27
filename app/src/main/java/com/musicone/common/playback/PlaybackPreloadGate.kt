@@ -5,7 +5,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.random.Random
 
-/** 音频取源与歌词请求共用单路错峰，下载在锁外并行，不阻塞当前歌曲解析。 */
+/** 预加载的取地址和拉歌词共用一把串行错峰锁（随机延迟），文件下载在锁外并行跑，不抢当前歌曲的请求。 */
 internal class PlaybackPreloadGate(
     private val delayMs: () -> Long = { Random.nextLong(300L, 5_001L) },
     private val wait: suspend (Long) -> Unit = { delay(it) },

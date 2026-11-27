@@ -121,7 +121,7 @@ internal fun ImmersiveLyrics(
     val middleSeekEnabled = active && !freezeWindow && heldPreparation == null
     val middleOwnsPosition = middleSeekEnabled && middleSeek.willOwn(isSeeking, intermediateSeek, progressLyricSeek, intermediateCommit)
     LaunchedEffect(current, isSeeking, middleOwnsPosition, middleSeek.revision, freezeWindow) {
-        // 首个预览目标也由定位事务发布，不能先把旧列表的高亮改成目标句。
+        // 拖动预览期间由预览逻辑统一更新目标行，不要提前把旧列表的高亮切过去。
         if (!middleOwnsPosition && !freezeWindow) controller.updatePlaybackLine(current, present = !isSeeking)
     }
 
@@ -196,12 +196,12 @@ internal fun ImmersiveLyrics(
         topLinePreparationLoop(request, activePane.listState, transitionHistory, lyricDensity, typography,
             { activeLyric(lines, lyricDisplayPosition(progressMs(), track.timing)) },
             { latestEntranceProgress?.invoke() ?: (1f - latestExitProgress()) }, onLine = { line ->
-            // 中间态跨句也同步隐藏目标的焦点，不能永远等待旧句的绘制确认。
+            // 开合中途如果跨句了，同步更新屏外窗口的焦点，避免一直死等旧句的绘制完成。
             controller.updatePlaybackLine(line, presentDuringTransition = true)
             activePane.playbackStep.reset(line)
         }, stamp = { lyricDisplayStamp(activePane, track.id, preparationRotation) })
     }
-    // 收起时保留历史准备几何；反向期间由原对齐动画继续接管位置。
+    // 收起过程中保留过渡历史状态，反向拉回时交给对齐动画继续接管位置。
     val closingWindow = exitAlignment != null || closingLyricsDrag
     val historyPhase by remember {
         derivedStateOf {
@@ -209,7 +209,7 @@ internal fun ImmersiveLyrics(
             when { progress <= 0f -> 0f; progress >= 1f -> 1f; else -> .5f }
         }
     }
-    // 准备快照只影响行程测量，不再改变历史行的显示资格。
+    // 过渡历史快照只用于计算展开行程，不控制歌词行的显隐。
     if (!freezeWindow && !middleOwnsPosition) transitionHistory.update(historyPhase,
         limitTransitionHistory && follow && !isSeeking && !shortSeek.active &&
             !controller.previewActive && controller.state == LyricLayerTransitionState.NORMAL,
@@ -336,12 +336,12 @@ internal fun ImmersiveLyrics(
                     }
                     openingStandby.record(current, activePane.listState.layoutInfo, transitionHistory.openingContext)
                 }
-                // 首开采用屏外准备后的实测行块，不能沿用上一帧绘制记录。
+                // 首次打开时用屏外准备好的实测布局计算模糊保护区，不沿用上一帧旧数据。
                 onWindowLayout?.invoke(transitionHistory.openingContext?.compactLayout ?: activePane.listState.layoutInfo,
                     lyricBlurProtection(activePane.listState.layoutInfo, current,
                         activePane.playbackStep.offsetPx(current), true))
                 if (openingAlignment != null) {
-                    // 常驻命中也重新交接本轮焦点，不能沿用上次已经完成的展开资格。
+                    // 即使命中了常驻缓存，也要重新确认本轮焦点并等这一帧实际绘制完成。
                     topLineAlignment.prepare(current)
                     snapshotFlow { lyricDisplayStamp(activePane, track.id, preparationRotation) }.first { it != null }
                     openingDrawProof.awaitDraw(current, lyricDisplayStamp(activePane, track.id, preparationRotation))
@@ -373,11 +373,11 @@ internal fun ImmersiveLyrics(
 
     LyricAnimationEffect(track.id, pendingProgressSeek?.revision, active, playbackFollowing, isSeeking, controller.previewActive, middleOwnsPosition, freezeWindow) {
         pendingProgressSeek?.let { request ->
-            // 转屏期间保留请求，释放阅读位置后处理最新目标，不能确认后丢弃。
+            // 转屏冻结期间先挂起跳转请求，等解冻后再处理最新目标，不要直接丢弃。
             if (freezeWindow) return@LyricAnimationEffect
             if (middleOwnsPosition) return@LyricAnimationEffect
             autoRefocus.cancel()
-            // 松手交接尚未结束的新单击稍后再处理，不能把它误当作拖动取消掉。
+            // 拖动预览刚松手还没收尾完，此时的新单击先等一下再处理。
             if (!isSeeking && controller.previewActive) return@LyricAnimationEffect
             handledProgressLyricSeek = request.revision
             if (!active || !playbackFollowing || isSeeking) {
@@ -391,7 +391,7 @@ internal fun ImmersiveLyrics(
             val closeDistance = shouldAnimateLyricScroll(listState.firstVisibleItemIndex, targetIndex)
             follow = true
             if (trulyVisible || closeDistance) {
-                // 先占有滚动权，再发布音频 seek，避免正常跟随抢占同一次点击。
+                // 先启动短距滚动占住滚动权，再通知音频 seek，避免正常播放跟随抢占。
                 shortSeek.start(scope, activePane, targetIndex) { request.targetReady.complete(Unit) }
                 request.sourceIsolated.complete(Unit)
             } else {
@@ -448,7 +448,7 @@ internal fun ImmersiveLyrics(
                     }
                 }
                 LyricPlaybackStepChange.MULTI_STEP -> {
-                    // 已测量的跨句沿用自然逐行位移；未测量目标复用屏外窗口准备。
+                    // 目标行已在屏内（已测量）就直接平滑滚动，在屏外则走双窗口切换。
                     val entrance = topLineAlignment.playbackScroll
                     val targetItem = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == current }
                     if (entrance != null) {
@@ -517,7 +517,7 @@ internal fun ImmersiveLyrics(
         }
         val extraPaddingFraction = rememberLyricIntermediateSeekPaddingFraction(
             preparingHistory, middleOwnsPosition)
-        // 寻焦落位前保留末尾行程，不能在松手收尾时同步压缩列表边界。
+        // 跳转还没落位前先保留底部额外留白，防止松手收尾时列表边界突然回缩。
         val bottomPadding = (maxHeight - anchor).coerceAtLeast(72.dp) +
             anchor * extraPaddingFraction
 
@@ -537,7 +537,7 @@ internal fun ImmersiveLyrics(
                 openingDrawProof.drawn(current, info.viewportSize.width > 0 && info.viewportSize.height > 0,
                     currentItem != null && glyphReady, currentDisplayPane.listState.isScrollInProgress, stamp)
             }
-            // 只有关闭态已绘制到阅读锚点才算可直开，读取结果不增加额外绘制订阅。
+            // 只有关闭状态下已经绘制并停在阅读锚点，下次才允许直接展开，不走准备流程。
             if (currentDisplayPane === activePane && residency.prepareClosed) residentStandby?.drawn(standbyOwner,
                 stamp?.takeIf { lyricWindowAligned(currentItem?.offset, currentDisplayPane.listState.isScrollInProgress,
                     currentDisplayPane.playbackStep.offsetPx(current)) }?.let { LyricStandbyFrame(it, current) })
@@ -691,11 +691,13 @@ internal fun LyricListView(
         lineWindow?.let { LyricBoundaryViewport(it, boundaryLayout::height) }
     }
     val fling = rememberLyricFlingBinding()
-    // 行只拿稳定的读取入口，列表因切句重组时，参数未变的远处行可以直接跳过。
+    // 传给单行的 currentLine 保持引用稳定，切句时远处未受影响的歌词行可以跳过重组。
     val currentLine = remember(pane) { { pane.currentLine } }
     val latestSettle by rememberUpdatedState(lyricSettleProgress)
     val settleProgress = remember { { latestSettle() } }
     val latestLineClick by rememberUpdatedState(onLineClick)
+    // 按全曲主歌词语言一次判定整屏对齐方向；切歌时新旧窗口各自保留自身对齐。
+    val alignRight = remember(lines) { isRtlPrimaryLyrics(lines) }
     // 列表本身订阅焦点（重组只到这一层），由它登记真实焦点句。
     val presentedLine = pane.currentLine
     SideEffect { if (!freezeVisual) pane.playbackStep.presentEmphasis(presentedLine) }
@@ -729,6 +731,7 @@ internal fun LyricListView(
                 playbackMotion = pane.playbackStep,
                 playbackStepActive = active && !pane.isFrozen && !isSeeking && !shortSeeking,
                 smoothProgressMs = smoothProgressMs,
+                alignRight = alignRight,
                 onClick = remember(index, line) { { latestLineClick(index, line) } },
                 boundary = remember(lineWindow, boundaryLayout, boundaryViewport, index, viewportGeometry) {
                     lineWindow?.let { bounds -> LyricLineBoundary(bounds,

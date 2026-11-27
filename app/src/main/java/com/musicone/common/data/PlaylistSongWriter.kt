@@ -4,7 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 
-/** 添加切换和离页移除共用写入器，权限与歌曲身份在真正提交时再次核对。 */
+/** 添加歌曲和退出页面时的延迟移除共用这个写入器，真正提交时会再核对一次权限和歌曲信息。 */
 internal class PlaylistSongWriter(private val preferences: PlatformPreferences, private val library: MusicLibraryStore) {
     private val online = PlatformPlaylistSongRepository(preferences.applicationContext)
 

@@ -5,7 +5,7 @@ import android.util.Base64
 import com.musicone.*
 import com.musicone.source.sdk.*
 
-/** 每次操作取得仍有效的包实例，不持有已删除包的业务接口。 */
+/** 每次调用实时取当前运行的音源包实例，避免持有已卸载包的旧引用。 */
 internal class SourcePlaybackAdapter(private val context: Context, override val source: MusicSource,
     private val origin: PlaybackRequestOrigin = PlaybackRequestOrigin.PLAYBACK) : PlatformPlaybackAdapter {
     private suspend fun entry(): SourceEntry {

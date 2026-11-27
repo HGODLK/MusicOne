@@ -11,7 +11,7 @@ internal data class PlaybackPresentationKey(
 )
 
 /**
- * 将短暂缓冲与用户可见的暂停状态隔离；手动播放/暂停仍立即交接。
+ * 短暂缓冲时延迟更新界面上的播放/暂停图标，避免闪烁；用户手动点播放/暂停时立刻响应。
  */
 internal class PlaybackPresentationDelay(
     private val scope: CoroutineScope,

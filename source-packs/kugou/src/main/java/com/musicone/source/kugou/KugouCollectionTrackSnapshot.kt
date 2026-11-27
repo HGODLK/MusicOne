@@ -7,7 +7,7 @@ import com.musicone.source.sdk.SourceTrackDetails
 import org.json.JSONObject
 import java.security.MessageDigest
 
-/** 完整快照只保留一份原始行；只转换请求页，不常驻整单 JSON 树和两套权益对象。 */
+/** 歌单曲目缓存：只存原始行文本，翻到哪页再解析哪页，避免在内存里常驻整张歌单的 JSON 树。 */
 internal class KugouCollectionTrackSnapshot(
     private val account: String,
     private val listId: String,
@@ -57,7 +57,7 @@ internal class KugouCollectionTrackSnapshot(
     }
 }
 
-/** 分页接收时逐行校验及编码；摘要沿原输入格式增量计算，不拼接数兆字节的整单字符串。 */
+/** 分页拉取时逐行校验并增量计算哈希，避免把几 MB 的整张歌单拼成一个大字符串。 */
 internal class KugouCollectionSnapshotBuilder(
     private val account: String,
     private val listId: String,

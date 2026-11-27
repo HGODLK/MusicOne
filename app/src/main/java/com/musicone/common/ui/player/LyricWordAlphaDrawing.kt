@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.IntRect
 import kotlin.math.ceil
 
 /**
- * 正文录制完整字形；外伸词段使用独立墨迹，明暗不参与测量排版。
+ * 正文录制完整字形，带外伸笔画的词段单独做位图缓存，逐字明暗只影响绘制不触发重排。
  * 跨视觉行的词段保持原排版位置，路径仅随实际文字布局变化重新缓存。
  */
 @Composable

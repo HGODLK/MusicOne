@@ -5,7 +5,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import org.json.JSONObject
 
-/** 只读账号云端单曲历史；bp 是平台游标，不创建歌单，也不提交播放记录。 */
+/** 拉取酷狗账号的云端最近播放记录（bp 为分页游标）。 */
 internal class KugouRecentClient(private val client: KugouContentClient = KugouContentClient()) {
     suspend fun snapshot(cookie: String, vip: Boolean, checkOwner: () -> Unit = {}): SourceRecentSnapshot {
         val session = cookie.requiredKugouSession()
@@ -33,10 +33,10 @@ internal class KugouRecentClient(private val client: KugouContentClient = KugouC
             }
             entries.forEach { entry ->
                 val previous = unique[entry.key]
-                // pc 是累计次数，不是独立历史条数；同一云端曲目只保留最新 ot 的资料。
+                // pc 是播放次数不是条数；同一首歌出现多条时只保留播放时间（ot）最新的一条
                 if (previous == null || entry.timeSec > previous.timeSec) unique[entry.key] = entry
             }
-            // 官方以 has_more==1 决定继续，结束页仍可能保留 bp，不能把残留游标当成下一页。
+            // 是否还有下一页看 has_more==1，最后一页有时仍会带 bp 字段，不能光看 bp 非空就继续翻页
             val more = if (data.has("has_more") && !data.isNull("has_more")) {
                 data.opt("has_more").toString().toIntOrNull()?.let { it == 1 }
                     ?: throw PlatformApiException("酷狗云端播放历史分页标记格式错误")
@@ -54,7 +54,7 @@ internal class KugouRecentClient(private val client: KugouContentClient = KugouC
             bp = next
         } while (bp != null)
         check()
-        // 完整读取之后才计算实际单曲总数，不把首批长度、pc 或其他设备截图数字当成 total。
+        // 全部拉完去重后再统计实际单曲总数
         val tracks = unique.values.sortedByDescending { it.timeSec }
             .map { KugouSourceMapping.track(it.track, session.userId) }
         return SourceRecentSnapshot(tracks = tracks, totalTracks = tracks.size)
@@ -67,7 +67,7 @@ private fun JSONObject.kugouRecentEntry(vip: Boolean): KugouRecentEntry {
     val info = optJSONObject("info") ?: throw PlatformApiException("酷狗云端播放历史缺少歌曲资料")
     val normalized = JSONObject(info.toString())
     val mxid = contentText("mxid").takeIf { it.toLongOrNull()?.let { id -> id > 0 } == true }
-    // mxid 是云端曲目编号，只在歌曲本身缺少编号时补 mixsongid，绝不替代原 hash 身份。
+    // 如果歌曲本身缺 ID，用云端的 mxid 补上 mixsongid，但不改动原来的 hash 主 ID
     if (mxid != null && normalized.contentText("MixSongID", "mixsongid", "album_audio_id", "audio_id", "audioid").isBlank()) {
         normalized.put("mixsongid", mxid)
     }

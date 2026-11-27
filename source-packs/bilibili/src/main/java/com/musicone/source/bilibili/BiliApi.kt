@@ -107,7 +107,7 @@ internal class BiliApi(context: Context) {
     }
 
     /**
-     * 获取视频真实详情（包含真实标题、UP主、封面、时长及分P，拒绝虚假兜底）。
+     * 获取视频详情（标题、UP 主、封面、时长及分 P 信息）。
      */
     fun getVideoDetails(bvid: String, cookie: String = ""): BiliVideoDetails {
         val headers = auth.webHeaders(cookie)

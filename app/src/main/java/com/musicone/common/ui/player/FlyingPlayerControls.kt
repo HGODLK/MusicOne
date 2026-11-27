@@ -112,13 +112,18 @@ internal fun FlyingPlayerControls(motion: PageMotion, track: MusicTrack, playing
                     Modifier.playerFlightTint(secondary, playerSecondary, motion), artist = true,
                     fontSize = subtitleSize.sp)
             } else {
-                Text(musicOneUiAnnotatedString(playerPrimaryArtists(track.artists)),
-                    style = (if (target) MusicOneTextStyles.playerArtist else MusicOneTextStyles.miniPlayerArtist)
-                        .copy(fontSize = subtitleSize.sp),
-                    color = playerInk, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.then(if (target) Modifier.basicMarquee(iterations = 0) else Modifier)
-                        .playerFlightTint(secondary, playerSecondary, motion))
+                val artistText = playerPrimaryArtists(track.artists)
+                val artistDirection = if (target && isRtlStrongText(artistText)) androidx.compose.ui.unit.LayoutDirection.Rtl
+                    else androidx.compose.ui.platform.LocalLayoutDirection.current
+                CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides artistDirection) {
+                    Text(musicOneUiAnnotatedString(artistText),
+                        style = (if (target) MusicOneTextStyles.playerArtist else MusicOneTextStyles.miniPlayerArtist)
+                            .copy(fontSize = subtitleSize.sp, textDirection = contentTextDirection(artistText)),
+                        color = playerInk, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.then(if (target) Modifier.basicMarquee(iterations = 0) else Modifier)
+                            .playerFlightTint(secondary, playerSecondary, motion))
+                }
             }
         }
         FlyingControl(motion, "play", target, playFlight, Alignment.Center) {

@@ -9,7 +9,7 @@ internal interface UsbSilenceTrack {
     fun release()
 }
 
-/** 独立串行写线程持续送入静音，旧音轨释放后才能启动新一轮，不能只调用 play。 */
+/** 用单独的线程持续往静音 AudioTrack 写零数据（占位保活），等旧音轨彻底释放后才能开新的。 */
 internal class UsbSilenceFeeder(
     private val openTrack: () -> UsbSilenceTrack,
     private val onFailure: (Exception) -> Unit,

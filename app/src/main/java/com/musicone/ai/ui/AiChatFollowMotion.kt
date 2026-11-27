@@ -5,7 +5,7 @@ import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.TargetBasedAnimation
 import androidx.compose.animation.core.VectorConverter
 
-/** 复用现有临界阻尼弹簧与帧采样方式，目标变化时从当前速度继续补滚。 */
+/** 复用通用的临界阻尼弹簧逐帧步进，目标变远时接着当前速度继续滚，不重新起步。 */
 internal class AiChatFollowMotion {
     var velocity = 0f
         private set

@@ -39,7 +39,7 @@ internal class OpenSessionResultRaw(
 )
 
 /**
- * 结构化的音频源与输出规格信息。
+ * 音频源和输出规格信息。
  */
 data class NativeAudioSourceInfo(
     val formatName: String,
@@ -57,7 +57,7 @@ data class NativeAudioSourceInfo(
     val durationMs: Long get() = durationUs / 1000
 
     /**
-     * 生成符合验收规范的规格描述文本，如：
+     * 生成规格描述文本，例如：
      * "ALAC · 24bit / 96kHz"
      * "DSD64 → PCM 32bit / 192kHz"
      * "APE · 16bit / 44.1kHz"

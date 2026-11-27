@@ -25,7 +25,7 @@ internal data class PlaylistRemovalActions(
 )
 internal val LocalPlaylistRemovals = staticCompositionLocalOf { PlaylistRemovalActions() }
 
-/** 写入由页面之外的生命周期承接，菜单关闭和多选退出均不会提交。 */
+/** 用 ViewModel 承接离开页面时的延迟删除提交，关菜单或退多选时不会提前触发。 */
 internal class PlaylistRemovalViewModel(application: Application) : AndroidViewModel(application) {
     private val preferences = PlatformPreferences(application)
     private val library = MusicLibraryStore.get(application)

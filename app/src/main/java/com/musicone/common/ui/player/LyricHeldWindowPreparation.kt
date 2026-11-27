@@ -8,7 +8,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.abs
 
-/** 新曲在独立隐藏列表中准备当前空间位置，确认对应句实际绘制后才放行渐变。 */
+/** 渐变切歌时在屏外隐藏列表里准备新歌位置，确认目标句实际绘制完成后再放行渐变。 */
 internal class LyricHeldWindowPreparation {
     val ready = CompletableDeferred<Unit>()
     private var line = -1

@@ -14,7 +14,7 @@ internal data class QqPlaybackVerificationState(
     val instanceId: String = java.util.UUID.randomUUID().toString(),
 )
 
-/** 取票只等待当前凭据正在进行的验证，不保存账号级暂停标记。 */
+/** 协调并发取票时的安全验证弹窗，避免同时弹出多个验证窗口。 */
 internal object QqSessionRequestCoordinator {
     private class Pending(
         val cookie: String,
@@ -125,13 +125,13 @@ internal suspend fun <T> retryQqRequestAfterVerification(
     return try {
         request(cookie)
     } catch (required: PlatformSecurityVerificationRequired) {
-        // 后台请求只报告本次验证要求；下次点播仍需向服务器取得新结果。
+        // 后台请求不弹交互验证，直接把验证异常抛回去
         if (!interactive) throw required
         val refreshed = QqSessionRequestCoordinator.awaitVerification(cookie, required.challenge)
         try {
             request(refreshed)
         } catch (again: PlatformSecurityVerificationRequired) {
-            // 分类器不再发布暂停，单次重试失败也不会创建第二个验证窗口。
+            // 重试一次后如果还是要求验证，直接报错结束，不再弹第二次验证窗
             throw QqSessionRequestException(
                 "QQ音乐本次请求仍需验证，请稍后重试",
                 diagnostic = "安全验证后单次重试仍被拦截",

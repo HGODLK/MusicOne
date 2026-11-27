@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 播放位置必须携带歌曲身份，避免切歌时把上一首的位置交给下一首。 */
+/** 播放进度快照，带上 trackId 防止切歌时把上一首的进度误算给下一首。 */
 internal data class PlaybackProgressSnapshot(
     val trackId: String? = null,
     val positionMs: Long = 0L,
@@ -8,13 +8,13 @@ internal data class PlaybackProgressSnapshot(
     val sampledAtMs: Long = 0L,
 )
 
-/** 只描述播放器实际是否正在推进，不复用界面上的乐观播放状态。 */
+/** 记录播放器底层是否真正在出声播放，不直接复用界面上的按钮状态。 */
 internal data class PlaybackActivity(
     val trackId: String? = null,
     val advancing: Boolean = false,
 )
 
-/** 页面和系统歌词共用单调时钟推算，暂停和缓冲期间不自行推进。 */
+/** 用单调时钟推算平滑的歌词进度，暂停或缓冲时停在原地不动。 */
 internal fun continuousLyricPosition(
     positionMs: Long, sampledAtMs: Long, nowMs: Long,
     advancing: Boolean, seeking: Boolean, durationMs: Long,

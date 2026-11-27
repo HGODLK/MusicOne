@@ -2,7 +2,7 @@ package com.musicone
 
 import org.json.JSONObject
 
-/** 播放状态与队列在同一时刻取样，完整曲目沿用现有本机结果表和分页句柄。 */
+/** 同一时刻读取播放状态和队列，完整歌曲列表走本地结果表和分页句柄返回。 */
 internal class AiPlaybackQueueTools(
     private val library: AiLibraryTools,
     private val playback: suspend () -> MusicOneUiState?,
@@ -16,7 +16,7 @@ internal class AiPlaybackQueueTools(
 
 internal data class AiPlaybackQueueSnapshot(val tracks: List<MusicTrack>, val playback: JSONObject)
 
-/** 只输出公开曲目信息；播放地址、本地路径、账号和音源私有参数留在宿主。 */
+/** 只给模型返回公开的歌曲信息，播放地址、本地路径、账号和音源私有数据都留在本地。 */
 internal fun aiPlaybackQueueSnapshot(state: MusicOneUiState, capturedAt: Long = System.currentTimeMillis()): AiPlaybackQueueSnapshot {
     val tracks = state.queue.toList()
     val current = state.currentTrack

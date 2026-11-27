@@ -8,13 +8,13 @@ data class SourceRecentSnapshot(val tracks: List<SourceTrackDetails> = emptyList
     val albums: List<SourceCollection> = emptyList(), val totalAlbums: Int = albums.size,
     val radios: List<SourceCollection> = emptyList())
 
-/** 可选的独立每日推荐入口；旧音源不实现此接口时不改变其原有二进制接口。 */
+/** 可选的每日推荐独立入口，拆成独立接口以兼容旧音源。 */
 interface SourceDailyRecommendations {
     /** 返回本次完整推荐列表，数量由音源决定；公共模板不额外截断。 */
     suspend fun dailyRecommendations(policy: SourceFetchPolicy): List<SourceTrackDetails>
 }
 
-/** 音源声明容器身份和跨页合并规则，宿主不解释平台私有货架编号。 */
+/** 由音源提供容器标识和跨页合并规则，宿主不解析各平台私有的货架 ID。 */
 data class SourceHomePresentation(val stableId: String, val mergePages: Boolean = false,
     val recommendation: Boolean = false, val groupId: String? = null, val groupLimit: Int? = null)
 interface SourceHomeSectionPresentation {

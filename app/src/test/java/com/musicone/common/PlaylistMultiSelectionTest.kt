@@ -89,4 +89,18 @@ class PlaylistMultiSelectionTest {
         assertTrue(selection.active)
         assertFalse(loaded)
     }
+
+    @Test fun aiTemporaryPlaylistsEnableSongMenuWithoutBeingManagedLibrary() {
+        val temp = aiTemporaryPlaylist("ai-temporary:1", "AI 推荐", "理由", listOf(track(0), track(1)))
+        val turn = aiTemporaryPlaylist("ai-turn-12", "回合临时歌单", "理由", listOf(track(0)))
+        val plainLocal = MusicPlaylist("local-raw", MusicSource.LOCAL, "普通本地", "", "", 0, 0, 0, "", emptyList())
+
+        assertTrue(temp.isAiTemporaryPlaylist)
+        assertTrue(temp.supportsSongMenu)
+        assertFalse(temp.isManagedLibrary)
+        assertTrue(turn.isAiTemporaryPlaylist)
+        assertTrue(turn.supportsSongMenu)
+        assertFalse(plainLocal.isAiTemporaryPlaylist)
+        assertFalse(plainLocal.supportsSongMenu)
+    }
 }

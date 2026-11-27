@@ -2,7 +2,7 @@ package com.musicone.sourceintegration
 
 import androidx.compose.runtime.*
 
-/** 只在一级“我的”第一次可见前准备缓存，之后恢复原生命周期订阅及图片加载。 */
+/** 嵌入“我的”页首次露面之前先预热已有封面缓存，真正显示后切回正常的生命周期加载。 */
 @Composable
 internal fun rememberPrepareHiddenMyArtwork(enabled: Boolean, library: Any, interactive: Boolean): Boolean {
     if (!enabled) return false

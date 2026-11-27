@@ -17,7 +17,7 @@ import kotlin.coroutines.EmptyCoroutineContext
 internal data class SourceDestination(val name: String, val arguments: Map<String, String>)
 internal class SourceUiCall(val request: SourceUiRequest, val result: CompletableDeferred<SourceUiResult>)
 
-/** 音源服务先于页面建立，页面重建只更换播放与导航接收者。 */
+/** 应用级音源宿主单例，早于 Activity 初始化；页面重建时只更新播放和导航回调。 */
 internal class SourceApplicationHost private constructor(private val context: Context) : SourceHost, SourceUiHost {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val handler = Handler(Looper.getMainLooper())

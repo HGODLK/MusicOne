@@ -17,7 +17,7 @@ internal sealed interface PlaybackTrackEvent {
     data class Failed(override val key: PlaybackRequestKey, val message: String) : PlaybackTrackEvent
 }
 
-/** 音源和后补元数据共用请求身份，切歌后旧任务不能继续起播或覆盖详情。 */
+/** 负责解析歌曲播放地址和补全元数据；切歌后旧任务的结果会被忽略，不会误起播或覆盖新歌详情。 */
 internal class PlaybackTrackLoader(
     private val scope: CoroutineScope,
     private val takePreloaded: (MusicTrack, AudioQuality) -> ResolvedPlayback?,
@@ -54,12 +54,12 @@ internal class PlaybackTrackLoader(
             PlaybackPipelineDiagnostics.stage("解析开始", key.generation)
             val releaseWake = wakeGuard?.acquire()
             try {
-                // 等待包激活后再判断缺包，初始化等待不计入实际解析超时。
+                // 先等音源包初始化完再判断有没有缺包，这段等待不计入解析超时。
                 if (track.source != MusicSource.LOCAL) {
                     awaitSource()
                 }
                 if (!current()) return@launch
-                // 包激活后才能应用跟随主音源等音质规则，不能沿用等待前的能力快照。
+                // 等音源包激活后再重新算一次音质选择，不要用激活前的旧状态。
                 val (requestedPreferred, requestedEffective) = selectQuality?.invoke(track) ?: (preferred to effective)
                 val status = sourceStatus(track)
                 val settleDelay = if (track.source.lyricBehavior?.waitForSingleSwitchSettlement == true && !lyricsHandedOff)
@@ -75,7 +75,7 @@ internal class PlaybackTrackLoader(
                     resolveQueuePlayback(track, status,
                         cached = { if (attempt == 0 && previousSource == null) takePreloaded(track, requestedEffective) else null },
                         resolve = {
-                            // 首轮优先用原资源换票；失败后的重试改走完整解析，不再依赖可能已失效的旧资源。
+                            // 第一次先尝试用旧资源快速刷新地址；如果失败，后续重试走完整解析。
                             if (attempt == 0 && previousSource != null && recover != null) recover.invoke(track, requestedEffective, previousSource)
                             else resolve(track, requestedEffective, if (attempt == 0) settleDelay else 0L)
                         })

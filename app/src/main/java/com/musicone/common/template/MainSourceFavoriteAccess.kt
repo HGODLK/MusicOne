@@ -2,7 +2,7 @@ package com.musicone
 
 internal enum class MainSourceFavoriteAccess { UNSUPPORTED, LOGIN_REQUIRED, AVAILABLE }
 
-/** 收藏目录按实际声明开放；可登录音源仍保留账号收藏边界。 */
+/** 按音源声明判断“我喜欢”是否可用；需要登录的音源在未登录前不开放。 */
 internal fun mainSourceFavoriteAccess(
     signedIn: Boolean,
     requiresAccount: Boolean,

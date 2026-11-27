@@ -27,12 +27,12 @@ internal fun EntityPageHost(navigation: EntityNavigation, state: MusicOneUiState
             LocalPlaylistPull provides pull,
             LocalPlaylistMotion provides frame.motion, LocalPlaylistCardTransition provides null,
             LocalPlaylistContentEntrance provides { 1f }) {
-            // 下层保留组合和列表位置，不设置透明的全屏触摸覆盖层。
+            // 底层页面保活并记住滚动位置，不额外盖全屏透明拦截层。
             Box(Modifier.fillMaxSize().onGloballyPositioned { frame.motion.updateHost(it.boundsInRoot()) }.graphicsLayer {
                 alpha = if (frame.motion.phase == MotionPhase.HIDDEN || frame.motion.phase == MotionPhase.PREPARING) 0f
                     else 1f
             }.drawWithContent {
-                // 子页只采样来源页；进入自身时不录制，以免把玻璃采样接成循环。
+                // 只有完全展开后才录制本页给下一级页面当背景采样，避免转场期间自己采自己形成死循环。
                 if (frame.motion.phase == MotionPhase.SHOWN) {
                     pageLayer.record { this@drawWithContent.drawContent() }
                     drawLayer(pageLayer)
@@ -83,7 +83,7 @@ private fun playEntityTracks(player: MusicPlaybackRuntime, tracks: List<MusicTra
 
 internal data class EntityBackdropSource(val layer: GraphicsLayer, val bounds: Rect)
 
-/** 悬浮控件优先采样已展开的最上层实体页；转场时沿用仍可见的来源页。 */
+/** 悬浮毛玻璃优先采样最顶上已展开的实体页，还在转场动画里时先继续采底下的来源页。 */
 internal fun EntityNavigation.currentPageBackdrop(rootLayer: GraphicsLayer, rootBounds: Rect): EntityBackdropSource {
     val frame = pages.lastOrNull { it.motion.phase == MotionPhase.SHOWN && it.pageLayer != null &&
         it.motion.hostBounds.width > 0f && it.motion.hostBounds.height > 0f }

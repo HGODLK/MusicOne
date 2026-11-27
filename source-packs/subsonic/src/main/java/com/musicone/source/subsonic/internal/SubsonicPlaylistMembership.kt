@@ -8,7 +8,7 @@ import java.security.MessageDigest
 /**
  * “这首歌在不在歌单里”的本地索引，每台服务器一个文件。
  * 版本取 getPlaylists 的 `changed:songCount`：没变直接用索引，变了才整单重拉；
- * 本机写入后直接改索引并标记待定，下一次核对接受服务器的新版本。服务器不返回 changed 时每次都整单读取。
+ * 本地增删改后会直接更新索引并打上待同步标记，下次核对时直接采用服务端新版本；如果服务器不返回 changed 字段，就每次整单重拉。
  */
 internal class SubsonicPlaylistMembership(
     private val directory: File,
@@ -21,7 +21,7 @@ internal class SubsonicPlaylistMembership(
     // 一次“添加到歌单”会为每个歌单各核对一次，版本列表在短时间内共用。
     private var versions: Triple<String, Long, Map<String, String>>? = null
 
-    /** 上次联网得到的可写歌单，只读本地；没有返回 null。 */
+    /** 从本地读取上次拉到的可写歌单列表，没有缓存时返回 null。 */
     fun targets(serverKey: String): List<SubsonicPlaylist>? = synchronized(lock) {
         read(serverKey)?.optJSONArray("targets")?.let { array ->
             (0 until array.length()).mapNotNull { array.optJSONObject(it)?.playlist() }
@@ -59,7 +59,7 @@ internal class SubsonicPlaylistMembership(
         return ids
     }
 
-    /** 本机写入成功后同步索引；[add] 为 null 表示歌曲不变（改序、改名），只标记待定。 */
+    /** 本地写入成功后同步更新索引；[add] 为 null 表示只改了歌单名或顺序、歌曲没变，只需标记版本号待同步。 */
     fun applyWrite(serverKey: String, playlistId: String, ids: Set<String>, add: Boolean?) = synchronized(lock) {
         val entry = entry(serverKey, playlistId) ?: return@synchronized
         val updated = when (add) { true -> entry.ids + ids; false -> entry.ids - ids; null -> entry.ids }

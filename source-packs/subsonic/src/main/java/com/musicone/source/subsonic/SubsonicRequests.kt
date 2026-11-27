@@ -9,7 +9,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 /**
- * 所有网络请求的统一入口：在 IO 线程执行，换算公开错误，
+ * 所有网络请求的统一入口：在 IO 线程执行，转换成公开异常，
  * 账号被拒时标记失效；请求期间切换了服务器则丢弃旧结果。
  */
 internal class SubsonicRequests(private val auth: SubsonicAuthentication) {

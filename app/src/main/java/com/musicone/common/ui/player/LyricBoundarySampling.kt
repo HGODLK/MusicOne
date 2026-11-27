@@ -2,7 +2,7 @@ package com.musicone
 
 internal data class LyricBoundaryEdges(val top: Float, val bottom: Float)
 
-/** 窗口行程包含测量阶段写入的普通字段，必须在实际绘制时重新读取。 */
+/** 窗口行程包含测量阶段写入的非 State 字段，需在绘制阶段实时读取。 */
 internal class LyricBoundaryViewport(private val window: LyricBoundaryWindow, private val height: () -> Float) {
     fun read(): LyricBoundaryEdges {
         val shift = window.offset()
@@ -14,7 +14,7 @@ internal class LyricBoundaryViewport(private val window: LyricBoundaryWindow, pr
 
 }
 
-/** 完全清晰的段落复用透明度表；边缘仍逐排版行执行原公式。 */
+/** 整段都在清晰区或完全不可见时复用共享透明度列表，只有碰到边缘时才逐行计算。 */
 internal class LyricBoundaryAlphaSampler(private val bands: List<Pair<Float, Float>>) {
     private val clear = List(bands.size) { 1f }
     private val firstTop = bands.minOfOrNull { it.first } ?: 0f

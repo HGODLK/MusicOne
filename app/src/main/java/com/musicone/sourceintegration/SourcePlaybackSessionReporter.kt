@@ -9,7 +9,7 @@ import java.util.UUID
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 
-/** 只为主动提供回调的音源计时；复用播放器状态和现有秒级进度通知。 */
+/** 给监听播放上报的音源做计时和事件上报，复用播放器现有的状态和秒级进度回调。 */
 internal class SourcePlaybackSessionReporter(
     private val observerFor: (MusicTrack) -> SourcePlaybackSessionObserver?,
     private val elapsed: () -> Long,
@@ -105,7 +105,7 @@ internal class SourcePlaybackSessionReporter(
     }
 }
 
-/** 网络回调离开播放线程串行运行；释放播放器时先排空末尾结算，再关闭工作协程。 */
+/** 把上报回调切到后台串行发送，不阻塞播放线程；释放播放器前先把最后一条结束事件发完。 */
 private class SessionDelivery {
     private data class Delivery(val observer: SourcePlaybackSessionObserver, val event: SourcePlaybackSessionEvent)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

@@ -23,7 +23,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-/** 小头像保留少量独立预算，避免大封面淘汰后每次打开菜单都重新解码。 */
+/** 给歌手小头像单独留一块小缓存，避免被大封面挤掉后每次开菜单都要重解码。 */
 internal object ArtistAvatarCache {
     private val images = object : LruCache<String, Bitmap>(2 * 1024) {
         override fun sizeOf(key: String, value: Bitmap) = (value.byteCount / 1024).coerceAtLeast(1)
@@ -38,7 +38,7 @@ internal object ArtistAvatarCache {
     }
 }
 
-/** 菜单、详情和飞行层共享图片及混合比例，加载期间不绘制占位头像。 */
+/** 菜单、详情页和共享元素飞行层共用同一份头像和过渡进度，加载完之前不画占位图。 */
 internal class ArtistAvatarPresentation(val url: String?) {
     var bitmap by mutableStateOf(ArtistAvatarCache.peek(url)); private set
     val imageAlpha = Animatable(if (bitmap != null) 1f else 0f)

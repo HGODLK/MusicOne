@@ -7,7 +7,7 @@ import java.net.URI
 internal fun kugouMediaHeaders(url: String, cookie: String): Map<String, String> = buildMap {
     putAll(kugouPcHeaders())
     val uri = runCatching { URI.create(url) }.getOrNull()
-    // 旧 HTTP 媒体地址仅携带媒体票据，账号 Cookie 只发送给平台自己的 HTTPS 域名。
+    // 只给酷狗自己的 HTTPS 域名带账号 Cookie，普通 HTTP 媒体链接不带
     if (cookie.isNotBlank() && uri?.scheme.equals("https", ignoreCase = true) &&
         uri?.host.orEmpty().isKugouMediaHost()) put("Cookie", cookie)
 }
@@ -36,7 +36,7 @@ internal class KugouPlaybackFailure(val reason: KugouPlaybackFailureReason, mess
 internal class KugouPlaybackBlocked(message: String, code: Int?) : PlatformApiException(message, code)
 
 internal fun kugouPreferredPlaybackFailure(previous: Exception?, current: Exception): Exception =
-    // 备用接口笼统的无地址结果不能覆盖前面已明确的地址兼容、档位或媒体错误。
+    // 备用接口只返回“没地址”时，保留前面主接口给出的更具体错误原因
     if (previous is KugouPlaybackFailure && current is KugouPlaybackFailure &&
         previous.reason != KugouPlaybackFailureReason.SERVER_NO_URL &&
         current.reason == KugouPlaybackFailureReason.SERVER_NO_URL) previous else current
@@ -74,7 +74,7 @@ internal fun kugouMissingPlaybackUrl(response: JSONObject, message: String): Pla
     else kugouPlaybackApiError(response, message)
 
 internal fun kugouPlaybackFailure(stage: String, quality: AudioQuality, error: Exception) {
-    // 只记录协议阶段、档位、异常类型与业务码，禁止记录带票据的 URL 和异常正文。
+    // 日志只打阶段、音质、异常类型和错误码，不打印带票据的 URL 和响应原文
     Log.w("KugouPlayback", "stage=$stage quality=${quality.name} error=${error.javaClass.simpleName} " +
         "code=${(error as? PlatformApiException)?.apiCode ?: 0} " +
         "reason=${(error as? KugouPlaybackFailure)?.reason?.name ?: if (error is java.io.IOException) "NETWORK" else "OTHER"}")

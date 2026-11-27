@@ -3,7 +3,7 @@ package com.musicone.source.kugou
 import com.musicone.source.sdk.*
 import org.json.JSONObject
 
-/** 仅实现私人 FM 内容协议；不推测宿主未提供的播放时长或完成状态。 */
+/** 酷狗私人 FM 接口客户端。 */
 internal class KugouRadioClient(
     private val transport: KugouHomeClient = KugouHomeClient(),
     private val clock: () -> Long = System::currentTimeMillis,
@@ -39,7 +39,7 @@ internal fun JSONObject.kugouRadioTracks(vip: Boolean, account: String?): List<S
     return (0 until songs.length()).map { index ->
         val item = songs.optJSONObject(index) ?: throw PlatformApiException("酷狗猜你喜欢歌曲格式不正确")
         val track = KugouSourceMapping.track(item.kugouHomeTrack(vip), account)
-        // songid 是 FM 的反馈编号，不得用专辑音频编号替代。
+        // FM 上报反馈必须传接口给的 songid，不能拿 album_audio_id 顶替
         val songId = item.opt("songid")?.takeUnless { it == JSONObject.NULL }?.toString().orEmpty()
         val mark = item.opt("cur_mark")?.takeUnless { it == JSONObject.NULL }
             ?: data.opt("cur_mark")?.takeUnless { it == JSONObject.NULL }

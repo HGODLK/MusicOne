@@ -412,7 +412,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
 
     fun readSampleRate(profile: UsbAudioStreamProfile): Int = pcmCapabilities?.readRate(profile) ?: -1
 
-    /** 只对声明支持有效状态读取的时钟轮询，按实际时钟路径确认锁定。 */
+    /** 只轮询声明支持状态读取的时钟，按实际时钟路径确认已锁定。 */
     fun awaitClockValid(profile: UsbAudioStreamProfile): Boolean {
         val deadline = System.nanoTime() + 500_000_000L
         do {

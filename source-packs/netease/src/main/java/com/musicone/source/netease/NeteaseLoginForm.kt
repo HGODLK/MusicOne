@@ -1,6 +1,6 @@
 package com.musicone.source.netease
 
-/** 手机号实际变化时才失效短信会话；输入法重复提交相同文本不清空验证码。 */
+/** 只有手机号真的变了才重置验证码状态，避免输入法重复回调相同文本把验证码清空。 */
 internal fun NeteaseLoginState.resetSms() = copy(
     captcha = "", captchaSent = false, resendSeconds = 0, working = false, message = null,
 )

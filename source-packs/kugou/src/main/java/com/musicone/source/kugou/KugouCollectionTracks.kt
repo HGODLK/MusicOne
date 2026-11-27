@@ -9,7 +9,7 @@ import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.File
 
-/** list_ver 与 count 均明确时才允许跨进程复用；无版本仅复用本轮目录中的同一个目标对象。 */
+/** 只有 list_ver 和曲目数都明确时才跨启动复用磁盘缓存，否则只在当前会话内复用。 */
 internal class KugouCollectionTracks(
     private val directory: File,
     private val store: (File) -> KugouCollectionTracksStore = ::KugouAtomicTracksStore,
@@ -18,10 +18,10 @@ internal class KugouCollectionTracks(
     private data class Memory(val account: String, val generation: Long, val version: String?, val target: KugouManagedCollection,
         val snapshot: KugouCollectionTrackSnapshot)
     private val mutex = Mutex()
-    // 网络核对不占用缓存锁；磁盘读写仍串行，避免读取原子写入中的文件。
+    // 发网络请求时不占缓存锁，只对磁盘读写加锁，防止读到写一半的文件
     private val cacheMutex = Mutex()
     private val memoryLock = Any()
-    // 只常驻最近读取的一张完整歌单；其余完整快照保留在磁盘，不删歌、不截断分页。
+    // 内存里只留最近打开的一张完整歌单，其他的放磁盘，控制内存占用
     private var memory: Memory? = null
 
     fun clearMemory() = synchronized(memoryLock) { memory = null }
@@ -34,7 +34,7 @@ internal class KugouCollectionTracks(
         policy: SourceFetchPolicy, load: suspend () -> List<JSONObject>): KugouCollectionTrackSnapshot =
         readStream(userId, revision, target, check, policy) { accept -> load().forEach(accept) }
 
-    /** 只读本地快照：版本与目录对得上才返回，否则 null；不联网。 */
+    /** 只读本地歌单缓存，版本号和目录一致才返回，不发网络请求；没命中返回 null。 */
     suspend fun peek(userId: String, revision: Long, target: KugouManagedCollection, check: () -> Unit): KugouCollectionTrackSnapshot? {
         validateIdentity(userId, target.listId)
         val context = currentCoroutineContext()
@@ -53,7 +53,7 @@ internal class KugouCollectionTracks(
             cached(userId, revision, target, version, guard)?.let { return it }
         }
         return mutex.withLock {
-            // 等待期间可能已有同一版本完成，首屏与后台喜欢状态读取复用完整结果。
+            // 等锁期间可能已经有别人把同一版本拉完了，这里先查一次缓存直接复用
             if (policy == SourceFetchPolicy.CACHE_FIRST) {
                 cached(userId, revision, target, version, guard)?.let { return@withLock it }
             }
@@ -70,7 +70,7 @@ internal class KugouCollectionTracks(
                         .put("version", version).put("count", result.count).toString()
                     store(file(userId, target.listId)).writeRows(header, result.rows, guard)
                 }
-                // 目录可能落后于完整响应，不能将数量不符的结果记作该版本已验证。
+                // 目录缓存的曲目数可能比实际拉回来的旧，数量对不上时别把这个版本标成已确认
                 synchronized(memoryLock) {
                     guard()
                     memory = if (matchesCount) Memory(userId, revision, version, target, result) else null
@@ -106,7 +106,7 @@ internal class KugouCollectionTracks(
                             row.getString("version") == version)
                         header = true
                         if (schema == 2) expectedCount = row.getInt("count").also { require(it >= 0) }
-                        // 旧格式只读兼容；新写入逐行存储，避免完整 JSON 树及整单字符串同时驻留。
+                        // 兼容读取 v1 旧格式缓存；新缓存统一按行存储，省内存
                         if (schema == 1) {
                             val rows = row.getJSONArray("rows")
                             for (index in 0 until rows.length()) builder.add(rows.getJSONObject(index))

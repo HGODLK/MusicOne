@@ -8,6 +8,8 @@ internal class PlayerProgressHandoff(initialTrackId: String, initiallyActive: Bo
     private var active = initiallyActive
     private var switching = false
     private var origin: String? = null
+    /** 最近一次确认的歌曲，供判断本次换曲是否为自然过渡交接。 */
+    val currentTrackId: String get() = trackId
 
     fun update(nextTrackId: String, nextSwitching: Boolean, nextActive: Boolean): PlayerProgressHandoffAction {
         val resuming = nextActive && !active

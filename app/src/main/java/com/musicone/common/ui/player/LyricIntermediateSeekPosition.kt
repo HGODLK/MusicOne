@@ -8,7 +8,7 @@ import kotlin.math.abs
 
 internal enum class LyricIntermediateSeekResult { ALIGNED, FAR, RELEASED }
 
-/** 窗口开合继续推进；列表由一条弹簧送回阅读锚点，途中换句只更新终点。 */
+/** 歌词页开合中途的 seek 对齐：窗口继续开合，列表用弹簧平滑滚回阅读锚点，途中换句只更新终点。 */
 internal suspend fun alignIntermediateLyricSeek(
     pane: LyricWindowPane,
     target: () -> Int,
@@ -28,7 +28,7 @@ internal suspend fun alignIntermediateLyricSeek(
             val frame = withFrameNanos { it }
             val elapsed = (frame - previous).coerceAtLeast(0L)
             previous = frame
-            // 手势暂停时不采样弹簧，松手仍从原值和速度继续。
+            // 手指按住期间暂停推进弹簧，松手后从原位置和速度继续。
             if (held()) continue
             val index = target()
             val layout = pane.listState.layoutInfo
@@ -53,7 +53,7 @@ internal suspend fun alignIntermediateLyricSeek(
                     result = LyricIntermediateSeekResult.ALIGNED
                     break
                 }
-                // 整数布局留下的尾差仍由同一弹簧推进，不能停下后硬补一像素。
+                // 列表像素取整可能残留 1px 误差，继续用同一弹簧微调到位，不生硬跳变。
                 travel.refine(actual.offset.toFloat())
             }
         }
@@ -61,7 +61,7 @@ internal suspend fun alignIntermediateLyricSeek(
     return result
 }
 
-/** 使用现有临界阻尼驱动；累计消费量避免整数布局坐标逐帧往返抖动。 */
+/** 用临界阻尼弹簧驱动列表对齐，通过累计已滚动距离消除整数像素舍入造成的抖动。 */
 internal class LyricIntermediateSeekTravel {
     private val motion = LyricMotionValue(0f)
     private var applied = 0f
@@ -77,7 +77,7 @@ internal class LyricIntermediateSeekTravel {
         scrollBy: (Float) -> Float) {
         if (initialWindow == null) {
             initialWindow = windowOffset
-            // 窗口松手速度先进入屏幕坐标弹簧，列表首帧不反向抵消手势速度。
+            // 首帧继承窗口松手时的速度，避免列表和窗口反向拉扯。
             motion.snapTo(0f, -windowVelocity)
         }
         currentWindow = windowOffset
@@ -94,7 +94,7 @@ internal class LyricIntermediateSeekTravel {
         val consumed = scrollBy(requested)
         applied += consumed
         if (abs(requested - consumed) > .5f) {
-            // 只转换未消费的坐标，保留速度；窗口继续归位时不能每帧把寻焦制动到零。
+            // 滚到列表边界滚不动时，按实际滚动量修正弹簧位置但保留速度，避免被强行刹停。
             val velocity = motion.velocity
             motion.snapTo(applied - (windowOffset - origin), velocity)
             endpoint = motion.value

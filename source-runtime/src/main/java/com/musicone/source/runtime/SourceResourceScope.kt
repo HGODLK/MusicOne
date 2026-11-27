@@ -15,7 +15,7 @@ import androidx.compose.ui.res.ResourceIdCache
 
 // 共享组件读取宿主资源，包私有资源使用独立 packageId；资源路径与矢量缓存仍按实例隔离。
 // Compose 1.11.4 的路径缓存只按整数 ID 索引，不能让多个 Resources/Theme 共用旧缓存。
-// 此适配器绑定已校验的精确 Compose 版本；升级共享运行时前必须重新核对此处内部 ABI。
+// 这里依赖精确的 Compose 版本内部实现，升级共享 Compose 前必须重新核对 ABI。
 @Composable
 internal fun SourceResourceScope(context: Context, content: @Composable () -> Unit) {
     val resourceIds = remember(context) { ResourceIdCache() }

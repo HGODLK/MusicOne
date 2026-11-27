@@ -3,12 +3,12 @@ package com.musicone
 import androidx.compose.foundation.lazy.LazyListLayoutInfo
 import androidx.compose.ui.unit.IntSize
 
-/** 仅在两个窗口都完全关闭后待命，收尾和反向途中保持原来的坐标。 */
+/** 判断歌词和页眉是否都已完全关闭静止，可以进入待命状态。 */
 internal fun phoneLyricsStandby(visible: Boolean, lyrics: Boolean, progress: Float,
     header: Float, dragging: Boolean): Boolean =
     visible && !lyrics && progress == 0f && header == 0f && !dragging
 
-/** 保存实测准备结果，打开时不再先跳回焦点、再跳到历史段。 */
+/** 缓存屏外准备好的布局快照，下次展开若未变化可直接复用，避免重复跳转。 */
 internal class LyricOpeningStandby {
     private var prepared: Layout? = null
     private var context: LyricOpeningContext? = null

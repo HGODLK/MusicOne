@@ -8,7 +8,7 @@ import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.ContentMetadata
 import androidx.media3.datasource.cache.Cache
 
-/** 从本地缓存校验时长，不为试听判断再次访问远程音频。 */
+/** 直接读本地缓存音频核对时长，用来判断是不是试听版，不重新联网请求。 */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal fun cachedAudioDuration(cache: Cache, key: String, url: String): Long? = runCatching {
     val length = ContentMetadata.getContentLength(cache.getContentMetadata(key))

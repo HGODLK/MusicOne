@@ -4,7 +4,7 @@ import kotlinx.coroutines.*
 
 internal data class PlaybackLyricTarget(val track: MusicTrack, val namespace: String, val revision: String = "")
 
-/** 按稳定曲目和账号身份维持歌词窗口，单首失败不影响后续目标。 */
+/** 维护待预加载的歌词队列（按歌曲和账号区分），某一首拉取失败不影响继续拉后面的。 */
 internal class PlaybackLyricWindow(private val scope: CoroutineScope,
     private val prepare: suspend (MusicTrack, String) -> Unit, private val initialDelayMs: Long = 0L) {
     private var keys: List<List<String>> = emptyList()
@@ -21,7 +21,7 @@ internal class PlaybackLyricWindow(private val scope: CoroutineScope,
                 ensureActive()
                 try { prepare(target.track, target.namespace) }
                 catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Exception) { /* 保留当前窗口，继续准备其他歌曲。 */ }
+                catch (_: Exception) { /* 单首失败忽略，继续拉后面的 */ }
             }
         }
     }

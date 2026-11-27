@@ -10,7 +10,7 @@ internal data class PhoneLyricsFadeFrame(val top: Float, val bottom: Float,
         bottom = bottom + value - pivot, pivot = value)
 }
 
-/** 上下渐隐沿阅读枢轴和原转向进度交接，快速反向取最后实际绘制的权重。 */
+/** 转屏期间随转向进度平滑过渡上下渐隐遮罩，中途反向时从当前实际权重续接。 */
 internal class PhoneLyricsFadeTurn {
     private var last: PhoneLyricsFadeFrame? = null
     private var source: PhoneLyricsFadeFrame? = null

@@ -7,7 +7,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 
-/** 搜索页面只持有通用资料，分类请求和游标完全交给当前音源。 */
+/** 搜索页数据仓库，各分类请求和分页游标完全交给当前主音源处理。 */
 internal class MainSourceSearchRepository(private val context: Context) {
     var source: MusicSource = PlatformPreferences(context).selectedSource()
         set(value) { if (field != value) cursors.clear(); field = value }

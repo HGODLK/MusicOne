@@ -7,13 +7,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.ResolvedTextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
@@ -52,7 +52,7 @@ private class LyricRubyGlyph(val image: ImageBitmap, val offset: IntOffset, val 
 }
 
 /** 字组在行内的横向范围，整组共用一道柔边。 */
-private class LyricRubyExtent(val left: Float, val right: Float)
+private class LyricRubyExtent(val left: Float, val right: Float, val rtl: Boolean)
 
 private class LyricRubyScene(
     val groups: List<LyricRubyGroup>,
@@ -69,13 +69,14 @@ internal fun Modifier.lyricRubyDrawing(
     color: Color,
     typography: LyricTypography,
     fontMode: AppFontMode,
+    fontRevision: Long = 0L,
 ): Modifier {
     if (groups == null) return this
     val density = LocalDensity.current
     val resolver = LocalFontFamilyResolver.current
     val direction = LocalLayoutDirection.current
     val measurer = remember(resolver, density, direction) { lyricRubyMeasurer(resolver, density, direction) }
-    val drawing = remember(groups, textLayout, motion, color, typography, fontMode, measurer) {
+    val drawing = remember(groups, textLayout, motion, color, typography, fontMode, fontRevision, measurer) {
         Modifier.lyricDrawWithCache {
             val layout = textLayout()
             val scene = layout?.let {
@@ -101,16 +102,19 @@ internal fun Modifier.lyricRubyDrawing(
                     }
                     val left = extent?.left ?: glyph.left
                     val right = extent?.right ?: glyph.right
+                    val rtl = extent?.rtl == true
                     val width = (right - left).coerceAtLeast(1f)
-                    val first = if (!animated) 1f else lyricWordSweepAlpha(
-                        groupProgress, (glyph.left - left) / width, strength, spatial)
-                    val last = if (!animated) 1f else lyricWordSweepAlpha(
-                        groupProgress, (glyph.right - left) / width, strength, spatial)
+                    val firstFrac = if (rtl) (right - glyph.right) / width else (glyph.left - left) / width
+                    val lastFrac = if (rtl) (right - glyph.left) / width else (glyph.right - left) / width
+                    val first = if (!animated) 1f else lyricWordSweepAlpha(groupProgress, firstFrac, strength, spatial)
+                    val last = if (!animated) 1f else lyricWordSweepAlpha(groupProgress, lastFrac, strength, spatial)
                     if (first == last) {
                         // 位图只在像素网格上定位，缩放由行图层统一采样，字形不会逐帧重新取整。
                         drawImage(glyph.image, dstOffset = glyph.offset, alpha = first, filterQuality = FilterQuality.High)
-                    } else clipRect(glyph.left, glyph.top, glyph.right, glyph.bottom) {
-                        glyph.light.draw(this, left, right, groupProgress, strength, 0f, 1f, spatial)
+                    } else {
+                        // 按音节位图真实边界绘制，避免行首／行顶／行尾外伸注音在柔边扫过时被正文范围裁切。
+                        glyph.light.draw(this, left, right, groupProgress, strength, 0f, 1f, spatial, rtl,
+                            glyph.left, glyph.top, glyph.right, glyph.bottom)
                     }
                 }
             }
@@ -143,16 +147,22 @@ private fun lyricRubyScene(
     val overhang = with(density) { (typography.activeSp * .35f).sp.toPx() }
     val indexed = groups.withIndex().filter { it.value.textStart < length }
     indexed.groupBy { layout.getLineForOffset(it.value.textStart) }.forEach { (visualLine, members) ->
-        val spans = members.map { (_, group) ->
+        val ordered = members.mapNotNull { entry ->
+            val group = entry.value
             val end = minOf(group.textEnd, length, layout.getLineEnd(visualLine, visibleEnd = true))
                 .coerceAtLeast(group.textStart + 1)
-            LyricRubySpan(layout.getHorizontalPosition(group.textStart, true),
-                layout.getBoundingBox(end - 1).right,
-                group.moras.sumOf { measure(it, base.sp).size.width }.toFloat())
+            val bounds = lyricLineRangeBounds(layout, visualLine, group.textStart, end)
+            if (bounds.isEmpty) null
+            else Triple(entry, bounds, layout.getBidiRunDirection(group.textStart) == ResolvedTextDirection.Rtl)
+        }.sortedBy { it.second.left }
+        val spans = ordered.map { (entry, bounds, _) ->
+            LyricRubySpan(bounds.left, bounds.right,
+                entry.value.moras.sumOf { measure(it, base.sp).size.width }.toFloat())
         }
         val placements = placeLyricRubyLine(spans, maxRight, overhang, gapPx * 2f)
         val baseline = layout.getLineBaseline(visualLine)
-        members.forEachIndexed { memberIndex, (groupIndex, group) ->
+        ordered.forEachIndexed { memberIndex, (entry, _, rtl) ->
+            val (groupIndex, group) = entry
             val placement = placements[memberIndex]
             val fontSize = (base * placement.scale).sp
             var x = placement.left.roundToInt()
@@ -165,7 +175,7 @@ private fun lyricRubyScene(
                     IntOffset(x + bounds.left, y + bounds.top), groupIndex)
                 x += measured.size.width
             }
-            extents[groupIndex] = LyricRubyExtent(placement.left.roundToInt().toFloat(), x.toFloat())
+            extents[groupIndex] = LyricRubyExtent(placement.left.roundToInt().toFloat(), x.toFloat(), rtl)
         }
     }
     return LyricRubyScene(groups, extents, glyphs).takeIf { glyphs.isNotEmpty() }

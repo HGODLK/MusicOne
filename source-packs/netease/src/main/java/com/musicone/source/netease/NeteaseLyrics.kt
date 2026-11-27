@@ -21,7 +21,7 @@ internal fun loadNeteaseLyrics(rich: () -> JSONObject, legacy: () -> JSONObject,
     return parseNeteaseLyrics(legacy(), confirmed = false)
 }
 
-/** YRC 词段使用歌曲绝对毫秒；保留原始分词、空格和标点供共用渲染器定位。 */
+/** 解析 YRC 逐字歌词（时间戳是歌曲绝对毫秒），原样保留分词、空格和标点方便渲染器对齐。 */
 internal fun parseNeteaseYrc(source: String): List<NeteaseLyricLine> = source.lineSequence().mapNotNull { raw ->
     val line = neteaseYrcLine.matchEntire(raw.trim()) ?: return@mapNotNull null
     val start = line.groupValues[1].toLongOrNull() ?: return@mapNotNull null
@@ -38,7 +38,7 @@ internal fun parseNeteaseYrc(source: String): List<NeteaseLyricLine> = source.li
         if (words.lastOrNull()?.let { wordStart < it.startMs } == true) return@mapNotNull null
         val textStart = if (index == 0) 0 else timing.range.last + 1
         val textEnd = timings.getOrNull(index + 1)?.range?.first ?: body.length
-        // 首个标记前偶有未计时前缀，归入首词，避免正文与词段字符范围错位。
+        // 第一个时间标记前面偶尔会有多余字符，直接并到第一个词里，避免后面字符下标错位
         val text = if (index == 0) body.substring(0, timing.range.first) +
             body.substring(timing.range.last + 1, textEnd) else body.substring(textStart, textEnd)
         if (text.isNotEmpty()) words += NeteaseLyricWord(wordStart, wordStart + wordDuration, text)
@@ -62,7 +62,7 @@ internal fun parseNeteaseLyrics(response: JSONObject, confirmed: Boolean = true)
     }
 }
 
-/** 有序一对一配对；只在多个互为最近的样本支持时修正副歌词整体偏移。 */
+/** 把翻译歌词按时间顺序一对一挂到原歌词上；只有足够多的行出现一致时间差时，才整体修正翻译的时间偏移。 */
 internal fun alignNeteaseTranslation(original: List<NeteaseLyricLine>, translated: List<NeteaseLyricLine>): List<NeteaseLyricLine> {
     val candidates = translated.filter { it.text.isNotBlank() && !it.text.trim().matches(Regex("^/+$")) }
     if (original.isEmpty() || candidates.isEmpty()) return original
@@ -75,7 +75,7 @@ internal fun alignNeteaseTranslation(original: List<NeteaseLyricLine>, translate
         when {
             delta > 1_500L -> target++
             delta < -1_500L -> candidate++
-            // 相邻短句取更近者，漏译时不能把下一句翻译消费给当前句。
+            // 相邻短句优先配时间更近的，如果当前句漏译了，不要把下一句的翻译错配过来
             target + 1 < original.size && kotlin.math.abs(candidates[candidate].timeMs - offset -
                 original[target + 1].timeMs) < kotlin.math.abs(delta) -> target++
             candidate + 1 < candidates.size && kotlin.math.abs(candidates[candidate + 1].timeMs - offset -

@@ -5,7 +5,7 @@ import com.musicone.source.sdk.SourceEntityRef
 import com.musicone.source.sdk.SourcePayload
 import org.json.JSONObject
 
-/** 只序列化公开模型外壳，音源私有载荷原样保存，不解释其业务格式。 */
+/** 只序列化公开字段，音源私有 payload 原样透传保存，宿主不解析它的内容。 */
 internal fun SourceEntityRef.toStoredEntityReference(): JSONObject = JSONObject()
     .put("id", id).put("name", name).put("kind", kind).put("payload", payload.toStoredPayload())
 

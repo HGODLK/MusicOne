@@ -6,7 +6,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-/** 歌单生命周期只操作资料库关系，绝不修改歌曲记录或实际文件。 */
+/** 歌单增删改只动歌单表和关联关系，绝不改歌曲信息或本地音频文件。 */
 internal class AiPlaylistLifecycle {
     fun create(db: SQLiteDatabase, title: String, tracks: List<MusicTrack>): JSONObject {
         require(title.isNotBlank()) { "歌单名称不能为空" }
@@ -110,7 +110,7 @@ internal class AiPlaylistLifecycle {
     }
 }
 
-/** 类型依据持久身份和订阅字段，标题不会授予或剥夺删除权限。 */
+/** 只按数据库里的固定 ID 和订阅字段判断是否为普通歌单，不看歌单名字。 */
 internal fun aiOrdinaryPlaylist(row: JSONObject): Boolean = row.optString("id") !in setOf(UNIFIED_PLAYLIST_ID, PHONE_STORAGE_PLAYLIST_ID, ALL_LOCAL_PLAYLIST_ID) &&
     listOf("source_id", "source_account", "source_collection", "remote_folder", "owner").all { row.isNull(it) } && row.optLong("source_revision") == 0L
 

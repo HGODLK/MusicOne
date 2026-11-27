@@ -5,7 +5,7 @@ import com.musicone.source.sdk.*
 object SourceCapabilityValidator {
     fun check(entry: SourceEntry) {
         val descriptor = entry.descriptor
-        // 可选 getter 同样可能引用共享 ABI；在隔离加载阶段解析，不能等宿主绘制时才崩溃。
+        // 可选能力的 getter 也可能引用共享 ABI，需要在隔离加载阶段提前触发检查，避免渲染时才崩。
         listOf(entry.visuals, entry.pageState, entry.playback, entry.catalog, entry.authentication,
             entry.authenticationPage, entry.discovery, entry.search, entry.entities, entry.collections,
             entry.favorites, entry.collectionEditing, entry.radio, entry.contents, entry.childItems,

@@ -6,7 +6,7 @@ import androidx.compose.ui.unit.dp
 import com.musicone.*
 import com.musicone.source.sdk.*
 
-/** 只补充公共横滑视口接线，卡片、翻页、播放与打开行为继续使用原实现。 */
+/** 给音源包暴露的首页横滑货架组件，内部直接复用模板原实现。 */
 internal class SourcePublicHomeShelfComponents(private val access: SourcePublicComponentAccess) : SourceHomeShelfComponents {
     @Composable override fun SongShelf(id: String, title: String, pages: List<List<SourceTrackDetails>>,
         player: SourcePlayerState, showFavorites: Boolean, edgeInsetDp: Float, modifier: Modifier,

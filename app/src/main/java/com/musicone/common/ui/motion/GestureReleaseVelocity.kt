@@ -2,7 +2,7 @@ package com.musicone
 
 import kotlin.math.abs
 
-/** 使用真正的抬手时刻消除停住后的残余速度，微小抖动不反转最后有效移动方向。 */
+/** 根据真实抬手时间计算收尾速度：手指停住后消除残余速度，微小抖动不会反转原方向。 */
 internal class GestureReleaseVelocity(startTime: Long, private val density: Float = 1f,
     private val stablePlayerSettlement: Boolean = false) {
     private var lastMoveTime = startTime
@@ -27,7 +27,7 @@ internal class GestureReleaseVelocity(startTime: Long, private val density: Floa
             pendingSince = time
             if (reverseDistance == 0f) reverseStartedAt = previousTime
             reverseDistance += delta
-            // 离屏前的小回勾沿用原意图；累计反向达到 8dp 才认定主动反划。
+            // 抬手前的轻微回勾忽略不计，累计反向移动达到 8dp 才算主动反划。
             if (abs(reverseDistance) < 8f * density) {
                 previousTime = time
                 return
@@ -60,7 +60,7 @@ internal class GestureReleaseVelocity(startTime: Long, private val density: Floa
         previousTime = time
     }
 
-    /** 只校验抬手末点；按住期间保持原始跟手，主动反划和稀疏快划仍正常提交。 */
+    /** 过滤抬手瞬间异常的末点位移；拖动过程中保持原始跟手，不影响主动反划和快划。 */
     fun finalDelta(time: Long, delta: Float): Float {
         if (!stablePlayerSettlement || settlingSegments.isEmpty()) return delta
         val elapsed = time - previousTime
@@ -74,7 +74,7 @@ internal class GestureReleaseVelocity(startTime: Long, private val density: Floa
     fun released(time: Long, rawVelocity: Float, completed: Boolean): Float =
         velocityAtRelease(time, rawVelocity, completed, fadeStartMs = 40L, fadeEndMs = 100L)
 
-    /** 收尾动画保留短暂停顿前的实际速度，和防误触判定分别取值。 */
+    /** 计算收尾动画的初速度（允许更长的短暂停顿窗口，与防误触判定分开取值）。 */
     fun settlingVelocity(time: Long, rawVelocity: Float, completed: Boolean): Float =
         if (!stablePlayerSettlement) velocityAtRelease(time, rawVelocity, completed, 80L, 150L)
         else {
@@ -86,7 +86,7 @@ internal class GestureReleaseVelocity(startTime: Long, private val density: Floa
             }
         }
 
-    /** 近期轨迹加权，单个离屏异常点不能把收尾速度放大；判定速度保持原算法。 */
+    /** 按近期轨迹加权估算收尾速度，并用中位数限幅，避免抬手瞬间的异常采样点把速度拉爆。 */
     private fun stableSettlingVelocity(rawVelocity: Float): Float {
         if (settlingSegments.isEmpty()) return 0f
         val samples = settlingSegments.map { segment ->
@@ -100,7 +100,7 @@ internal class GestureReleaseVelocity(startTime: Long, private val density: Floa
         val median = sorted.first { cumulative += it.second; cumulative >= total / 2f }.first
         val limit = if (samples.size >= 3) abs(median) * 2f else Float.POSITIVE_INFINITY
         val sampled = samples.sumOf { (it.first.coerceIn(-limit, limit) * it.second).toDouble() }.toFloat() / total
-        // 拟合结果仅在和轨迹接近时参与，稀疏事件或抬手回勾不会把可靠速度归零。
+        // 只有系统拟合速度与近期轨迹接近时才混入权重，防止稀疏采样或抬手回勾把速度拉偏。
         return if (rawVelocity * sampled > 0f && abs(rawVelocity - sampled) <= abs(sampled) * .5f)
             sampled * .75f + rawVelocity * .25f else sampled
     }
@@ -111,7 +111,7 @@ internal class GestureReleaseVelocity(startTime: Long, private val density: Floa
                                   fadeStartMs: Long, fadeEndMs: Long): Float = when {
         !completed || time - lastMoveTime >= fadeEndMs -> 0f
         else -> {
-            // 稀疏采样和抬手回勾会压低拟合速度，取有效轨迹与拟合速度中同向的较大值。
+            // 采样稀疏或抬手回勾会压低拟合速度，取拟合值与有效轨迹速度中同向的较大值。
             val sampled = if (segments.isNotEmpty())
                 segments.sumOf { it.second.toDouble() }.toFloat() * 1000f / segments.sumOf { it.first }
             else 0f

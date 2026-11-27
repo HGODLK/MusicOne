@@ -39,7 +39,9 @@ internal object PlayerOpeningArtworkHandoff {
 
 /** 展开期间优先沿用迷你播放器已画出的封面，其余切歌仍走原有渐变。 */
 @Composable
-internal fun rememberPlayerOpeningArtwork(track: MusicTrack, motion: PageMotion): PlayerArtworkFrame {
+internal fun rememberPlayerOpeningArtwork(playingTrack: MusicTrack, motion: PageMotion): PlayerArtworkFrame {
+    // 自然过渡期间封面提前以下一首为目标，渐变进度由 ReadyArtworkCrossfade 跟随过渡时钟。
+    val track = autoMixArtworkTrack(playingTrack)
     val loaded by rememberPlayerArtwork(track)
     val identity = track.artworkIdentity()
     val opening = motion.wantsOpen &&

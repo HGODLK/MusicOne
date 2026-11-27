@@ -36,7 +36,7 @@ internal class MainSourceSearchMotion {
     val mounted get() = menu.value > 0f || full.value > 0f
 }
 
-/** 根界面只观察挂载端点，菜单和全屏之间的逐帧进度仍留在搜索内部。 */
+/** 根页面只监听搜索层要不要挂载，具体的每帧展开进度留在搜索组件内部消化。 */
 @Composable
 internal fun rememberMainSourceSearchMounted(motion: MainSourceSearchMotion): State<Boolean> =
     remember(motion) { derivedStateOf { motion.mounted } }
@@ -55,7 +55,7 @@ internal fun rememberMainSourceSearchMotion(state: MainSourceSearchState, backdr
             return@LaunchedEffect
         }
         motion.fullMoving = true
-        // 首次展开前固化像素，而不是仅保存仍会随页面变化的图层引用。
+        // 展开全屏搜索前把底页截成静态图，避免底页后续变化影响毛玻璃背景。
         if (state.full && motion.backdropSnapshot == null) {
             try { motion.backdropSnapshot = backdrop.toImageBitmap() }
             catch (cancelled: CancellationException) { throw cancelled }

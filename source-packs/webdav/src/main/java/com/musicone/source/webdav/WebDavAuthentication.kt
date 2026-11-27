@@ -19,7 +19,7 @@ internal class WebDavAuthentication(
 ) : SourceAuthentication {
     private val revision = AtomicLong(1L)
 
-    /** 账号修订的可观察副本：页面须在子组件使用旧列表状态前先随账号重组。 */
+    /** 账号版本号的可观察状态：切换服务器时触发页面先重组，避免子组件继续用旧账号的列表状态。 */
     var observedRevision by mutableLongStateOf(1L)
         private set
 

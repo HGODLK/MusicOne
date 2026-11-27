@@ -4,7 +4,7 @@ import android.database.sqlite.SQLiteDatabase
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 以歌曲真实身份做集合运算，不根据同名、艺人或模型判断合并不同版本。 */
+/** 按 (音源, 歌曲ID) 做精确集合运算，不按歌名或歌手模糊合并不同版本。 */
 internal fun aiTrackSet(operation: String, left: List<MusicTrack>, right: List<MusicTrack>): List<MusicTrack> {
     fun MusicTrack.key() = source.id to id
     val rightIds = right.map { it.key() }.toHashSet()
@@ -16,7 +16,7 @@ internal fun aiTrackSet(operation: String, left: List<MusicTrack>, right: List<M
     }.distinctBy { it.key() }
 }
 
-/** 远端集合必须有从首游标到末游标的连续证据，不能只凭总数或最后一页宣称完整。 */
+/** 远程歌单必须从第一页到最后一页连续拉完才算完整，不能光看总数或只拉了末页就当完整。 */
 internal fun aiRequireCompleteResults(metadata: List<JSONObject>) {
     if (metadata.isEmpty()) throw AiToolInputFailure("incomplete_collection", "请提供至少一个实际读取的结果句柄")
     metadata.filterNot { it.optBoolean("complete") }.groupBy { it.optJSONObject("pagination")?.optString("collectionKey").orEmpty() }

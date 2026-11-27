@@ -62,6 +62,7 @@ internal fun PlaybackSettings(source: MusicSource) {
             )
             SettingsSwitchRow("点播首页推荐不清空队列", "仅插入当前播放队列，不替换为猜你喜欢",
                 PlaybackOptions.keepQueueOnHomeRecommendation, PlaybackOptions::keepQueueOnHomeRecommendation)
+            AutoMixSettings()
             FavoriteButtonSettings()
         }
         SettingsGroup("音频输出") {
@@ -70,8 +71,11 @@ internal fun PlaybackSettings(source: MusicSource) {
             DevicePlaybackSettings()
             if (qualities.any { it.capabilityQuality == AudioQuality.DOLBY }) DolbyPlaybackSettings()
             LgHiResSettings()
-            SettingsSwitchRow("USB 音频设备无损输出", usbOutputDescription(PlaybackOptions.usbLosslessOutput, usbStatus),
-                PlaybackOptions.usbLosslessOutput) { enabled ->
+            // 与自然过渡互斥：自然过渡开着时置灰，已开启的 USB 独占仍可关掉
+            val usbBlocked = !PlaybackOptions.usbLosslessOutput && AutoMixPreferences.enabledSnapshot
+            SettingsSwitchRow("USB 音频设备无损输出",
+                if (usbBlocked) "已开启自然过渡，暂不可用" else usbOutputDescription(PlaybackOptions.usbLosslessOutput, usbStatus),
+                PlaybackOptions.usbLosslessOutput, enabled = !usbBlocked) { enabled ->
                 PlaybackOptions.usbLossless(enabled)
                 if (enabled) UsbAudioPermissionCoordinator.prepareForAutomaticSelection()
             }

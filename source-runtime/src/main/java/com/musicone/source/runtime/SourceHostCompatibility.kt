@@ -2,7 +2,7 @@ package com.musicone.source.runtime
 
 import com.musicone.source.sdk.SourceSdk
 
-/** 兼容名单由宿主维护；依赖升级验收后保留仍受支持的旧编译版本。 */
+/** 兼容版本名单由宿主维护，依赖升级验证通过后继续保留仍兼容的旧版本。 */
 data class SourceHostCompatibility(
     val versionCode: Long,
     val versionName: String,

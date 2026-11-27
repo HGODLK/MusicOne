@@ -19,7 +19,7 @@ internal object SourceResources {
         val hostIds = (listOf(hostInfo.sourceDir) + hostInfo.splitSourceDirs.orEmpty()).flatMap { packageIds(File(it)) }.toSet()
         require(ownIds.intersect(hostIds).isEmpty()) { "音源资源 packageId 与宿主资源冲突，请重新分配后构建" }
         val resourceInfo = ApplicationInfo(hostInfo).apply {
-            // 此资源集合以宿主为 base，保留共享 AndroidX R 的 0x7f 引用；音源表使用独立 ID。
+            // 以宿主资源为基准，保留共享 AndroidX R 的 0x7f 引用，音源资源使用独立包 ID。
             // splitSourceDirs/splitPublicSourceDirs 自 API 21 提供，API 23 无须隐藏接口或 ResourcesLoader。
             splitSourceDirs = (hostInfo.splitSourceDirs.orEmpty().toList() + archive.absolutePath).toTypedArray()
             splitPublicSourceDirs = (hostInfo.splitPublicSourceDirs.orEmpty().toList() + archive.absolutePath).toTypedArray()

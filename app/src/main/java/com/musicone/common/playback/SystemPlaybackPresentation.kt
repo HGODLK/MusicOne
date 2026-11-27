@@ -1,13 +1,13 @@
 package com.musicone
 
-/** 标识由播放业务提供；系统适配层不解析音源名称、数字编号或平台前缀。 */
+/** 唯一标识一次播放请求，展示层只做相等比较，不解析里面的格式。 */
 internal data class SystemPlaybackKey(val trackId: String, val generation: Long)
 
 /** translation 已按歌词页显示内容裁剪；source 保留逐字、注音和完整翻译，供自带开关的桌面歌词读取。 */
 internal data class SystemLyricLine(val timeMs: Long, val text: String, val translation: String? = null,
     val source: TimedLyric? = null)
 
-/** 歌词时间已在业务侧校准，展示层只使用实际播放位置和通用资料。 */
+/** 提供给桌面歌词、状态栏歌词等系统展示层的统一播放快照。 */
 internal data class SystemPlaybackPresentation(
     val key: SystemPlaybackKey,
     val title: String,

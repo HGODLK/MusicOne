@@ -4,7 +4,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
-/** 权限规则作为稳定前缀；人格位于末尾，仅替换语气和角色，不改变工具边界。 */
+/** 规则放最前面保持稳定（方便缓存），自定义人格放末尾，只改语气不放宽工具权限。 */
 internal fun aiSystemPrompt(provider: AiProvider, personality: String = "", personalityEnabled: Boolean = false,
     now: Calendar = Calendar.getInstance()): String {
     val rules = """

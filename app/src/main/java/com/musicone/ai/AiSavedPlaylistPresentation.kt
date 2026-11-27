@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 正式本地歌单不沿用临时推荐的简介和 AI 标识，已有歌单资料不受影响。 */
+/** 保存成正式本地歌单后，去掉临时推荐的简介和 AI 标记，不影响已有歌单信息。 */
 internal fun aiReplaceSavedPlaylist(messages: List<AiChatMessageUi>, saved: MusicPlaylist): List<AiChatMessageUi> {
     val members = saved.tracks.map { it.source.id to it.id }.toSet()
     return messages.map { message ->

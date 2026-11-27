@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 用户配置的容量用于真实请求和上下文预算，不根据模型名称擅自缩减。 */
+/** 直接按用户配置的上下文长度来算预算，不按模型名擅自砍小。 */
 internal fun aiDefaultContextTokens(provider: AiProvider): Int =
     if (provider == AiProvider.DEEPSEEK) 1_000_000 else 200_000
 

@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 分组数量由音源声明；同一容器追加横向页，不把相同容器的新页按卡片 key 丢弃。 */
+/** 把属于同一个货架容器的横向页合并进去，避免翻页追加时被当成重复卡片丢掉。 */
 internal fun combineMainSourceHomeShelves(cards: List<MainSourceHomeCard>): List<MainSourceHomeCard> {
     val result = mutableListOf<MainSourceHomeCard>()
     val indexes = mutableMapOf<String, Int>()

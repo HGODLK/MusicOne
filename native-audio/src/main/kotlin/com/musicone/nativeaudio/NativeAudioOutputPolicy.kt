@@ -10,7 +10,7 @@ object NativeAudioOutputPolicy {
     const val FALLBACK_DSD_PCM_SAMPLE_RATE = 96000
 
     /**
-     * 默认输出 192 kHz；能力列表仅能选择真实存在的采样率，不能把任意上限当作支持值。
+     * 默认输出 192 kHz；只能从设备实际支持的采样率里选，不能拿上限当支持档位。
      */
     fun selectDsdPcmSampleRate(supportedSampleRates: Set<Int>? = null): Int {
         if (supportedSampleRates == null || supportedSampleRates.isEmpty()) {

@@ -7,7 +7,7 @@ import com.musicone.source.sdk.SourcePage
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-/** 包内保留官方游标和延迟准备卡池；宿主仅查询当前游标是否还有已取得的内容。 */
+/** 维护 QQ 首页推荐流的分页游标和待展示卡片池。 */
 internal class QqHomeFeed(private val newPager: () -> QqMusicFeedPager) {
     private data class State(
         val credential: String,

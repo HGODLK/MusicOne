@@ -1,6 +1,6 @@
 package com.musicone.sourceintegration
 
-/** 仅在主线程登记可交互外页；退出请求只能交给同一音源的最上层页面。 */
+/** 主线程维护当前打开的音源外部页面栈，点退出时只关掉同一个音源最顶上的那一层。 */
 internal class SourceExitTargets {
     private class Target(val sourceId: String, val exit: () -> Unit)
     private val targets = mutableListOf<Target>()

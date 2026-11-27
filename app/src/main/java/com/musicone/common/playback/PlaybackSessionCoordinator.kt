@@ -11,7 +11,7 @@ internal data class LivePlaybackRestore(
     val playing: Boolean,
 )
 
-/** 会话持有播放器连接、进度归属和持久化，页面重建时优先接管仍在播放的服务。 */
+/** 管理播放器连接、进度归属和播放状态持久化，页面重建时直接接管后台服务。 */
 internal class PlaybackSessionCoordinator(private val context: Context, requestConnection: () -> Unit = {}) {
     private val connection = ServicePlaybackConnection(requestConnection)
     private val positionOwner = PlaybackPositionOwner()
@@ -39,6 +39,8 @@ internal class PlaybackSessionCoordinator(private val context: Context, requestC
             if (isCurrent(key) && matches(key.generation, key.trackId)) {
                 pendingSeek.take(key)?.let { target ->
                     positionOwner.awaitPosition(key.generation, key.trackId, target)
+                    // 正在自然过渡时拖进度，交给自然过渡控制器处理（选对歌曲并清掉另一首）
+                    if (AutoMixEngine.controller?.seek(player, target) == true) return@let
                     player.seekTo(target)
                 }
             }
@@ -52,10 +54,17 @@ internal class PlaybackSessionCoordinator(private val context: Context, requestC
         return LivePlaybackRestore(restored, player.currentPosition.coerceAtLeast(0L), player.playWhenReady, player.isPlaying)
     }
 
+    /** 自然过渡切歌后，播放器已经在播下一首了，这里只把进度归属和持久化状态切过去。 */
+    fun adoptAutoMixHandoff(generation: Long, trackId: String, state: MusicOneUiState) {
+        positionOwner.attach(generation, trackId)
+        retainedPlaybackSession.remember(state, trackId)
+    }
+
     fun matches(generation: Long, trackId: String?) =
         positionOwner.matches(generation, trackId, player?.currentMediaItem?.mediaId)
     fun position(generation: Long, trackId: String?, saved: Long): Long {
         val transport = player ?: return saved
+        AutoMixEngine.controller?.position(trackId)?.let { return it }
         return positionOwner.position(generation, trackId, transport.currentMediaItem?.mediaId,
             transport.currentPosition, saved, transport.playbackState == Player.STATE_READY,
             transport.duration, transport.playbackParameters.speed)
@@ -98,7 +107,7 @@ internal class PlaybackSessionCoordinator(private val context: Context, requestC
                 PlaybackPipelineDiagnostics.stage("已请求准备", key.generation)
                 positionOwner.attach(key.generation, track.id, startingPosition)
                 started(player, startingPosition)
-                // 服务连接和音源准备都可能晚于暂停操作，执行时读取最新意图。
+                // 服务连上或音频准备好时，用户可能早就点了暂停，所以这里重新读最新的播放意图。
                 if (playWhenReady()) playbackTrace("MusicOne:audio-play") { player.play() }
                 else player.pause()
             }.onFailure { if (isCurrent(key)) failed() }

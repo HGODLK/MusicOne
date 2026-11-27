@@ -4,7 +4,7 @@ import org.json.JSONObject
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
-/** 副作用完成后保存阶段收据；异常中断后只核对收据，不盲目重放播放或计划。 */
+/** 带副作用的工具执行完就记下结果；异常中断后先查记录，不盲目重放起播或重复建计划。 */
 internal class AiToolEffects(private val checkpoint: JSONObject) {
     private fun ledger(): JSONObject {
         val turn = checkpoint.optString("activeTurnId")
@@ -24,7 +24,7 @@ internal class AiToolEffects(private val checkpoint: JSONObject) {
         val started = JSONObject().put("started", true)
         ledger.put(key, started)
         return if (transactional) withContext(NonCancellable) {
-            // 计划生成由数据库事务原子提交；异常会回滚，可重试，成功先记录再响应取消。
+            // 生成计划走数据库事务，失败会自动回滚可以重试；成功后先记入台账再响应取消。
             try { action().also { started.put("result", JSONObject(it.toString())) } }
             catch (error: Exception) { ledger.remove(key); throw error }
         } else action().also {

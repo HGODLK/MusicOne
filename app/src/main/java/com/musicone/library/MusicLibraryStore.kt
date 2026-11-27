@@ -16,7 +16,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 
-/** 写入串行且在事务提交后发布快照，页面始终可展示上一次完整内容。 */
+/** 所有写操作串行进事务，提交成功后再发布新快照，页面不会读到写了一半的脏数据。 */
 internal class MusicLibraryStore private constructor(context: Context) {
     private val helper = MusicLibraryDatabase(context.applicationContext)
     val assets = File(context.filesDir, "music_library").apply { mkdirs() }
@@ -87,7 +87,7 @@ internal class MusicLibraryStore private constructor(context: Context) {
             currentCoroutineContext().ensureActive()
             val db = helper.writableDatabase
             val result = db.inSourceTransaction(currentCoroutineContext()) { block(db).also { db.ensurePhoneStoragePlaylist() } }
-            // 返回调度器前先移交资产所有权，取消不能删除已提交事务引用的文件。
+            // 事务一提交立刻执行 onCommitted 移交文件所有权，防止协程取消时误删已经入库的文件。
             onCommitted()
             if (publishChanges) publish()
             result
@@ -120,7 +120,7 @@ internal class MusicLibraryStore private constructor(context: Context) {
             require(it.isNull(0) && it.isNull(1)) { "订阅歌单只能通过原音源同步歌曲" }
         }
         var position = db.nextPosition(playlistId)
-        // 同毫秒的后续批次也必须排在旧成员之前，同批继续按传入顺序排列。
+        // 就算同一毫秒内连续加歌，也保证后加的批次排在旧歌前面，同一批内部保持原顺序。
         val addedAt = db.rawQuery("SELECT MAX(added_at) FROM members WHERE playlist_id=?", arrayOf(playlistId)).use {
             it.moveToFirst()
             maxOf(System.currentTimeMillis(), it.getLong(0) + 1)
@@ -257,7 +257,7 @@ internal class MusicLibraryStore private constructor(context: Context) {
         }
         // 订阅始终跟随收藏夹顺序，同时清除旧版本留下的手动排序标记。
         db.execSQL("UPDATE playlists SET remote_folder=?,owner=?,manual_order=0 WHERE id=?", arrayOf<Any>(subscription.folderId, subscription.ownerId, subscription.playlistId))
-        // 只接收已完整分页的结果；调用方在账号代次校验后才提交。
+        // 调用方必须先拉完全部分页并核对账号没变，再把完整列表交给这里同步。
         val remoteIds = tracks.mapTo(hashSetOf()) { it.id }
         val oldMemberIds = mutableListOf<String>()
         db.rawQuery("SELECT song_id FROM members WHERE playlist_id=? AND remote_member=1", arrayOf(subscription.playlistId)).use {
@@ -321,7 +321,7 @@ internal inline fun <T> SQLiteDatabase.inTransaction(block: (SQLiteDatabase) -> 
     try { return block(this).also { setTransactionSuccessful() } } finally { endTransaction() }
 }
 
-/** 页面和 AI 批量确认共用本地显示资料权限校验及写入路径。 */
+/** 手动编辑和 AI 批量修改共用这个入口，统一校验权限并更新本地显示覆盖字段。 */
 internal fun SQLiteDatabase.updateLibraryOverrides(songId: String, fields: Map<String, String?>) {
     val song = song(songId) ?: error("歌曲已不存在")
     require(song.source.supportsLibraryEditing) { "此音源不支持编辑资料" }

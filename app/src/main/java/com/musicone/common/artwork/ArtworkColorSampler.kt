@@ -24,7 +24,7 @@ internal object ArtworkColorSampler {
     }
 }
 
-/** 真实封面显示前就缓存 3×3 九个颜色，播放页转场只读取现成采样。 */
+/** 封面加载完就提前算好 3×3 九宫格取色并缓存，打开播放页时直接拿来用。 */
 internal object ArtworkColorFieldRepository {
     private val cache = object : LruCache<ArtworkIdentity, IntArray>(48) {}
 

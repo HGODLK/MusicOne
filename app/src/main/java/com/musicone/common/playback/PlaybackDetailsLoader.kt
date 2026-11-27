@@ -6,7 +6,7 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.cache.CacheDataSource
 import kotlinx.coroutines.*
 
-/** 首帧播放之后再补充规格；切歌取消旧任务并校验媒体身份。 */
+/** 等歌曲开始出声后再去读详细音频规格，切歌时自动取消旧任务。 */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class PlaybackDetailsLoader(private val context: Context, private val player: Player) : Player.Listener {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -65,7 +65,7 @@ internal class PlaybackDetailsLoader(private val context: Context, private val p
     fun release() { scope.cancel() }
 }
 
-/** 新目录的标准映射不代表编码；只按实际资源声明补读 FLAC 参数。 */
+/** 不能只看档位名称判断编码，只对实际是 FLAC 的资源补读文件头参数。 */
 internal fun shouldReadFlacPlaybackDetails(url: String): Boolean {
     val resource = SupplementalPlaybackRequests.resource(url)
     return resource?.mimeType.equals("audio/flac", true) || resource?.format.equals("flac", true) ||

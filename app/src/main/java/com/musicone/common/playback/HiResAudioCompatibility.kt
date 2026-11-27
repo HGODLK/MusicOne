@@ -1,6 +1,7 @@
 package com.musicone
 
 import android.content.Context
+import android.media.AudioManager
 import android.os.Handler
 import androidx.annotation.OptIn
 import androidx.media3.common.C
@@ -63,12 +64,24 @@ internal class HiResCompatibleRenderersFactory(context: Context) : DefaultRender
             .setEnableAudioOutputPlaybackParameters(enableAudioTrackPlaybackParams)
             .setAudioTrackProvider(routingProvider)
             .build()
-        val usb = MusicOneUsbAudioSink(delegate, context, PlaybackOptions.usbLosslessOutput).also {
+        // 系统混音路径统一成主输出采样率：每首交给 AudioTrack 的格式相同，切歌与自然过渡都不重建；比特完美、USB 独占、LG 原生原样透传
+        val fixedRate = FixedRateAudioSink(
+            delegate,
+            targetRate = { systemOutputSampleRate(context) },
+            bypass = {
+                val route = UsbAudioOutputStatus.current.value.route
+                route == UsbAudioOutputRoute.SYSTEM_BIT_PERFECT || route == UsbAudioOutputRoute.DIRECT_UAC2 ||
+                    PlaybackOutputStatus.lg.value != null
+            },
+        )
+        val usb = MusicOneUsbAudioSink(fixedRate, context, PlaybackOptions.usbLosslessOutput).also {
             usbAudioSink = it
         }
-        return if (isLgAudioDevice(android.os.Build.MANUFACTURER)) {
+        val output = if (isLgAudioDevice(android.os.Build.MANUFACTURER)) {
             LgHiResAudioSink(context, usb).also { lgAudioSink = it }
         } else usb
+        // 自然过渡包在最外层，没触发过渡时原样往下传
+        return AutoMixAudioSink(output, seamlessFormatChange = { fixedRate.normalizing }).also { AutoMixEngine.sink = it }
     }
 
     override fun buildAudioRenderers(
@@ -145,6 +158,11 @@ private class HiResMediaCodecAudioRenderer(
     )
 }
 
+/** 系统主输出（混音器）采样率；读不到或明显异常时返回 null，输出层原样透传。 */
+private fun systemOutputSampleRate(context: Context): Int? =
+    (context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager)
+        ?.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull()?.takeIf { it in 8_000..768_000 }
+
 internal const val HI_RES_FLAC_MAX_INPUT_SIZE_BYTES = 512 * 1024
 
 internal fun hiResAudioDecoderRank(name: String): Int = when {
@@ -161,7 +179,7 @@ internal fun hiResCodecMaxInputSize(sampleMimeType: String?, defaultMaxInputSize
         defaultMaxInputSize
     }
 
-/** 使用提取器报告的有效位深，避免把解码器的 32-bit PCM 容器误当成源文件位深。 */
+/** 取音频原始的有效位深，避免把解码器输出的 32-bit PCM 容器误当成源文件位深。 */
 @OptIn(UnstableApi::class)
 internal fun sourceAudioBitDepth(format: Format?): Int {
     val label = format?.label

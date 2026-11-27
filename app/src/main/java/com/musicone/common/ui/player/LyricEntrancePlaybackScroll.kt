@@ -5,7 +5,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 
-/** 入场只移动准备好的阅读基线，自然换句在同一滚动权内独立叠加原逐行弹簧。 */
+/** 歌词展开入场时共享列表滚动权：入场负责把列表送回阅读锚点，期间的自然换句叠加在同一个滚动会话里。 */
 internal class LyricEntrancePlaybackScroll(
     private val originLine: Int,
     private val originOffset: Float,

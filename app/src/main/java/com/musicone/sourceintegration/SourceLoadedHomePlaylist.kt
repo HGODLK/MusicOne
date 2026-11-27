@@ -4,7 +4,7 @@ import com.musicone.MusicPlaylist
 import com.musicone.source.sdk.SourceCollection
 import com.musicone.source.sdk.SourceTrackDetails
 
-/** 公共首页卡片接收完整已加载歌曲，公开的空账号身份保持原样。 */
+/** 把音源包返回的已加载歌单转成首页卡片用的 MusicPlaylist。 */
 internal fun loadedHomePlaylist(
     collection: SourceCollection,
     tracks: List<SourceTrackDetails>,

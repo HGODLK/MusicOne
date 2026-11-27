@@ -26,7 +26,7 @@ internal fun queueSourceStatus(source: MusicSource, active: Boolean, installed: 
     else -> QueueSourceStatus.MISSING
 }
 
-/** 缺包是运行状态，不覆盖曲目原有的可播资料，恢复同身份包后自然恢复。 */
+/** 判断歌曲对应的音源包当前是否可用；缺包只是临时运行状态，不改歌曲本身数据，装回包就能播。 */
 internal fun queueSourceStatus(source: MusicSource): QueueSourceStatus {
     val packages = SourcePackageController.current()
     val installed = packages?.installed?.value?.firstOrNull { it.id == source.id }
@@ -39,7 +39,7 @@ internal fun queueSourceStatus(source: MusicSource): QueueSourceStatus {
 internal fun queueTrackSourceAvailable(track: MusicTrack): Boolean =
     queueSourceStatus(track.source).let { it == QueueSourceStatus.AVAILABLE || it == QueueSourceStatus.INITIALIZING }
 
-/** 最多检查队列一轮，保留实际排序、插播优先、单曲循环和顺序播放的终点规则。 */
+/** 找下一首可播歌曲（最多扫队列一轮），遵循插播优先、单曲循环和播完停止等规则。 */
 internal fun nextQueuePlaybackIndex(state: MusicOneUiState, automatic: Boolean,
     available: (MusicTrack) -> Boolean = ::queueTrackSourceAvailable): Int? {
     val queue = state.queue
@@ -52,7 +52,7 @@ internal fun nextQueuePlaybackIndex(state: MusicOneUiState, automatic: Boolean,
         val candidate = index ?: return null
         if (!seen.add(candidate)) return null
         if (available(queue[candidate])) return candidate
-        // 缺包项不能让单曲循环原地重试；跳过之后仍沿可见队列前进。
+        // 单曲循环遇到缺包的歌不要死循环原地重试，跳过它往后找。
         index = if (state.radioActive) (candidate + 1).takeIf { it < queue.size }
             else nextQueueIndex(candidate, queue.size, state.shuffle,
                 if (state.repeatMode == RepeatMode.ONE) RepeatMode.ALL else state.repeatMode, automatic)
@@ -60,7 +60,7 @@ internal fun nextQueuePlaybackIndex(state: MusicOneUiState, automatic: Boolean,
     return null
 }
 
-/** 队列播放先核对来源，再复用预加载或完整缓存；公共离线入口不套用此规则。 */
+/** 队列播放时先确认音源包可用，再查预加载或本地缓存；离线页面入口不走这里。 */
 internal suspend fun <T> resolveQueuePlayback(track: MusicTrack, status: QueueSourceStatus,
     cached: () -> T?, resolve: suspend () -> T): T {
     if (status != QueueSourceStatus.AVAILABLE) throw TrackUnavailableException(status.message(track.source))

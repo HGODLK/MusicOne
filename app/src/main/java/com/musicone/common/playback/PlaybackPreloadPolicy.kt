@@ -7,7 +7,7 @@ internal val PRELOAD_LYRIC_SOURCES: Set<MusicSource> get() = MusicSource.entries
     com.musicone.sourceintegration.SourcePackageController.current()?.running(it.id)?.entry?.lyricProvider != null
 }
 
-/** 沿实际播放顺序遍历一轮，跳过本地文件，不跳回当前歌曲或重复准备同一资源。 */
+/** 按实际播放顺序挑出后面需要预加载的在线歌曲，跳过本地文件，不重复也不绕回当前这首。 */
 internal fun nextPlaybackPreloadTracks(state: MusicOneUiState, sources: Set<MusicSource>, limit: Int): List<MusicTrack> {
     val current = state.currentTrack ?: return emptyList()
     if (state.qualityChanging || limit <= 0) return emptyList()
@@ -30,16 +30,10 @@ internal fun nextPlaybackPreloadTracks(state: MusicOneUiState, sources: Set<Musi
     return targets
 }
 
-/** 按实际码率估算二十秒并留文件头余量；短文件和完整缓存不重复下载。 */
-internal fun playbackPreloadBytes(bitRate: Int, durationMs: Long = 0L): Long {
-    val milliseconds = if (durationMs > 0L) minOf(20_000L, durationMs) else 20_000L
-    return bitRate.coerceAtLeast(128_000).toLong() * milliseconds / 8_000L + 128 * 1024L
-}
-
-/** 当前歌真实播放即可开始探测；不再等十秒缓冲。 */
+/** 当前歌曲开始播（或有效暂停）就可以启动音质探测，不用等缓冲满 10 秒。 */
 internal fun playbackPreloadCanProbe(playing: Boolean, paused: Boolean = false): Boolean = playing || paused
 
-/** 仅当前媒体的有效暂停进入三首预取；错误、停止、结束和切歌中间态不算暂停。 */
+/** 只有在正常暂停状态下才触发暂停预加载，报错、停止、播完或切歌途中都不算。 */
 internal fun playbackPreloadIsPaused(matches: Boolean, playing: Boolean, playWhenReady: Boolean,
     playbackState: Int, hasError: Boolean): Boolean =
     matches && !playing && !playWhenReady && !hasError &&
@@ -50,7 +44,7 @@ internal fun playbackPreloadProbeDue(index: Int, elapsedMs: Long, paused: Boolea
     if (paused) index in 0 until PLAYBACK_PRELOAD_PAUSED_DOWNLOAD_COUNT
     else elapsedMs >= playbackProbeDelayMs(index)
 
-/** 下载仍需给当前播放留三秒缓冲；本地文件不受网络缓冲限制。 */
+/** 边播边预加载时，先保证当前歌至少有 3 秒缓冲再开下；本地文件不受此限制。 */
 internal fun playbackPreloadCanDownload(playing: Boolean, bufferedMs: Long, local: Boolean = false,
     paused: Boolean = false): Boolean {
     if (paused) return true

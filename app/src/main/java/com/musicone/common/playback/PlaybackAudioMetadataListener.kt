@@ -10,7 +10,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 
-/** DASH 清单不一定包含采样率，首次输入格式就绪时继续发布实际规格。 */
+/** DASH 流在清单里未必带采样率，等解码器拿到真实格式后再补充上报。 */
 @androidx.annotation.OptIn(UnstableApi::class)
 internal class PlaybackAudioMetadataListener(private val player: Player) : Player.Listener, AnalyticsListener {
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -31,7 +31,7 @@ internal class PlaybackAudioMetadataListener(private val player: Player) : Playe
         val item = timeline.getWindow(eventTime.windowIndex, Timeline.Window()).mediaItem
         val current = player.currentMediaItem ?: return
         if (item.mediaId != current.mediaId || item.localConfiguration?.uri != current.localConfiguration?.uri) return
-        // 同一首歌重播也有独立媒体周期，旧周期的格式不能污染新播放轮次。
+        // 同一首歌重播时会有新的播放周期，过滤掉上一轮迟到的格式回调，避免串数据。
         eventTime.mediaPeriodId?.let { period ->
             val currentTimeline = player.currentTimeline
             if (player.currentPeriodIndex !in 0 until currentTimeline.periodCount ||

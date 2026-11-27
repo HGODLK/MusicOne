@@ -5,7 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 
-/** 只供歌单及其资料编辑入口使用，压住透出的背景字形。 */
+/** 歌单页菜单专用的加深玻璃底色，压住背后透出的文字。 */
 internal val playlistMenuContainer: Color
     @Composable get() = Color.Black.copy(alpha = .09f)
         .compositeOver(MaterialTheme.colorScheme.surface).copy(alpha = .94f)

@@ -1,6 +1,6 @@
 package com.musicone.sourceintegration
 
-/** 每次组合创建事件时捕获账号版本；旧事件失效，新组合无需重建整个组件作用域。 */
+/** 包装点击回调时记下当前账号版本，换号后旧按钮的延迟点击自动失效。 */
 internal class SourcePublicEventGuard(private val checkAccess: () -> Unit, private val accountVersion: () -> Any?) {
     fun event(action: () -> Unit): () -> Unit {
         val expected = accountVersion()

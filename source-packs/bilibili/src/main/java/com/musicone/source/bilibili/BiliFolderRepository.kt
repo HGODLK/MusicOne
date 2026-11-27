@@ -22,7 +22,7 @@ internal class BiliFolderEntry internal constructor(val account: String, val fol
     internal var initialized = false
 }
 
-/** 首屏、自动分页、搜索和完整操作共用游标；迟到结果不能写入已退出的浏览会话。 */
+/** 统一管理收藏夹分页和搜索状态，已关闭的会话收到迟到的回调时直接丢弃。 */
 internal class BiliFolderRepository(
     private val cache: BiliFolderCacheStore,
     private val fetch: suspend (BiliAccountSession, Long, Int, String) -> BiliFavVideoPage,
@@ -45,7 +45,7 @@ internal class BiliFolderRepository(
                 check(entry)
                 if (cached != null) entry.mutable.value = entry.mutable.value.copy(snapshot = cached)
             } else if (!refresh) return@request requireNotNull(entry.state.value.snapshot)
-            // 已有多页缓存保持可见，等同一范围刷新完整后一次交接，避免先缩成一页再撑开。
+            // 刷新时先保留已加载的多页数据，等同样页数拉完再一次性替换，避免列表先缩成一页再撑开
             val pages = entry.state.value.snapshot?.page?.coerceAtLeast(1) ?: 1
             var next: BiliFolderSnapshot? = null
             repeat(pages) {
@@ -86,7 +86,7 @@ internal class BiliFolderRepository(
         check(entry)
         entry.initialized = true
         entry.mutable.value = entry.mutable.value.copy(snapshot = snapshot)
-        // 缓存写入失败不把已经成功取得的网络列表变成加载失败。
+        // 写本地缓存失败时忽略，别把已经拉成功的列表搞成报错
         if (entry.query.isEmpty()) withContext(Dispatchers.IO) {
             try { cache.saveContent(entry.account, entry.folder, snapshot) }
             catch (cancelled: CancellationException) { throw cancelled }

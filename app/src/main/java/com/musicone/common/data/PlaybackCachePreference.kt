@@ -2,7 +2,7 @@ package com.musicone
 
 import kotlinx.coroutines.CancellationException
 
-/** 在线首选杜比时先取同档缓存或在线音源，普通缓存只在在线解析失败后兜底。 */
+/** 首选杜比时优先用杜比缓存或在线拉杜比，普通音质缓存只在在线拉取失败时才兜底。 */
 internal suspend fun resolvePlaybackCacheFirst(
     preferExactOnline: Boolean,
     cached: suspend (allowOtherQuality: Boolean) -> ResolvedPlayback?,

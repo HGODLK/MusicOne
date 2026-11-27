@@ -32,7 +32,7 @@ internal object ArtworkRepository {
         return synchronized(cache) { cache.get(key) }
     }
 
-    /** 首次歌单展示只准备已有缓存，不等待网络，也不强制刷新。 */
+    /** 首次进歌单只读本地已有的封面缓存，不发网络请求，也不强制刷新。 */
     suspend fun cached(imageUrl: String?, context: android.content.Context, maxSide: Int = MAX_ARTWORK_SIDE): Bitmap? {
         val source = imageUrl.normalizedArtworkUrl() ?: return null
         peek(source, maxSide)?.let { return it }
@@ -157,7 +157,7 @@ internal fun rememberArtworkBitmap(
         key2 = refreshKey to maxSide,
         key3 = policy.loadingAllowed to policy.cacheOnly,
     ) {
-        // 已在内存中的图片直接显示；磁盘读取、下载和解码等待局部入场结束。
+        // 内存里已经有的直接显示；需要读磁盘或下载的等入场动画放行后再拉。
         if (!policy.loadingAllowed) return@produceState
         if (policy.cacheOnly) {
             value = ArtworkRepository.cached(imageUrl, context, maxSide)

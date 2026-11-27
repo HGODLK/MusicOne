@@ -16,7 +16,7 @@ internal fun validTrackThemeArgb(value: Long?): Long? = value?.takeIf {
 internal fun fallbackTrackThemeArgb(local: Boolean, darkBackground: Boolean): Long =
     if (local) LOCAL_TRACK_COLOR_ARGB else if (darkBackground) 0xFFFFFFFFL else 0xFF000000L
 
-/** 即使外包忽略取消，旧请求也不能覆盖换曲、换账号或换运行实例后的颜色。 */
+/** 校验请求版本，即使音源扩展忽略了协程取消，旧结果也不会覆盖切歌或切账号后的颜色。 */
 internal class CurrentTrackThemeResolver {
     private var generation = 0L
 

@@ -7,11 +7,16 @@ import kotlinx.coroutines.*
 
 /**
  * 后台预加载：当前歌起播后按 0s／2s／5s 探测后续五首，
- * 默认在 +280ms／+2s 下载前两首；三次带宽不足卡顿后改为稳定播放 +3s／+10s。
+ * 默认在 +280ms／+2s 整首下载前两首；三次带宽不足卡顿后改为稳定播放 +3s／+10s。
  * 暂停保留已有任务，立即并行准备后续三首。
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-internal class PlaybackPreloader(private val context: Context, private val scope: CoroutineScope) {
+internal class PlaybackPreloader(
+    private val context: Context,
+    private val scope: CoroutineScope,
+    // 判断地址过期必须用包含息屏休眠时间的单调时钟，否则锁屏放久了会误以为旧地址还能用。
+    private val ticketClockMs: () -> Long = android.os.SystemClock::elapsedRealtime,
+) {
     private data class Key(
         val source: MusicSource,
         val id: String,
@@ -81,7 +86,7 @@ internal class PlaybackPreloader(private val context: Context, private val scope
                     val playing = transport != null && matches && transport.isPlaying
                     val paused = transport != null && playbackPreloadIsPaused(matches, playing,
                         transport.playWhenReady, transport.playbackState, transport.playerError != null)
-                    // 用户切换音质或在菜单里等待档位时，预加载暂停让出网络与取票。
+                    // 用户正在切音质或等音质列表时，暂停预加载把带宽和请求让出来。
                     val active = current != null && !snapshot.qualityChanging && !qualityQueryWaiting() &&
                         !switching() && context.hasMusicNetwork()
                     val canProbe = active && playbackPreloadCanProbe(playing && snapshot.isPlaying, paused)
@@ -102,12 +107,12 @@ internal class PlaybackPreloader(private val context: Context, private val scope
                             clearTasks()
                         }
                         if (!canDownload) cancelDownloads()
-                        val elapsed = timing.elapsedMs(nowMs())
+                        val elapsed = timing.elapsedMs(playbackNowMs())
                         reconcile(snapshot, elapsed, canDownload, paused)
                         lyrics.update(nextPlaybackPreloadTracks(snapshot, PRELOAD_LYRIC_SOURCES, PLAYBACK_PRELOAD_PROBE_COUNT))
                     }
                     // 让 280ms 阈值直接唤醒，不能被固定 250ms 轮询推迟到 500ms。
-                    val elapsed = timing.elapsedMs(nowMs())
+                    val elapsed = timing.elapsedMs(playbackNowMs())
                     val remaining = (0 until PLAYBACK_PRELOAD_DOWNLOAD_COUNT).mapNotNull(timing::downloadDelayMs)
                         .map { it - elapsed }.filter { it > 0L }.minOrNull() ?: 250L
                     delay(minOf(250L, remaining))
@@ -119,7 +124,20 @@ internal class PlaybackPreloader(private val context: Context, private val scope
     fun attachPlayer(player: Player, bandwidth: PlaybackPreloadBandwidth) { monitor?.attach(player, bandwidth) }
     fun detachPlayer() { monitor?.close() }
     fun foregroundChanged(visible: Boolean) {
-        if (monitor?.foregroundChanged(visible) == true && !pausedPreloading) cancelDownloads()
+        val entering = monitor?.foregroundChanged(visible) == true
+        if (entering && !pausedPreloading) cancelDownloads()
+        if (visible) {
+            val now = ticketNowMs()
+            val invalidated = entries.onForegroundResume(now)
+            if (entering || invalidated.isNotEmpty()) probeGateUntilMs = 0L
+            invalidated.forEach { key ->
+                tasks[key]?.let { task ->
+                    task.resolved = null
+                    task.downloaded = false
+                    task.cancelDownload()
+                }
+            }
+        }
     }
 
     private fun reconcile(snapshot: MusicOneUiState, elapsed: Long, canDownload: Boolean, paused: Boolean) {
@@ -127,12 +145,12 @@ internal class PlaybackPreloader(private val context: Context, private val scope
         val keys = targets.mapTo(hashSetOf(), ::key)
         tasks.keys.filter { it !in keys }.forEach { tasks.remove(it)?.cancel() }
         entries.retain(keys)
-        val now = nowMs()
+        val now = ticketNowMs()
         val probeBusy = tasks.values.any { it.probeJob?.isActive == true }
         var probeStarted = false
         targets.forEachIndexed { index, track ->
             val key = key(track)
-            // 队列插入或重排后角色会变化，必须按新角色重排探测与下载时机。
+            // 队列插歌或调整顺序后，歌曲的顺位变了，按新顺位重新安排预加载。
             tasks[key]?.takeIf { it.roleIndex != index }?.let { stale ->
                 stale.cancel()
                 tasks.remove(key)
@@ -146,11 +164,15 @@ internal class PlaybackPreloader(private val context: Context, private val scope
                 )
             }
             if (task.resolved == null) task.resolved = entries.peek(key, now)
-            // 已对比过且手里有票时才允许直接下载；还在对比就等结果，避免先下低档。
+            // 音质比对完且拿到地址后才开始下载；还在比对就先等等，免得白下低音质。
             if (task.resolved != null && key in compared) task.probeFinished = true
             val work = entries.work(key, now)
-            // 票据进入刷新窗口后必须重新探测，不能继续下载旧地址。
-            if (task.resolved != null && work == PlaybackPreloadEntries.Work.RESOLVE) task.resolved = null
+            // 地址快过期了就必须重新获取，不能拿旧地址继续下，也不能复用旧的下载完成状态。
+            if (task.resolved != null && work == PlaybackPreloadEntries.Work.RESOLVE) {
+                task.resolved = null
+                task.downloaded = false
+                task.cancelDownload()
+            }
             if ((paused || (!probeBusy && !probeStarted && now >= probeGateUntilMs)) &&
                 playbackPreloadProbeDue(index, elapsed, paused) && task.probeJob?.isActive != true) {
                 val needsComparison = key !in compared
@@ -181,7 +203,7 @@ internal class PlaybackPreloader(private val context: Context, private val scope
             } finally {
                 // 成功或失败都留出间隔，避免连续探测压到当前播放。
                 task.probeFinished = true
-                probeGateUntilMs = nowMs() + PLAYBACK_PRELOAD_PROBE_GAP_MS
+                probeGateUntilMs = ticketNowMs() + PLAYBACK_PRELOAD_PROBE_GAP_MS
             }
         }
     }
@@ -189,7 +211,7 @@ internal class PlaybackPreloader(private val context: Context, private val scope
     private suspend fun probe(task: Task, compare: Boolean) {
         val track = task.track
         val key = task.key
-        val now = nowMs()
+        val now = ticketNowMs()
         entries.work(key, now)
         val preferred = PlaybackOptions.effective(context, qualities.read(track.source), track.source)
             .playbackEquivalent()
@@ -198,26 +220,29 @@ internal class PlaybackPreloader(private val context: Context, private val scope
         try {
             val resolved = resolveTarget(track, preferred, cached, ticket, compare)
             if (resolved == null) {
-                entries.failed(key, nowMs(), retryable = true)
+                entries.failed(key, ticketNowMs(), retryable = true)
                 PlaybackPreloadDiagnostics.stage("后台无可用档位", track)
                 return
             }
-            // 迟到的结果不能写进后来切换的账号窗口。
+            // 切换账号后，旧账号迟到的预加载结果直接丢弃。
             if (key(track) != key) {
-                entries.failed(key, nowMs(), retryable = false)
+                entries.failed(key, ticketNowMs(), retryable = false)
                 return
             }
-            entries.resolved(key, resolved, nowMs(), resolved.source.expiresAtEpochMs?.let { it - System.currentTimeMillis() })
+            entries.resolved(key, resolved, ticketNowMs(), resolved.source.expiresAtEpochMs?.let { it - System.currentTimeMillis() })
             val previous = task.resolved
-            // 票据被换成更高档时，停止可能已经开始写入的旧档片段。
-            if (previous != null && previous !== resolved) task.cancelDownload()
+            // 拿到更高音质的地址后，停掉正在下载的低音质任务。
+            if (previous != null && previous !== resolved) {
+                task.downloaded = false
+                task.cancelDownload()
+            }
             task.resolved = resolved
             if (task.prefetch != null) resolver.rememberPreloaded(resolved, preferred)
             PlaybackPreloadDiagnostics.stage("取源就绪", track)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            entries.failed(key, nowMs(), retryable =
+            entries.failed(key, ticketNowMs(), retryable =
                 error !is TrackUnavailableException && !error.stopsSourcePlaybackFallback())
             PlaybackPreloadDiagnostics.stage("后台失败", track, error.javaClass.simpleName)
         }
@@ -243,7 +268,7 @@ internal class PlaybackPreloader(private val context: Context, private val scope
         }
         val probed = probe.playback ?: return usableTicket
         if (usableTicket == null) return probed
-        // 探测暂用低档时，手里已有的更高票据不能被降级覆盖。
+        // 如果探测只拿到低音质，不要覆盖手里已经有的高音质地址。
         return if (usableTicket.source.actualQuality.isHigherThan(probed.source.actualQuality)) {
             usableTicket
         } else {
@@ -260,7 +285,7 @@ internal class PlaybackPreloader(private val context: Context, private val scope
                 val cached = withContext(Dispatchers.IO) {
                     prefetch.cache(resolved, mayContinue = { mayDownload })
                 }
-                // 下载期间票据被替换时不能把新票据误标成已下载。
+                // 下载中途如果地址换了，别把新地址误标成已下载。
                 if (task.resolved !== resolved) {
                     prefetch.cancel()
                     return@launch
@@ -270,19 +295,19 @@ internal class PlaybackPreloader(private val context: Context, private val scope
                     task.downloaded = true
                     PlaybackPreloadDiagnostics.stage("片段就绪", task.track)
                 } else {
-                    entries.blocked(key, nowMs())
+                    entries.blocked(key, ticketNowMs())
                     PlaybackPreloadDiagnostics.stage("缓存受限，仅地址就绪", task.track)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                entries.failed(key, nowMs(), retryable = true)
+                entries.failed(key, ticketNowMs(), retryable = true)
                 PlaybackPreloadDiagnostics.stage("后台失败", task.track, error.javaClass.simpleName)
             }
         }
     }
 
-    /** 切歌、断网或当前播放不能继续时撤销后台工作；正常暂停由三首预取分支接管。 */
+    /** 切歌、断网或播不了时停掉后台预加载；正常暂停时不走这里，改由暂停预加载逻辑接管。 */
     fun stop() {
         pausedPreloading = false
         mayProbe = false
@@ -310,7 +335,7 @@ internal class PlaybackPreloader(private val context: Context, private val scope
 
     fun take(track: MusicTrack, preferred: AudioQuality): ResolvedPlayback? {
         val key = key(track)
-        val saved = entries.take(key, nowMs())
+        val saved = entries.take(key, ticketNowMs())
         if (saved == null) {
             PlaybackPreloadDiagnostics.stage("未命中新鲜地址", track)
             return null
@@ -327,11 +352,25 @@ internal class PlaybackPreloader(private val context: Context, private val scope
         return saved.copy(track = merged)
     }
 
+    /** 给自然过渡用：查看下一首已经整首下好的播放信息，先不移除缓存（等真正切歌时再取走）。 */
+    fun peekDownloaded(track: MusicTrack, preferred: AudioQuality): ResolvedPlayback? {
+        val key = key(track)
+        if (tasks[key]?.downloaded != true) return null
+        val saved = entries.peek(key, ticketNowMs()) ?: return null
+        val actual = saved.source.actualQuality
+        if (!playbackQualityAllowed(track.source, actual, preferred) || !DolbyPlaybackPolicy.permits(actual)) return null
+        val merged = track.copy(previewUrl = saved.source.url,
+            durationMs = track.durationMs.takeIf { it > 0L } ?: saved.track.durationMs)
+            .copy(providerData = saved.track.providerData + track.providerData)
+        return saved.copy(track = merged)
+    }
+
     private fun key(track: MusicTrack): Key {
         val account = sourceAccountState(context, track.source)
         return Key(track.source, track.id, sourceCacheNamespace(context, track.source),
             account?.revision?.toString().orEmpty(), sourceMembershipState(context, track.source))
     }
 
-    private fun nowMs(): Long = System.nanoTime() / 1_000_000L
+    private fun playbackNowMs(): Long = System.nanoTime() / 1_000_000L
+    private fun ticketNowMs(): Long = ticketClockMs()
 }

@@ -11,7 +11,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 
-/** 新页面契约按完整会话身份失效，旧包仍只沿用原账号页的轮询。 */
+/** 监听补充音源账号变化：新版包按完整的会话状态和版本号刷新，旧版包沿用账号页轮询。 */
 @Composable
 internal fun ObserveSupplementalAccount(model: SupplementalSourceModel, page: SupplementalPage) {
     val modern = model.pageProvider != null

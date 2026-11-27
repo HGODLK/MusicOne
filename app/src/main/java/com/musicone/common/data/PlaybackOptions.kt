@@ -65,7 +65,7 @@ internal object PlaybackOptions {
     }
 }
 
-/** 定时到点暂停；本首结束在进入下一首前消费。 */
+/** 睡眠定时器：按时间到点停，或者播完当前这首再停。 */
 internal object PlaybackSleepTimer {
     var deadline by mutableLongStateOf(0L)
         private set

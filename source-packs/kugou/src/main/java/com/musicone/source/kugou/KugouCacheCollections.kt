@@ -3,12 +3,12 @@ package com.musicone.source.kugou
 import com.musicone.source.sdk.SourceCollection
 import com.musicone.source.sdk.SourceLibrarySection
 
-/** 账号目录只提供云歌单，首页推荐与搜索结果不能成为缓存管理目录。 */
+/** 只有账号自己的云歌单能进缓存管理目录，首页推荐和搜索出来的歌单不算。 */
 internal fun isKugouAccountCollection(collection: SourceCollection): Boolean =
     collection.identity.sourceId == KUGOU_SOURCE_ID &&
         collection.stableId.startsWith("kugou-cloudlist:")
 
-/** 在音源输出边界筛选，而不是让宿主识别酷狗私有歌单编号。 */
+/** 在酷狗包内先过滤出云歌单，避免让宿主硬编码识别酷狗的歌单 ID 格式。 */
 internal fun KugouLibrary.cacheCollections(section: SourceLibrarySection): List<MusicPlaylist> =
     when (section) {
         SourceLibrarySection.FAVORITE_TRACKS -> listOfNotNull(favorite)

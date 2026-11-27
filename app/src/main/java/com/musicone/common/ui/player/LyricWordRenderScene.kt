@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.style.ResolvedTextDirection
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.IntRect
@@ -32,6 +33,9 @@ internal class LyricWordRenderPart(
     val textRange: TextRange,
     val lightStart: Float,
     val lightEnd: Float,
+    val rtl: Boolean = false,
+    val lightLeft: Float = bounds.left,
+    val lightRight: Float = bounds.right,
 )
 
 private class LyricWordRenderNode(
@@ -91,7 +95,7 @@ private fun DrawScope.drawClippedLyricRaster(
     }
 }
 
-/** 保留原字形与裁剪；逐字渐亮最高 60fps，其他动效不受影响。 */
+/** 逐字歌词绘制场景：缓存整句和各词段图层，逐字渐亮限 60fps，不影响其他动效帧率。 */
 internal class LyricWordRenderScene private constructor(
     private val staticLayer: GraphicsLayer,
     private val prepareDynamic: () -> DynamicLyricWordRenderScene,
@@ -174,11 +178,11 @@ internal class LyricWordRenderScene private constructor(
                                     drawClippedLyricRaster(bitmap, origin, paint, part.path)
                                 }
                             } else if (wordInk != null) {
-                                light.draw(this, part.bounds.left - left, part.bounds.right - left, progress, strength, part.lightStart, part.lightEnd, spatial)
+                                light.draw(this, part.lightLeft - left, part.lightRight - left, progress, strength, part.lightStart, part.lightEnd, spatial, part.rtl)
                             } else translate(left = -left.toFloat(), top = -top.toFloat()) {
                                 clipPath(part.path) {
                                     translate(left = left.toFloat(), top = top.toFloat()) {
-                                        light.draw(this, part.bounds.left - left, part.bounds.right - left, progress, strength, part.lightStart, part.lightEnd, spatial)
+                                        light.draw(this, part.lightLeft - left, part.lightRight - left, progress, strength, part.lightStart, part.lightEnd, spatial, part.rtl)
                                     }
                                 }
                             }
@@ -200,36 +204,196 @@ internal class LyricWordRenderScene private constructor(
     }
 }
 
+private class RawLyricWordSegment(
+    val rangeIndex: Int,
+    val line: Int,
+    val rawPath: Path,
+    val rawBounds: Rect,
+    val textRange: TextRange,
+    val rtl: Boolean,
+)
+
 internal fun lyricWordRenderParts(layout: TextLayoutResult,
     ranges: List<LyricHighlightRange>): Pair<Path, List<LyricWordRenderPart>> {
-    val textLength = layout.layoutInput.text.length
-    val coverage = Path()
-    val parts = ranges.flatMapIndexed { index, range ->
+    val text = layout.layoutInput.text.text
+    val textLength = text.length
+    val hasArabic = containsArabicOrPersian(text)
+    val overhang = if (hasArabic) lyricRasterOverhang(layout) else 0f
+    val rawSegments = ArrayList<RawLyricWordSegment>(ranges.size)
+    ranges.forEachIndexed { index, range ->
         val start = range.start.coerceIn(0, textLength)
         val end = range.end.coerceIn(start, textLength)
-        if (start >= end) emptyList() else {
-            val segments = (layout.getLineForOffset(start)..layout.getLineForOffset(end - 1)).mapNotNull { line ->
-                val partStart = maxOf(start, layout.getLineStart(line))
-                val partEnd = minOf(end, layout.getLineEnd(line))
-                if (partStart >= partEnd) null else {
-                    val path = layout.getPathForRange(partStart, partEnd)
-                    val bounds = path.getBounds()
-                    if (bounds.isEmpty) null else {
-                        coverage.addPath(path)
-                        LyricWordRenderPart(index, path, bounds, TextRange(partStart, partEnd), 0f, 1f)
-                    }
+        if (start >= end) return@forEachIndexed
+        for (line in layout.getLineForOffset(start)..layout.getLineForOffset(end - 1)) {
+            val partStart = maxOf(start, layout.getLineStart(line))
+            val partEnd = minOf(end, layout.getLineEnd(line))
+            if (partStart >= partEnd) continue
+            // 若单个词段跨越双向边界（如波斯词紧贴英文），拆为连续同向子段分别扫光。
+            for ((runStart, runEnd, isRtl) in lyricBidiSubRanges(layout, partStart, partEnd)) {
+                val rawBounds = lyricLineRangeBounds(layout, line, runStart, runEnd)
+                if (!rawBounds.isEmpty) {
+                    val rawPath = Path().apply { addRect(rawBounds, Path.Direction.Clockwise) }
+                    rawSegments.add(RawLyricWordSegment(index, line, rawPath, rawBounds, TextRange(runStart, runEnd), isRtl))
                 }
-            }
-            // 跨行词段延续同一提亮进度，第二行不从词首重新开始。
-            val totalWidth = segments.sumOf { it.bounds.width.toDouble() }.toFloat().coerceAtLeast(1f)
-            var offset = 0f
-            segments.map { part ->
-                val lightStart = offset / totalWidth
-                offset += part.bounds.width
-                LyricWordRenderPart(part.rangeIndex, part.path, part.bounds,
-                    part.textRange, lightStart, offset / totalWidth)
             }
         }
     }
+    // 含阿拉伯／波斯文时，每行仅对视觉最左与最右且贴近行端的唯一词段外扩水平裁剪框，避免与邻词重叠。
+    val leftmostPerLine = IntArray(layout.lineCount) { -1 }
+    val rightmostPerLine = IntArray(layout.lineCount) { -1 }
+    if (hasArabic && overhang > 0f) {
+        rawSegments.forEachIndexed { segIndex, seg ->
+            val line = seg.line
+            val curLeft = leftmostPerLine[line]
+            if (curLeft < 0 || seg.rawBounds.left < rawSegments[curLeft].rawBounds.left) leftmostPerLine[line] = segIndex
+            val curRight = rightmostPerLine[line]
+            if (curRight < 0 || seg.rawBounds.right > rawSegments[curRight].rawBounds.right) rightmostPerLine[line] = segIndex
+        }
+    }
+    val coverage = Path()
+    val rawPartsByRange = HashMap<Int, MutableList<LyricWordRenderPart>>(ranges.size)
+    rawSegments.forEachIndexed { segIndex, seg ->
+        val line = seg.line
+        val expandLeft = hasArabic && overhang > 0f && leftmostPerLine[line] == segIndex &&
+            seg.rawBounds.left <= layout.getLineLeft(line) + 1f
+        val expandRight = hasArabic && overhang > 0f && rightmostPerLine[line] == segIndex &&
+            seg.rawBounds.right >= layout.getLineRight(line) - 1f
+        val finalBounds = lyricWordClipBounds(
+            rawBounds = seg.rawBounds,
+            expandLeft = expandLeft,
+            expandTop = hasArabic && line == 0,
+            expandRight = expandRight,
+            expandBottom = hasArabic && line == layout.lineCount - 1,
+            overhang = overhang,
+        )
+        val finalPath = lyricWordClipPath(seg.rawPath, seg.rawBounds, finalBounds)
+        coverage.addPath(finalPath)
+        rawPartsByRange.getOrPut(seg.rangeIndex) { ArrayList(1) }.add(
+            LyricWordRenderPart(seg.rangeIndex, finalPath, finalBounds, seg.textRange, 0f, 1f, seg.rtl,
+                seg.rawBounds.left, seg.rawBounds.right),
+        )
+    }
+    val parts = ranges.indices.flatMap { rangeIndex ->
+        val segments = rawPartsByRange[rangeIndex] ?: return@flatMap emptyList()
+        // 跨行／跨向词段按原字形宽度延续同一提亮进度，不被裁剪留白拉偏。
+        val totalWidth = segments.sumOf { (it.lightRight - it.lightLeft).coerceAtLeast(0f).toDouble() }
+            .toFloat().coerceAtLeast(1f)
+        var offset = 0f
+        segments.map { part ->
+            val lightStart = offset / totalWidth
+            offset += (part.lightRight - part.lightLeft).coerceAtLeast(0f)
+            LyricWordRenderPart(part.rangeIndex, part.path, part.bounds,
+                part.textRange, lightStart, offset / totalWidth, part.rtl, part.lightLeft, part.lightRight)
+        }
+    }
     return coverage to parts
+}
+
+/**
+ * 计算同一视觉行内 [start, end) 字符范围的真实包围盒。
+ * 不使用 TextLayoutResult.getPathForRange：Android StaticLayout.getSelectionPath 在 end 触及软折行
+ * 行尾时会把下一行行首（x=0）的退化边并入 Path，导致行尾词与注音的 bounds.left 坍缩为 0。
+ */
+internal fun lyricLineRangeBounds(layout: TextLayoutResult, line: Int, start: Int, end: Int): Rect {
+    val text = layout.layoutInput.text.text
+    val safeStart = start.coerceIn(0, text.length)
+    val safeEnd = end.coerceIn(safeStart, text.length)
+    if (safeStart >= safeEnd) return Rect.Zero
+    return lyricLineHorizontalBounds(safeStart, safeEnd, text,
+        lineTop = layout.getLineTop(line), lineBottom = layout.getLineBottom(line)) { offset ->
+        layout.getBoundingBox(offset)
+    }
+}
+
+internal fun lyricLineHorizontalBounds(
+    start: Int,
+    end: Int,
+    text: CharSequence,
+    lineTop: Float,
+    lineBottom: Float,
+    boundingBox: (Int) -> Rect,
+): Rect {
+    if (start >= end || lineBottom <= lineTop) return Rect.Zero
+    var left = Float.POSITIVE_INFINITY
+    var right = Float.NEGATIVE_INFINITY
+    var anyLeft = Float.POSITIVE_INFINITY
+    var anyRight = Float.NEGATIVE_INFINITY
+    var offset = start
+    while (offset < end) {
+        val ch = text[offset]
+        if (ch == '\n' || ch == '\r') {
+            offset++
+            continue
+        }
+        val box = boundingBox(offset)
+        val boxLeft = minOf(box.left, box.right)
+        val boxRight = maxOf(box.left, box.right)
+        if (boxLeft.isFinite() && boxRight.isFinite()) {
+            anyLeft = minOf(anyLeft, boxLeft)
+            anyRight = maxOf(anyRight, boxRight)
+            if (boxRight > boxLeft) {
+                left = minOf(left, boxLeft)
+                right = maxOf(right, boxRight)
+            }
+        }
+        offset += if (Character.isHighSurrogate(ch) && offset + 1 < end && Character.isLowSurrogate(text[offset + 1])) 2 else 1
+    }
+    val finalLeft = if (left.isFinite()) left else anyLeft
+    val finalRight = if (right.isFinite()) right else anyRight
+    if (!finalLeft.isFinite() || !finalRight.isFinite() || finalRight <= finalLeft) return Rect.Zero
+    return Rect(finalLeft, lineTop, finalRight, lineBottom)
+}
+
+/** 计算阿拉伯／波斯歌词词段的外扩裁剪框；只在外侧扩充，不侵入邻词范围。 */
+internal fun lyricWordClipBounds(
+    rawBounds: Rect,
+    expandLeft: Boolean,
+    expandTop: Boolean,
+    expandRight: Boolean,
+    expandBottom: Boolean,
+    overhang: Float,
+): Rect {
+    if (overhang <= 0f) return rawBounds
+    val left = if (expandLeft) rawBounds.left - overhang else rawBounds.left
+    val top = if (expandTop) rawBounds.top - overhang else rawBounds.top
+    val right = if (expandRight) rawBounds.right + overhang else rawBounds.right
+    val bottom = if (expandBottom) rawBounds.bottom + overhang else rawBounds.bottom
+    return if (left == rawBounds.left && top == rawBounds.top && right == rawBounds.right && bottom == rawBounds.bottom) {
+        rawBounds
+    } else {
+        Rect(left, top, right, bottom)
+    }
+}
+
+/**
+ * 构建词段裁剪路径。
+ * 扩充裁剪框时仅添加单一顺时针矩形，与 Android `Layout.getSelectionPath`（CW）绕向一致；
+ * 不能在 `NonZero` 路径内叠加默认逆时针的 `addRect` 与原 `rawPath`，否则正文区域会绕数抵消被镂空。
+ */
+internal fun lyricWordClipPath(
+    rawPath: Path,
+    rawBounds: Rect,
+    clipBounds: Rect,
+    createPath: () -> Path = ::Path,
+): Path = if (clipBounds == rawBounds) rawPath else createPath().apply {
+    addRect(clipBounds, Path.Direction.Clockwise)
+}
+
+private data class LyricBidiSubRange(val start: Int, val end: Int, val rtl: Boolean)
+
+private fun lyricBidiSubRanges(layout: TextLayoutResult, start: Int, end: Int): List<LyricBidiSubRange> {
+    if (start >= end) return emptyList()
+    val result = ArrayList<LyricBidiSubRange>(1)
+    var runStart = start
+    var currentRtl = layout.getBidiRunDirection(start) == ResolvedTextDirection.Rtl
+    for (offset in (start + 1) until end) {
+        val nextRtl = layout.getBidiRunDirection(offset) == ResolvedTextDirection.Rtl
+        if (nextRtl != currentRtl) {
+            result.add(LyricBidiSubRange(runStart, offset, currentRtl))
+            runStart = offset
+            currentRtl = nextRtl
+        }
+    }
+    result.add(LyricBidiSubRange(runStart, end, currentRtl))
+    return result
 }

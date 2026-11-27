@@ -37,7 +37,7 @@ internal fun rememberSourcePlayerUiBridge(viewModel: MusicPlaybackRuntime,
     }
 }
 
-/** 只持有挂载桥，核心状态和所有动作始终由宿主拥有。 */
+/** 自建播放页的桥接对象，所有播放状态和操作最终还是由宿主统一执行。 */
 internal class SourcePlayerUiBridge(
     private val instance: SourceInstance,
     private val playback: MusicPlaybackRuntime,

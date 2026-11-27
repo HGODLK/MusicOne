@@ -142,7 +142,7 @@ class SourcePublicUiLeaseTest {
         assertEquals(checksBeforeRemoval, callerChecks)
     }
 
-    // 仅调用编译后的公开入口检查租约转发；代理不运行 Compose 布局或动画。
+    // 只验证公开入口的租约转发，不跑实际的 Compose 布局和动画。
     private fun invokeLoadedCard(scope: SourceLoadedHomeComponents, name: String,
         collection: SourceCollection, tracks: List<SourceTrackDetails>) {
         val method = SourceLoadedHomeComponents::class.java.methods.single { it.name == name }

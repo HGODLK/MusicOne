@@ -17,7 +17,7 @@ internal data class BiliFolderDirectoryState(
     val coverRevision: Int = 0,
 )
 
-/** 目录和封面独立于夹内分页，刷新目录不再取消正在浏览的内容。 */
+/** 收藏夹目录和封面的加载与夹内视频列表分开，刷新目录不会打断当前浏览。 */
 internal class BiliFolderDirectory(private val cache: BiliFolderCacheStore, private val scope: CoroutineScope,
     private val fetchFolders: suspend (BiliAccountSession) -> List<BiliFavFolder>,
     private val fetchCover: suspend (BiliAccountSession, Long) -> String) {

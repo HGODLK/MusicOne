@@ -13,7 +13,7 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.ImageVectorCache
 import androidx.compose.ui.res.ResourceIdCache
 
-/** 公共组件回到宿主资源及缓存，组件外仍使用包的独立资源。 */
+/** 切回宿主资源的 Context 和缓存给公共组件用，组件外面依然用音源包自己的资源。 */
 @Composable
 internal fun SourceHostUiResources(context: Context, content: @Composable () -> Unit) {
     // 与运行时 SourceResourceScope 一样绑定 Compose 1.11.4 的资源缓存 ABI。

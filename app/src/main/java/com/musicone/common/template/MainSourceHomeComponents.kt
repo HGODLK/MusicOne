@@ -117,7 +117,7 @@ internal fun MainSourceDailyCard(
             onClickLabel = "打开每日推荐",
         ) {
             if (transition == null || playlist.tracks.isEmpty()) onClick()
-            // 被挡住一部分也直接起飞，飞行按可见块裁剪，不再先滚动露出。
+            // 卡片被挡住一半也能直接起飞转场，飞行动画只按可见区域裁切，不用先滚出来。
             else transition.open(playlist.id, effectiveArtwork, {}, onClick)
         },
         shape = shape,
@@ -225,7 +225,7 @@ internal fun MainSourcePlaylistCard(
         artworkVersion?.takeIf { it > 0L },
         maxSide = artworkMaxSide,
     )
-    // 直接观察加载状态，封面从磁盘或网络完成后无需依赖点击触发再次组合。
+    // 订阅封面加载结果，磁盘或网络下完马上刷新，不用等点击触发重组。
     val artwork = requestedArtwork ?: ArtworkRepository.peek(playlist.artworkUrl, artworkMaxSide)
     BoxWithConstraints(
         modifier.widthIn(max = width).aspectRatio(1f).clip(shape)

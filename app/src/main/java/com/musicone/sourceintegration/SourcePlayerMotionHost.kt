@@ -23,7 +23,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.selects.select
 
-/** 方案选择和临时动效策略独立于根页面，原生播放器继续使用原来的准备路径。 */
+/** 根据当前主音源决定走自建播放页还是原生播放页的开合准备流程，不影响原生播放器。 */
 @Composable
 internal fun rememberSourcePlayerMotion(playback: MusicPlaybackRuntime, motion: PageMotion,
     presentation: PhonePlayerPresentation, mainSource: MusicSource): SourcePlayerUiBridge? {
@@ -67,7 +67,7 @@ private suspend fun awaitCurrentPlayerReady(current: State<SourcePlayerUiBridge?
     }
 }
 
-/** 首帧由独立包组合明确回执，共享目标只等待现有的一轮布局预算。 */
+/** 等待独立 ComposeView 里的包页面布局就绪，再放行播放页展开动画。 */
 internal class SourcePlayerLayoutReadiness {
     private var contentReady by mutableStateOf(false)
     private var failed by mutableStateOf(false)
@@ -108,7 +108,7 @@ private fun sourcePlayerBarCopyFor(motion: PageMotion, element: SourcePlayerShar
     SourcePlayerBarCopy(element, track, playing, anchor?.textSizeSp ?: 0f)
 }
 
-/** 自建播放器只共享宿主开合进度，不接管原生转向准备；开合方式由声明选择整页淡入或从迷你条展开。 */
+/** 自建播放页的动画宿主：按音源声明走整页淡入或从迷你条展开，共享宿主开合进度。 */
 @Composable
 internal fun SourcePlayerMotionHost(motion: PageMotion, bridge: SourcePlayerUiBridge, viewModel: MusicPlaybackRuntime,
     dismiss: () -> Unit, transitionBackdrop: PlayerTransitionBackdrop? = null) {

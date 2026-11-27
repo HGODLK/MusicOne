@@ -29,15 +29,23 @@ private val MusicOneColors = lightColorScheme(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MusicOneTheme(content: @Composable () -> Unit) {
-    ExperiencePreferences.initialize(androidx.compose.ui.platform.LocalContext.current)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    ExperiencePreferences.initialize(context)
+    CustomFontStore.initialize(context)
     val dark = useDarkTheme(ExperiencePreferences.options.alwaysDark, androidx.compose.foundation.isSystemInDarkTheme())
+    val fontMode = ExperiencePreferences.options.fontMode
+    val customConfig = CustomFontStore.config
+    val customRevision = CustomFontStore.revision
+    val compositeCustomFamily = if (fontMode == AppFontMode.CUSTOM) {
+        CustomFontStore.compositeUiFontFamily(context, customConfig, customRevision)
+    } else null
     CompositionLocalProvider(
         LocalIndication provides NoRippleIndication,
         LocalRippleConfiguration provides null,
     ) {
         MaterialTheme(
             colorScheme = if (dark) MusicOneDarkColors else MusicOneColors,
-            typography = musicOneTypography(ExperiencePreferences.options.fontMode),
+            typography = musicOneTypography(fontMode, customConfig, customRevision, compositeCustomFamily),
         ) {
             CompositionLocalProvider(
                 LocalTextStyle provides MaterialTheme.typography.bodyLarge,

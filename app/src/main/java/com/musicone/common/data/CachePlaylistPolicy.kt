@@ -4,13 +4,13 @@ import com.musicone.source.sdk.SourceCollectionCachePolicy
 import com.musicone.sourceintegration.SourcePackageController
 import com.musicone.sourceintegration.toSourceCollection
 
-/** 活跃包可筛选账号目录；缺包或旧包不丢弃已有快照。 */
+/** 已加载的音源包可以自定义哪些歌单进缓存目录；包没装或旧版包时保留全部已有快照。 */
 internal fun isCacheLibraryPlaylist(playlist: MusicPlaylist,
     policy: SourceCollectionCachePolicy? = SourcePackageController.current()?.running(playlist.source.id)?.entry?.collections as? SourceCollectionCachePolicy,
 ): Boolean = !playlist.id.startsWith("local-cached-") && !playlist.id.startsWith("cache-track:") &&
     (policy?.let { runCatching { it.includesInCacheLibrary(playlist.toSourceCollection()) }.getOrDefault(true) } ?: true)
 
-/** 每个状态入口统一应用当前包规则；不可用包的旧目录继续保留。 */
+/** 统一按当前音源包规则过滤并去重缓存歌单，不可用音源包的旧目录照常保留。 */
 internal fun canonicalCachePlaylists(playlists: List<MusicPlaylist>): List<MusicPlaylist> =
     playlists.filter { isCacheLibraryPlaylist(it) }.distinctBy(::cachePlaylistKey)
 

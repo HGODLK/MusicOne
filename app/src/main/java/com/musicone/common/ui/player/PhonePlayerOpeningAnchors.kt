@@ -13,7 +13,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-/** 仅协调本轮横屏目标批次，不持有开合进度，也不随切歌重开事务。 */
+/** 协调手机横屏展开时的目标锚点批次（封面、标题、歌手），确认全部测量有效后才放行飞行动画。 */
 internal class PhonePlayerOpeningAnchors {
     val layers = PlayerOpeningLayerPreparation()
     var generation by mutableIntStateOf(0)
@@ -58,7 +58,7 @@ internal class PhonePlayerOpeningAnchors {
     private fun validTarget(key: String, anchor: MotionAnchor, host: Rect): Boolean {
         if (anchorFits(anchor.bounds, host)) return true
         val bounds = anchor.bounds
-        // 已测量的空歌手等文字允许零面积；它没有飞行字形，不能被误当成布局尚未登记。
+        // 歌手或标题为空时宽高可能为 0，只要已在宿主范围内完成测量，也算有效锚点。
         return key != "cover" && host.width > 1f && host.height > 1f &&
             bounds.width >= 0f && bounds.height >= 0f && (bounds.width <= 1f || bounds.height <= 1f) &&
             bounds.left >= host.left - 1f && bounds.top >= host.top - 1f &&
@@ -68,7 +68,7 @@ internal class PhonePlayerOpeningAnchors {
     companion object { val Keys = setOf("cover", "title", "subtitle") }
 }
 
-/** 使用横向画布的一次真实坐标变换，不读取 Turn 内层的补偿坐标。 */
+/** 把横向画布内的本地锚点换算成物理根坐标的外接矩形。 */
 internal fun phoneLandscapePhysicalAnchor(anchor: MotionAnchor, localToRoot: (Offset) -> Offset): MotionAnchor {
     val rect = anchor.bounds
     val points = arrayOf(localToRoot(rect.topLeft), localToRoot(rect.topRight),
@@ -81,14 +81,14 @@ internal fun phoneLandscapePhysicalAnchor(anchor: MotionAnchor, localToRoot: (Of
     return anchor.copy(bounds = Rect(left, top, right, bottom))
 }
 
-/** 延迟重读同一画布，宿主首帧坐标登记晚于子布局时也不会误用旧方向批次。 */
+/** 保存横向画布的坐标与本地锚点，支持按帧延迟重算物理坐标，避免首帧读到旧方向的矩阵。 */
 internal class PhoneLandscapeAnchorLayout {
     var coordinates: LayoutCoordinates? = null
     var localAnchors: Map<String, MotionAnchor> = emptyMap()
     var size: IntSize = IntSize.Zero
     fun physicalAnchors(rotation: Int, host: Rect): Map<String, MotionAnchor>? {
         val coordinates = coordinates?.takeIf { it.isAttached && it.size == size } ?: return null
-        // Compose 根节点可能包含系统栏，播放宿主则有独立边界，不能要求二者同尺寸。
+        // 只要播放宿主尺寸有效即可，不要求和 Compose 根节点（可能含系统栏）尺寸完全一致。
         if (host.width <= 1f || host.height <= 1f) return null
         if (!localAnchors.keys.containsAll(PhonePlayerOpeningAnchors.Keys)) return null
         val origin = coordinates.playerPointInRoot(Offset.Zero)
@@ -99,7 +99,7 @@ internal class PhoneLandscapeAnchorLayout {
     }
 }
 
-/** 新代次不能借旧画布尚未更新的坐标提前通过；检查实际基向量而非目标变量。 */
+/** 通过校验画布 X 轴基向量的实际朝向，确认画布已经真正旋转到目标角度。 */
 internal fun phoneLandscapeCanvasMatchesRotation(axis: Offset, expected: Offset): Boolean {
     val length = hypot(axis.x, axis.y)
     return length > .001f && abs(axis.x / length - expected.x) < .001f &&

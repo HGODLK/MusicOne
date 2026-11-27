@@ -46,3 +46,21 @@ target_link_libraries(native-audio
     z
     m
 )
+
+# 自然过渡（AutoMix）引擎：独立的动态库，不依赖 FFmpeg。
+add_library(musicone-automix SHARED
+    automix/am_dsp.cpp
+    automix/am_analysis.cpp
+    automix/am_parts.cpp
+    automix/am_stretch.cpp
+    automix/am_mix.cpp
+    automix/am_store.cpp
+    automix/am_jni.cpp
+)
+target_include_directories(musicone-automix PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/automix
+    ${CMAKE_CURRENT_SOURCE_DIR}/automix/third_party
+)
+target_compile_options(musicone-automix PRIVATE -O2 -fno-fast-math -ffp-contract=off)
+target_link_options(musicone-automix PRIVATE "-Wl,-z,max-page-size=16384")
+target_link_libraries(musicone-automix log m)

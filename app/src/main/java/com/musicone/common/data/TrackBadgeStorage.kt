@@ -3,7 +3,7 @@ package com.musicone
 import com.musicone.source.sdk.SourceTrackBadge
 import org.json.JSONObject
 
-/** 展示资料独立于权益事实持久化，缺包和离线仍可读取。 */
+/** 角标样式单独持久化，离线或没装音源包时也能正常显示。 */
 internal fun SourceTrackBadge.toStoredBadgeJson(): JSONObject = JSONObject().put("text", text).apply {
     lightTextArgb?.let { put("lightTextArgb", it) }
     lightBackgroundArgb?.let { put("lightBackgroundArgb", it) }

@@ -7,7 +7,7 @@ internal data class LyricPlacementGeometry(val width: Int, val height: Int, val 
     val measured get() = width > 0 && height > 0
 }
 
-/** 首次显示前确认布局；显示后只由现有位置所有者接管，不能再隐藏或重置播放弹簧。 */
+/** 首次显示歌词前先等列表滚动到目标行再露出，避免闪一下第 0 行；一旦显示后就不再隐藏。 */
 internal class LyricFirstPlacement {
     private var confirmed by mutableStateOf<LyricPlacementGeometry?>(null)
     private var presented by mutableStateOf(false)
@@ -31,7 +31,7 @@ internal fun rememberLyricFirstPlacement(
     allowed: Boolean,
     current: Int,
 ): LyricFirstPlacementGate {
-    // 已显示窗口的资格跟随窗口身份，不能因重新排版或播放重组重新隐藏并抢走弹簧。
+    // 状态绑定到当前窗口实例，避免后续重组或重新排版时把已经显示的歌词又藏起来。
     val placement = remember(pane) { LyricFirstPlacement() }
     val latestCurrent by rememberUpdatedState(current)
     val geometry = remember(pane) {
@@ -44,7 +44,7 @@ internal fun rememberLyricFirstPlacement(
         if (!enabled || !allowed) return@LyricAnimationEffect
         snapshotFlow { geometry.value }.collectLatest { expected ->
             if (!expected.measured || placement.ready(expected)) return@collectLatest
-            // 使用最终列表实测结果；若期间换句或改窗，就确认新的目标，不能提前宣布就绪。
+            // 滚完后核对实测偏移；如果期间换句或视口变了，继续对齐新目标直到真正到位。
             while (geometry.value == expected && !placement.ready(expected)) {
                 val target = latestCurrent
                 val existing = pane.listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == target }
@@ -66,7 +66,7 @@ internal fun rememberLyricFirstPlacement(
     return remember(placement, geometry, ready, pane) {
         LyricFirstPlacementGate(ready) { visible ->
             val info = pane.listState.layoutInfo
-            // 预备和 seek 自己完成定位时也记下实测结果，不能在交接后重新从未就绪开始。
+            // 如果预备流程或 seek 已经把列表滚到位了，顺手记下已就绪状态，避免交接后又隐藏。
             if (!allowed || pane.currentLine == latestCurrent) {
                 placement.confirm(geometry.value, info.visibleItemsInfo.firstOrNull { it.index == pane.currentLine }?.offset,
                     pane.playbackStep.offsetPx(pane.currentLine), pane.listState.isScrollInProgress)

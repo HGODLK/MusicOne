@@ -76,13 +76,13 @@ internal class QqServices(private val context: Context, private val auth: QqAuth
             var session = auth.session()
             val result = try { work(session) } catch (error: Exception) {
                 if (!error.rejectsQqCredential()) throw error
-                // 票可能被服务端提前作废：先续票，再用新票重试一次，续不上才报失效。
+                // 票据可能被服务端提前踢掉，先尝试强制续票再重试一次，续不上才报登录失效
                 currentCoroutineContext().ensureActive()
                 val rejected = session
                 session = auth.renewRejected(rejected) ?: throw if (auth.recentlyForcedRenewal(rejected.credential))
                     error.asQqEndpointRejection("新票刚续出又被拒，未再续票") else error
                 try { work(session) } catch (again: Exception) {
-                    // 新票已通过账号校验仍被拒，是接口自身限制，不能报登录失效，也不再换票。
+                    // 刚换的新票已通过账号校验，这个接口还拒说明是接口自身限制，不要误报成登录失效
                     if (!again.rejectsQqCredential()) throw again
                     throw again.asQqEndpointRejection("续票后重试仍被拒")
                 }
@@ -251,7 +251,7 @@ internal class QqServices(private val context: Context, private val auth: QqAuth
         val playlist = collection.playlist()
         if (playlist.id == QQ_RECENT_SONGS_PLAYLIST_ID) return@io page(recentRepository.load().songs, request, session)
         if (playlist.isQqSearchAlbum) return@io page(playlistPage(playlist, 0, session).playlist.tracks, request, session)
-        // 公共歌单页按用户选择统一排序，包内始终返回原始分页，避免重开后倒序两次。
+        // 排序统一交给公共歌单页处理，这里直接返回接口原始顺序，避免重复倒序
         val result = playlistPage(playlist, request.offset(), session)
         remember(result.playlist, session)
         SourcePage(aliases.remember(result.playlist.tracks).map { it.details(session.owner()) }, result.next?.offset?.toString())
@@ -283,7 +283,7 @@ internal class QqServices(private val context: Context, private val auth: QqAuth
         if (tracks.isEmpty()) return
         favoriteWrites.runWrite { io { session ->
             val values = tracks.map { it.musicTrack() }.distinctBy(MusicTrack::id)
-            // 推荐页资料可能缺少收藏记录编号，删除前沿用旧版完整收藏映射。
+            // 推荐页来的歌曲可能缺收藏记录 ID，取消收藏前先查完整收藏表补齐
             val resolved = if (favorite) values else {
                 val account = requireNotNull(session.account) { "请先登录QQ音乐" }
                 val originals = library.favoritePlaylist(session.credential, account.userId, account.hasVipAccess).tracks.associateBy(MusicTrack::id)
@@ -311,13 +311,13 @@ internal class QqServices(private val context: Context, private val auth: QqAuth
             if (session.account == null) null
             else runCatching { membershipIndex.cached(session.owner(), collection.stableId, identities) }.getOrNull()
         }
-        // 只读核对，不需要再拉一遍自建目录授权；目录编号随集合载荷传回。
+        // 只读查询，直接用歌单 payload 里带的目录 ID，不必重拉自建歌单列表
         return io { session ->
             val target = collection.playlist()
             membershipIndex.refresh(session.owner(), session.credential, target, identities) { playlistIdentities(target, session) }
         }
     }
-    /** 整单读取曲目身份：不解析权益与音质，只为判断归属。 */
+    /** 拉取整张歌单里的歌曲 ID 集合（跳过权限和音质解析），只用来判断某首歌在不在歌单里。 */
     private fun playlistIdentities(playlist: MusicPlaylist, session: PlatformSession): Set<String> = collectPlaylistTrackPages { cursor ->
         val offset = cursor?.offset ?: 0
         if (playlist.id.startsWith(QQ_PROFILE_DIRECTORY_ID_PREFIX)) library.profileDirectoryPage(playlist, session.credential, false, offset, resolveAccess = false)

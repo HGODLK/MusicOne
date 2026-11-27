@@ -12,7 +12,7 @@ internal data class DirectUsbPcmOutput(
     val resampler: NativePcmResampler?, val converted: Boolean,
 )
 
-/** 先尝试原规格，再尝试兼容转换；每次失败均释放候选流，不让旧配置污染下一次。 */
+/** 先按音频原始规格打开 USB 流，失败后再尝试兼容格式；每次失败都要释放流，避免影响下一次尝试。 */
 internal fun createDirectUsbPcmOutput(
     device: UsbAudioDevice,
     info: UsbAudioDeviceInfo,
@@ -48,7 +48,7 @@ internal fun createDirectUsbPcmOutput(
                 readSampleRate = { device.readSampleRate(profile) },
                 clockValid = { device.awaitClockValid(profile) },
                 start = {
-                    // 时钟确认后再初始化硬件音量，按当前模式推满或直接设到目标衰减。
+                    // 等采样率时钟生效后再设硬件音量，按当前开关决定拉满还是设成目标音量。
                     beforeStart(profile)
                     stream.start()
                 })
@@ -56,7 +56,7 @@ internal fun createDirectUsbPcmOutput(
         } catch (error: Exception) {
             android.util.Log.w("MusicOneUsbAudio", "USB 输出候选配置失败", error)
         } catch (_: UnsatisfiedLinkError) {
-            // 没有原生转换库的 ABI 仍保留系统兼容输出，不能装作已转换成功。
+            // 如果当前架构没有编进原生转换库，就回退系统默认输出，不要假装转换成功。
         } finally {
             if (!accepted) {
                 try {

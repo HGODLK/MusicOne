@@ -10,7 +10,7 @@ import kotlinx.coroutines.launch
 
 internal data class SourceStartupState(val initializing: Boolean = true, val error: String? = null)
 
-/** 初始化归应用进程所有；页面退出或重建只取消等待，不取消音源安装事务。 */
+/** 音源初始化绑定在应用级作用域，页面销毁只取消等待，不会打断正在跑的安装初始化。 */
 internal class SourceStartup(private val scope: CoroutineScope, private val initialize: suspend () -> Unit) {
     private val mutableState = MutableStateFlow(SourceStartupState())
     val state = mutableState.asStateFlow()

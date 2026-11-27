@@ -83,7 +83,7 @@ internal class NeteasePackageState(val environment: SourceEnvironment) : AutoClo
         check(); loginGeneration.incrementAndGet(); revision.incrementAndGet()
         val editor = preferences.edit()
         preferences.all.keys.filter { it.startsWith("session_netease_") && it != "session_netease_device_id" }.forEach(editor::remove)
-        // 空凭证保留用户已退出的选择，不能再次合并旧版账号。
+        // 写入空字符串标记用户主动退出登录，防止下次启动又把旧版账号自动迁回来
         check(editor.putString("session_netease_credential", "").commit())
         account = null; expired = false; resetPageData(); primary("my")
     }

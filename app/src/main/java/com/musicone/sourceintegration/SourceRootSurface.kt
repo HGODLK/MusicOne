@@ -6,10 +6,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import com.musicone.MusicOnePage
 
-/** 由宿主固定一级页身份，包内重组与活跃状态回报不能改变所属页面。 */
+/** 标识某个音源的一级页（首页或我的），由宿主固定分配。 */
 internal data class SourceRootIdentity(val sourceId: String, val page: MusicOnePage)
 
-/** 稳定引用跨越独立重组器，只有真正读取坐标的锚点订阅移动。 */
+/** 跨独立 ComposeView 传递根坐标偏移的容器，只有读它的锚点才会随位置变化重算。 */
 internal class SourceRootCoordinates {
     var offset by mutableStateOf(Offset.Zero)
     val read: () -> Offset = { offset }

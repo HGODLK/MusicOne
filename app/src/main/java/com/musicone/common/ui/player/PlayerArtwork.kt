@@ -18,7 +18,7 @@ internal fun PlayerArtwork(track: MusicTrack, motion: PageMotion, modifier: Modi
     shapeProvider: (() -> Shape)? = null) {
     // 转场锚点放在外层，旧封面淡出时不会注销新封面的锚点。
     val frame = rememberPlayerOpeningArtwork(track, motion)
-    ReadyArtworkCrossfade(frame, 420, modifier, modulateAlpha = true,
+    ReadyArtworkCrossfade(frame, 420, modifier, modulateAlpha = true, autoMixDriven = true,
         adoptPreparedFrame = motion.wantsOpen &&
             (motion.phase == MotionPhase.PREPARING || motion.phase == MotionPhase.MOVING) &&
             PlayerOpeningArtworkHandoff.frameFor(track) != null) { artwork ->

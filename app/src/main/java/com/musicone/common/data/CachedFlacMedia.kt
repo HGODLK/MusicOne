@@ -4,7 +4,7 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
 
-/** 旧缓存可能把 HiRes 写成无损；在离线选择档位之前按缓存头纠正，不联网。 */
+/** 旧版缓存可能把 Hi-Res 错记成无损，离线选音质前直接读本地 FLAC 文件头纠正。 */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal fun cachedFlacMediaInfo(cache: Cache, key: String, url: String): FlacMediaInfo? {
     if (!cache.isCached(key, 0, 42)) return null

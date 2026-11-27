@@ -11,7 +11,7 @@ internal data class PlaylistSortSelection(val value: PlaylistSort, val select: (
     val options: List<SourceCollectionSortOption> = emptyList(), val selectedId: String? = null,
     val selectId: (String) -> Unit = {})
 
-/** 包保留自己的排序键与选项，宿主不读取平台目录号或私有偏好；包没有提供时由宿主保存。 */
+/** 优先用音源包自带的排序选项和持久化，音源没提供时由宿主代存。 */
 @Composable
 internal fun rememberPlaylistSortSelection(playlist: MusicPlaylist, accountId: String?, createdPlaylists: List<MusicPlaylist>): PlaylistSortSelection {
     val context = LocalContext.current

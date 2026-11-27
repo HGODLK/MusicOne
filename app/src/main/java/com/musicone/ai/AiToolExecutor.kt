@@ -6,7 +6,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 可执行权限以宿主白名单为准，音源和模型都不能注册额外写入工具。 */
+/** 允许执行的工具以这里白名单为准，音源和模型都不能私自注册额外的写入工具。 */
 internal class AiToolExecutor(context: Context, val library: AiLibraryTools, private val client: AiProviderClient,
     private val checkpoint: JSONObject,
     private val showTracks: suspend (List<MusicTrack>, String) -> Unit,
@@ -156,9 +156,9 @@ internal class AiToolExecutor(context: Context, val library: AiLibraryTools, pri
             showPlan(result.getString("planId"))
             result.put("status", "awaiting_confirmation")
         }
-        // 读取任务本身不能改写记录，否则下一页的字符游标会漂移。
+        // read_task 自己不能写进任务记录，不然翻页游标会错位。
         if (call.name == "read_task") return result
-        // 只记句柄及覆盖量，原始资料仍保存在工具存储，不进入压缩摘要。
+        // 只记录句柄和数量等摘要信息，原始歌曲数据留在本地结果表里。
         val record = JSONObject().put("tool", call.name)
         listOf("handle", "cursor", "nextCursor", "count", "totalCount", "complete", "planId", "status",
             "scope", "pageComplete", "collectionComplete", "isLastPage", "unknownTotalCount").forEach {
@@ -205,9 +205,9 @@ internal suspend fun aiPlay(player: MusicPlaybackRuntime?, tracks: List<MusicTra
             val current = player.state.value
             if (current.currentTrack?.id != tracks.first().id || current.currentTrack?.source != tracks.first().source) player.playTrack(tracks.first())
 
-            // 先切到首首，再将其余歌曲依次插在它后面，保留队列其他成员。
+            // 先插播第一首，再把剩下的依次排在后面，不动队列里原本的其他歌。
             player.enqueueTracks(tracks.drop(1), playNext = true)
-            // 明确设置播放意图，解析中的暂时暂停不能被当作切换开关的依据。
+            // 明确设为播放状态，避免解析过程中的短暂暂停被误判成用户手动暂停。
             player.setPlaying(true)
         }
         "replace" -> {

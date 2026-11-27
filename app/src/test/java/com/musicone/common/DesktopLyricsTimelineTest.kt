@@ -101,7 +101,7 @@ class DesktopLyricsTimelineTest {
         assertEquals("未声明用白色", -1, desktopLyricsAccent(null))
         assertEquals("透明视为未声明", -1, desktopLyricsAccent(0L))
         for (color in listOf(0xFFEC4141L, 0xFF31C27CL, 0xFF009AF3L, 0xFF9B8AC4L, 0xFF000000L, 0xFF0000FFL))
-            assertTrue(HyperOsCardContrast.luminance(desktopLyricsAccent(color)) >= .36)
+            assertTrue(desktopColorLuminance(desktopLyricsAccent(color)) >= .36)
         assertEquals("亮度足够时只掺四分之一白", 0xFF64D19C.toInt(), desktopLyricsAccent(0xFF31C27CL))
     }
 

@@ -3,7 +3,7 @@ package com.musicone.sourceintegration
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 
-/** 嵌入页返回时释放自己的封面冻结，沿用根页的等待和混合，不改变原动效。 */
+/** 嵌入页返回时同步释放冻结的封面，保持和根页一致的返回动画。 */
 @Composable
 internal fun BindSourcePublicArtworkReturn(
     scene: SourcePublicScene,

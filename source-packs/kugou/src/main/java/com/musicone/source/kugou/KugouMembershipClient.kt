@@ -4,7 +4,7 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import org.json.JSONObject
 
-/** 只使用当前账号接口确认会员；本地历史布尔值和登录成功都不是会员凭证。 */
+/** 通过酷狗账号接口查询真实会员状态，不信任本地旧标记。 */
 internal class KugouMembershipClient(
     private val load: (String) -> JSONObject = ::loadKugouMembership,
     private val now: () -> Long = System::currentTimeMillis,
@@ -43,12 +43,12 @@ internal class KugouMembershipClient(
     fun clear() { synchronized(publication) { generation.incrementAndGet(); snapshot = null; revision.incrementAndGet() } }
 }
 
-/** 普通歌曲依据音乐包或畅听权益；通用会员身份和超级会员位不能代替曲目的听歌授权。 */
+/** 判断账号是否有普通歌曲听歌会员（看音乐包或畅听权益位，不看通用展示位）。 */
 internal fun parseKugouMembership(response: JSONObject): Boolean? {
     if (response.optInt("status", 0) != 1 || response.optInt("error_code", 0) != 0) return null
     val data = response.optJSONObject("data") ?: return null
     val user = data.opt("user_type")?.toString()?.toIntOrNull()
-    // 官方普通音乐权限同时接受音乐包和此畅听位，不使用相邻的会员展示位。
+    // 256 对应畅听权益位，和音乐包一样算有听歌会员
     if (user != null && user >= 0 && user and 256 != 0) return true
     return when (data.opt("m_type")?.toString()?.toIntOrNull()) {
         0 -> false

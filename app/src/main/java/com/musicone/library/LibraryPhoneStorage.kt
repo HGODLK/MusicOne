@@ -3,7 +3,7 @@ package com.musicone
 import android.content.ContentValues
 import android.database.sqlite.SQLiteDatabase
 
-/** 卡片位置持久化，成员始终由全部本地音乐派生，不另外保存一份可能失步的成员表。 */
+/** “手机存储”歌单只存一条卡片位置记录，里面的歌曲始终动态取全部本地音乐，不单独维护成员表防不同步。 */
 internal fun SQLiteDatabase.ensurePhoneStoragePlaylist() {
     val exists = rawQuery("SELECT 1 FROM playlists WHERE id=?", arrayOf(PHONE_STORAGE_PLAYLIST_ID)).use { it.moveToFirst() }
     if (exists) return

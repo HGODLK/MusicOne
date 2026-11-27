@@ -20,7 +20,7 @@ internal data class CacheUsage(val ordinary: Long = 0, val protected: Long = 0, 
     val total get() = ordinary + protected
 }
 
-/** 一套音频文件共用容量与歌单引用；所有写入入口在落盘前执行同一份准入策略。 */
+/** 所有音频缓存共用一套容量配额和歌单引用索引，任何写入落盘前都要过同一套容量检查。 */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class MusicDiskCache private constructor(private val context: Context) {
     private val preferences = context.getSharedPreferences("music_cache", Context.MODE_PRIVATE)
@@ -29,7 +29,7 @@ internal class MusicDiskCache private constructor(private val context: Context) 
     private val auxiliary = File(root, "images_and_feed").apply { mkdirs() }
     private val worker = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val refreshNotifications = CacheRefreshNotifications()
-    // 原通道仍供缓存管理和容量显示使用，避免图片写入后管理页不刷新。
+    // audioRevision 实际包含图片等所有缓存变动，供管理页刷新总占用。
     val audioRevision = refreshNotifications.cacheRevision
     val availabilityRevision = refreshNotifications.audioAvailabilityRevision
     private val mutableLimits = MutableStateFlow(CacheLimits(
@@ -56,7 +56,7 @@ internal class MusicDiskCache private constructor(private val context: Context) 
         override fun onCacheInitialized() = Unit
         override fun onStartFile(cache: Cache, key: String, position: Long, length: Long) = Unit
         override fun onSpanAdded(cache: Cache, span: CacheSpan) {
-            // 回调持有 Media3 的锁，不能反向获取本类锁；已提交字节从预留量转入真实占用。
+            // Media3 回调里正拿着它的内部锁，这里绝不能再去拿本类锁（防死锁）；把已落盘字节从预留转到实际占用。
             audioBytes.getOrPut(span.key) { AtomicLong() }.addAndGet(span.length)
             reserved[span.key]?.let { atomic ->
                 while (true) {
@@ -199,7 +199,7 @@ internal class MusicDiskCache private constructor(private val context: Context) 
         val plan = cacheWritePlan(entries, CacheResource(key, maxOf(existing?.bytes ?: 0, length.coerceAtLeast(1)),
             existing?.entered ?: Long.MAX_VALUE, primary, active = true), limits.value)
         if (!plan.allowed) return plan.reason
-        // 同曲替换不保留两份持久音频；权限与音质取源已由正常解析流程核验。
+        // 同一首歌换了新音质缓存时删掉旧档位，不留两份音频。
         others.forEach { deleteResource(it.key) }
         if (audio.getCachedSpans(key).isEmpty() && (writers[key] ?: 0) == 0) index.forget(key)
         if (primary != null) primaryAudioKeys = primaryAudioKeys + key
@@ -214,7 +214,7 @@ internal class MusicDiskCache private constructor(private val context: Context) 
         val primary = index.primaryOrder(resource.identity) != null
         val ceiling = if (primary) limits.value.maximum else limits.value.total.bytes
         if (ceiling == 0L) return if (primary) "新增缓存已关闭" else "总缓存已关闭"
-        // Media3 提交回调与快照使用同一把缓存锁，预留转落盘时不能短暂少计字节。
+        // 拿 Media3 同一把锁算总占用，避免预留空间转成已落盘文件的瞬间出现少算字节的竞态。
         val fits = synchronized(audio) {
             val used = audio.cacheSpace + reserved.values.sumOf { it.get() } + auxiliaryBytes
             val primaryBytes = primaryAudioKeys.sumOf { (audioBytes[it]?.get() ?: 0) + (reserved[it]?.get() ?: 0) }

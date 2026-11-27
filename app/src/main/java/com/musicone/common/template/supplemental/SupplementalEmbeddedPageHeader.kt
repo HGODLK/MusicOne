@@ -4,7 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
-/** 嵌入页只投影当前标题，仍由最外层原有返回栏提供导航。 */
+/** 嵌入子页只往外汇报当前标题，返回按钮继续复用最外层导航栏。 */
 internal class SupplementalEmbeddedPageHeader {
     private var owner: Any? = null
     private var back: (() -> Boolean)? = null

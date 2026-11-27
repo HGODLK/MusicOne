@@ -12,14 +12,14 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
-/** 文字颜色在绘制时读取，写真滑动不重新排版标题和简介入口。 */
+/** 绘制阶段再读文字颜色，滑写真切配色时不会触发文字重新排版。 */
 @Composable
 internal fun ArtistAccentText(text: String, appearance: State<ArtistAppearance>, modifier: Modifier, style: TextStyle) {
     BasicText(text, modifier, style, overflow = TextOverflow.Ellipsis, maxLines = 1,
         color = { appearance.value.accent })
 }
 
-/** 动态按钮只更新自身配色，不带动头像、简介和轮播布局。 */
+/** 播放按钮自己订阅动态配色，不牵连头图、简介和轮播重组。 */
 @Composable
 internal fun ArtistPhotoPlayButton(appearance: State<ArtistAppearance>, playable: Boolean, onPlay: () -> Unit) {
     val colors = appearance.value

@@ -9,7 +9,7 @@ import com.musicone.sourceintegration.*
 
 internal enum class PlaylistEditMode { Actions, Create, Rename, Delete, RefreshSubscription, StopSubscription }
 
-/** 编辑窗口独立持有状态，写入前重新核对当前账号的目录归属。 */
+/** 歌单编辑浮层的独立状态，真正提交修改前会再核对一次当前账号。 */
 internal class MainSourcePlaylistEditorState(private val preferences: PlatformPreferences, private val scope: CoroutineScope,
     private val library: MusicLibraryStore? = null, private val libraryContext: android.content.Context? = null,
     private val requestedSource: MusicSource? = null) {

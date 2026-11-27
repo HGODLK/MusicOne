@@ -3,7 +3,7 @@ package com.musicone
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 长队列仅在内容变化时编码，五秒进度保存和连续 seek 复用已有内容。 */
+/** 缓存序列化后的队列 JSON：只有队列真变了才重编，平时定时存进度和拖动直接复用。 */
 internal class MixedPlaybackSnapshotEncoding {
     private data class Content(
         val currentId: String?, val tracks: List<MusicTrack>, val order: List<String>,

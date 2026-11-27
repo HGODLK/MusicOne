@@ -7,7 +7,7 @@ import androidx.lifecycle.*
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import com.musicone.*
 
-/** 模板内部继续使用原有 AndroidViewModel，但不借用宿主根页的实例和选择状态。 */
+/** 给公共模板页单独开一个 ViewModelStore，避免和宿主根页的 ViewModel 互相污染。 */
 private class SourcePublicPageStore(application: Application, source: MusicSource) :
     ViewModelStoreOwner, HasDefaultViewModelProviderFactory {
     override val viewModelStore = ViewModelStore()

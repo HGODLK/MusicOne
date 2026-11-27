@@ -2,7 +2,7 @@ package com.musicone
 
 import android.view.KeyEvent
 
-/** 只接管正在运行的 UAC2 输出，普通播放仍交给系统处理音量键。 */
+/** 仅在 USB 独占输出工作时接管音量键，普通播放走系统默认逻辑。 */
 internal object UsbExclusiveVolumeKeys {
     @Volatile var activeGain: SystemMediaVolumeGain? = null
 

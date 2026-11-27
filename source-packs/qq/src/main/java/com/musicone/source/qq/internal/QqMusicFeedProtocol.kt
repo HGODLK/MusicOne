@@ -36,7 +36,7 @@ internal sealed interface QqMusicFeedCard {
         val pages: List<List<Song>>,
         override val section: QqMusicFeedSection = QqMusicFeedSection.SONG_RECOMMENDATION,
     ) : QqMusicFeedCard {
-        // 同一货架换歌仍保留身份；同 ID 下的不同主题标题是独立推荐，不能合并成一栏。
+        // 同一个货架换歌时 key 不变；如果同 ID 下主题标题不同，按独立推荐栏分开算
         override val key = if (section == QqMusicFeedSection.SONG_RECOMMENDATION) {
             "song-shelf:$shelfId:${title.trim().replace(Regex("\\s+"), " ")}"
         } else "song-shelf:${shelfId.ifBlank { title }}:${pages.flatten().joinToString(",") { it.track.id }}"
@@ -92,7 +92,7 @@ internal fun qqMusicFeedRequest(
         .put("param", param)
 }
 
-/** 只沿货架、卡位、卡片协议读取，未知业务卡不会误跳转成歌单。 */
+/** 解析 QQ 音乐首页推荐流响应，跳过不认识的业务卡片。 */
 internal fun parseQqMusicFeed(data: JSONObject, hasVipAccess: Boolean): QqMusicFeedPage {
     val shelves = data.optJSONArray("v_shelf") ?: data.optJSONArray("Shelfs")
         ?: throw PlatformApiException("QQ 音乐没有返回音乐流结构")
@@ -130,7 +130,7 @@ internal fun parseQqMusicFeed(data: JSONObject, hasVipAccess: Boolean): QqMusicF
                 // 三行货架只接受官方歌曲卡；节目卡不能降级成歌曲。
                 continue
             }
-            // 服务端卡位顺序就是音乐流的交错顺序，遇到其他货架前先发布已收集的三行页。
+            // 保持服务端返回的卡片交错顺序，遇到其他类型货架前先把前面攒的三行歌曲页吐出来
             flushSongShelf()
             for (k in 0 until values.length()) {
                 val card = values.optJSONObject(k) ?: continue
@@ -141,7 +141,7 @@ internal fun parseQqMusicFeed(data: JSONObject, hasVipAccess: Boolean): QqMusicF
                 val style = card.optInt("style", QQ_FEED_UNKNOWN_STYLE)
                 val serverType = card.optInt("type")
                 val serverSubtype = card.optInt("subtype")
-                // 官方只为 315 号货架回传排重键，扩大范围会让后续分页游标失效。
+                // 只有 315 号货架的卡片要传回 v_uniq 去重，其他货架传了会导致翻页游标失效
                 if (shelfId == QQ_FEED_UNIQUE_SHELF_ID && card.has("type")) {
                     uniqueKeys += "${serverType}_${serverSubtype}_$id"
                 }
@@ -440,7 +440,7 @@ private fun JSONObject.isQqMusicFeedSong(
         (serverType == 0 && style in QQ_FEED_CARD_LEVEL_SONG_STYLES)
     )
 
-/** 只接受官方已确认的三歌曲卡协议；同专辑预览不在这里直接拼成推荐组。 */
+/** 判断是否是合法的三歌曲相似推荐卡（排除同专辑预览卡）。 */
 private fun isQqMusicFeedSongGroup(
     style: Int,
     tracks: List<MusicTrack>,
@@ -450,7 +450,7 @@ private fun isQqMusicFeedSongGroup(
     // 真正的三歌曲货架由 style=304 标识，不能按 SongList 数量自行拼卡。
     if (style != QQ_FEED_SIMILAR_SONG_STYLE) return false
 
-    // 精简 SongList 常常暂时没有专辑字段，先保留给仓库补全；无法确认专辑时由仓库丢弃该组。
+    // 精简数据里可能暂时没带专辑字段，先放行给上层补查，补查后确认不了不同专辑再丢弃
     return hasQqMusicFeedMixedAlbums(tracks) || tracks.any { it.album.isBlank() && it.albumId.isBlank() }
 }
 

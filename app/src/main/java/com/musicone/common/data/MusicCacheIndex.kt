@@ -6,7 +6,7 @@ import org.json.JSONObject
 
 internal data class IndexedCacheResource(val key: String, val identity: String, val variant: String, val entered: Long, val trusted: Boolean = false)
 
-/** 只保存共享资源与歌单引用，不创建第二份音频文件。由磁盘缓存的同一把锁串行访问。 */
+/** 只记录音频缓存和所属歌单的引用关系，不重复存音频文件；所有读写都在磁盘缓存的锁内执行。 */
 internal class MusicCacheIndex(private val read: () -> String?, private val write: (String) -> Unit) {
     constructor(preferences: SharedPreferences) : this({ preferences.getString("index_v1", "{}") },
         { preferences.edit().putString("index_v1", it).apply() })
@@ -68,7 +68,7 @@ internal class MusicCacheIndex(private val read: () -> String?, private val writ
     }
 
     fun forget(key: String, persist: Boolean = true) {
-        // 保留资源身份和歌单关系，真正重新进入缓存时才重新记录 FIFO 次序。
+        // 先留着歌单引用关系，只把入队序号清零，等以后重新缓存时再排进 FIFO。
         resources[key]?.let { resources[key] = it.copy(entered = 0L) }
         auxiliaryOrder.remove(key)
         if (persist) save() else saveAuxiliaryPending = true
@@ -88,7 +88,7 @@ internal class MusicCacheIndex(private val read: () -> String?, private val writ
         if (ordered) {
             val unknown = identitiesNewestFirst.distinct().filter { old[it] == 0L }
             val baseline = old.values.filter { it > 0 }.minOrNull() ?: nextOrder()
-            // 首次补齐的历史顺序排在本轮已知新增之前，不能把旧歌曲重新提升为最新。
+            // 补录旧缓存的顺序号时排在已有记录前面，别把老歌当成刚缓存的新歌。
             unknown.forEachIndexed { position, identity -> assigned[identity] = baseline - position - 1 }
         }
         val next = identitiesNewestFirst.distinct().associateWith { assigned[it] ?: old.getValue(it) }
@@ -134,6 +134,6 @@ internal class MusicCacheIndex(private val read: () -> String?, private val writ
     }
 }
 
-/** 票据、账号和 CDN 域名变化不生成新的持久音频副本，编码或音轨变化仍必须隔离字节。 */
+/** 去掉会变的账号/票据前缀得到资源变体键：换域名或刷新票据复用同一份缓存，换编码或音轨才分开存。 */
 internal fun cacheResourceVariant(key: String): String = if (key.startsWith("bili-"))
     key.replaceFirst(Regex("^bili-(?:mid-[0-9]+|guest)-"), "bili-") else key.substringAfterLast('|')

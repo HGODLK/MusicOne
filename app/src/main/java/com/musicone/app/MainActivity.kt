@@ -49,6 +49,7 @@ class MainActivity : ComponentActivity() {
         ExperiencePreferences.initialize(this)
         launchWindow.prepare()
         PhonePlayerPreferences.initialize(this)
+        AutoMixPreferences.initialize(this)
         val playerFrameRate = PlayerFrameRatePolicy()
         val lyricFrames = LyricFrameDriver()
         val displayClock = checkNotNull(AndroidUiDispatcher.Main[MonotonicFrameClock])
@@ -72,7 +73,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // USB 独占绕过系统混音后，仍让实体音量键明确调整软件增益读取的媒体流。
+        // USB 独占模式绕过系统混音后，确保实体音量键还是调媒体音量（供软件增益读取）。
         setVolumeControlStream(AudioManager.STREAM_MUSIC)
     }
 

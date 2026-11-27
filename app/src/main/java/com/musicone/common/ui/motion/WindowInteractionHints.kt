@@ -12,7 +12,7 @@ import androidx.annotation.RequiresApi
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
-/** 仅实验构建接入；HWUI 已有自身提示，不默认向同一主线程叠加会话。 */
+/** 仅在实验构建中启用 ADPF 性能提示（HWUI 已有自身提示，正式构建不重复叠加）。 */
 @RequiresApi(31)
 internal class WindowInteractionHints(private val window: Window) {
     private val closed = AtomicBoolean(false)
@@ -24,7 +24,7 @@ internal class WindowInteractionHints(private val window: Window) {
     private var listener: Window.OnFrameMetricsAvailableListener? = null
     private var announced = false
     private val feedback = InteractionHintFeedback(onDisabled = {
-        // 无能力或平台调用失败后连监听器也释放，不在后续动作中继续采样。
+        // 设备不支持或接口报错时一并注销帧监听器，不再继续采样。
         Handler(Looper.getMainLooper()).post { close() }
     }) { target ->
         val manager = window.context.getSystemService(PerformanceHintManager::class.java)
@@ -56,7 +56,7 @@ internal class WindowInteractionHints(private val window: Window) {
         }
     }
 
-    /** 调用入口属于界面线程，会话创建、报告和关闭统一交给反馈线程。 */
+    /** 由主线程调用，内部把会话创建、上报和关闭统一派发到后台反馈线程。 */
     fun setActive(active: Boolean) {
         if (closed.get()) return
         if (requested.getAndSet(active) == active) return
@@ -73,7 +73,7 @@ internal class WindowInteractionHints(private val window: Window) {
             }
         } catch (_: RuntimeException) { close(); return }
         handler.post {
-            // 每个退出事件都必须关闭旧会话，不能被后来的动作合并吞掉。
+            // 每次停止采样都要真正关闭旧会话，不能被后续的新动作吞掉。
             feedback.setActive(active && !closed.get() && requested.get())
         }
     }

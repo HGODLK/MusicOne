@@ -7,7 +7,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/** 同一账号的预加载和入页刷新共用在途读取，失败保留已有状态。 */
+/** 同一个账号的预加载和进页面刷新复用同一个请求，失败时保留现有收藏列表。 */
 internal class MusicFavoriteRefresh(private val scope: CoroutineScope) {
     private var job: Job? = null
     private val mutations = mutableMapOf<String, Long>()
@@ -25,7 +25,7 @@ internal class MusicFavoriteRefresh(private val scope: CoroutineScope) {
     }
 }
 
-/** 每次真正起播都发布代次，重复播放同一首也会重新校验喜欢状态。 */
+/** 每次起播递增版本号，哪怕重播同一首歌也会重新核对红心状态。 */
 internal class MusicFavoritePreparationTargets {
     private val mutableTarget = MutableStateFlow<Pair<MusicTrack, Long>?>(null)
     val target = mutableTarget.asStateFlow()
@@ -41,6 +41,6 @@ internal fun MusicFavoriteUiState.withRefreshedFavorites(remote: Set<String>, st
     pending.values.forEach { (track, liked) ->
         if (liked) merged.addAll(playlistTrackIdentities(track)) else merged.removeAll(playlistTrackIdentities(track))
     }
-    // 已结算的旧本地覆盖项退出，让其他设备上的修改能成为下一轮权威状态。
+    // 云端已经和本地操作对齐的记录直接清掉，以后以云端最新状态为准。
     return copy(ids = merged, changes = pending)
 }

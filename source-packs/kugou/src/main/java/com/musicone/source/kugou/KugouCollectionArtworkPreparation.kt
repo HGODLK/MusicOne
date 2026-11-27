@@ -4,7 +4,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-/** 目录先交付，缺失封面在后台依次准备；同一歌单版本合并，换号或写入时取消。 */
+/** 先把歌单目录返回给页面展示，缺封面的在后台逐个补齐；同一版本去重，切号或修改歌单时取消。 */
 internal class KugouCollectionArtworkPreparation {
     private data class Pending(val version: Any, val job: Job)
     private val pending = mutableMapOf<String, Pending>()
@@ -17,7 +17,7 @@ internal class KugouCollectionArtworkPreparation {
             var completed = false
             try { serial.withLock { ensureActive(); work() }; completed = true }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { /* 保留目录已有封面，下次读取允许重试，不主动触发刷新循环。 */ }
+            catch (_: Exception) { /* 封面拉取失败就先用原封面，等下次进入再试，不在这里循环重试 */ }
             finally {
                 val currentJob = currentCoroutineContext()[Job]
                 if (!completed) synchronized(this@KugouCollectionArtworkPreparation) {

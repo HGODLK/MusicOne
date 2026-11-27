@@ -12,7 +12,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicReference
 
-/** 只消费宿主真实收听累计值，统计业务不进入原取源和最近播放链路。 */
+/** 监听宿主真实播放时长并上报给 QQ 音乐统计接口（和取流、最近播放相互独立）。 */
 internal class QqPlaybackSessionSync(context: Context, private val auth: QqAuthentication, private val api: QqApiClient) :
     SourcePlaybackSessionObserver {
     private data class Ticket(val key: String, val revision: Long, val track: MusicTrack, val vkey: String)
@@ -81,7 +81,7 @@ internal class QqPlaybackSessionSync(context: Context, private val auth: QqAuthe
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            // 时长上报失败不打断播放，记录类型即可，禁止输出账号、票据或原始回包。
+            // 上报失败不影响播放，只记异常类型，不打印账号、票据和响应原文
             qqDiagnostic("真实收听时长同步失败：${error.javaClass.simpleName}")
         }
     }

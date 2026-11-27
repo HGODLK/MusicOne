@@ -2,7 +2,7 @@ package com.musicone
 
 import org.json.JSONObject
 
-/** 用户消息是会话保存依据，恢复提示和原生回执不能算作用户发送。 */
+/** 只有用户真正发过消息才保存会话，恢复提示和系统回执不算。 */
 internal fun aiFirstUserQuestion(messages: List<AiChatMessageUi>, history: List<JSONObject>): String? =
     messages.firstOrNull { it.role == "user" && it.text.isNotBlank() }?.text
         ?: history.firstOrNull { it.isAiUserSend() }?.optString("content")

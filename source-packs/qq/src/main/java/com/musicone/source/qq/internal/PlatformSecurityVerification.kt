@@ -42,7 +42,7 @@ internal data class PlatformSecurityVerificationResult(
     val touchPoints: List<PlatformTouchPoint> = emptyList(),
     val viewportWidth: Int = 0,
     val viewportHeight: Int = 0,
-    /** 验证页自行关闭且没有票据，是否通过要由服务器判断。 */
+    /** 验证页自己关掉了且没回传票据，需要重发一次原请求让服务端确认是否已通过。 */
     val closedByPage: Boolean = false,
 )
 

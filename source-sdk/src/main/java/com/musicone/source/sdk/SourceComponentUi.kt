@@ -3,12 +3,12 @@ package com.musicone.source.sdk
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 
-/** 可组合公共控件。作用域绑定当前音源，生命周期检查由运行时注入。 */
+/** 可组合的公共控件，绑定到当前音源，生命周期由运行时管控。 */
 interface SourceComponentUi {
     fun forSource(sourceId: String, checkAccess: () -> Unit = {}): SourceComponentScope
 }
 
-/** 宿主持有内部选择和搜索状态，音源只使用公开状态与操作。 */
+/** 选择和搜索的内部状态由宿主维护，音源只使用公开状态和操作。 */
 interface SourceTrackListState {
     val sourceId: String
     var query: String

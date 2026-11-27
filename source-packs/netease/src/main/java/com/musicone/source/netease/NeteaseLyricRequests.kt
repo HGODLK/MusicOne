@@ -2,7 +2,7 @@ package com.musicone.source.netease
 
 import kotlinx.coroutines.CancellationException
 
-/** 合并同曲请求；无 YRC 与请求失败只短暂冷却，不写成永久确认的磁盘缓存。 */
+/** 合并同一首歌的并发歌词请求；没拿到逐字歌词或请求失败时只做短时间冷却，不永久缓存。 */
 internal class NeteaseLyricRequests(private val now: () -> Long = System::nanoTime) {
     private class Entry {
         var retryAt = Long.MIN_VALUE
@@ -15,7 +15,7 @@ internal class NeteaseLyricRequests(private val now: () -> Long = System::nanoTi
     fun load(id: String, cookie: String, failedRichRequest: () -> Boolean = { false },
         fetch: () -> List<NeteaseLyricLine>): List<NeteaseLyricLine> {
         val entry = synchronized(entries) {
-            // 同一账号刷新凭据也应允许重新确认；凭据仅存内存，不进入日志或缓存键。
+            // 账号 Cookie 变了就清空内存冷却缓存，允许重新拉一次（Cookie 只放内存，不进日志也不当缓存 key）
             if (credential != cookie) { entries.clear(); credential = cookie }
             entries[id] ?: Entry().also {
                 if (entries.size >= 256) entries.remove(entries.keys.first())

@@ -33,7 +33,7 @@ internal class QqApiClient {
             "notice" to "0", "cid" to "205360838", "needNewCode" to "0",
             "loginUin" to userId, "hostUin" to "0", "userid" to userId, "reqfrom" to "1",
         ).entries.joinToString("&") { (key, value) -> "${key.urlEncoded()}=${value.urlEncoded()}" }
-        // 票据由安卓登录签发，有效性以安卓端登录态接口为准；网页资料接口只取昵称头像，它不可用时才参考其 1000。
+        // 登录态有效性以安卓端接口为准，网页资料接口只用来拉昵称和头像（只有安卓接口挂了才参考它的 1000 错误码）
         val loginState = runCatchingCancellable { qqLoginStateCode(cookie) }.getOrNull()
         if (loginState in QQ_LOGIN_STATE_EXPIRED_CODES) {
             QqSessionLog.record("账号校验：登录态接口判定失效，业务码=$loginState")
@@ -64,11 +64,11 @@ internal class QqApiClient {
                 track.id to track.withQqArtworkFallback(candidates)
             }
         }.awaitAll().toMap()
-        // 搜索接口会因账号和排序策略漏掉正式发行版；缺图项用同名歌手定向查询补齐。
+        // 搜索结果里部分歌曲可能缺正式专辑封面，按歌名+歌手定向补查一次
         QqTrackAccessResolver().resolve(batchResolved.map { targetedArtwork[it.id] ?: it }, cookie)
     }
 
-    /** 信息流 AI 歌单只给出种子曲名称；这里只取标题完全匹配的歌曲供卡片直接播放。 */
+    /** 推荐流里的 AI 歌单只给了种子歌名，这里搜索标题完全匹配的歌曲供卡片直接播放。 */
     fun searchFeedSeedTrack(query: String, cookie: String, hasVipAccess: Boolean = false): MusicTrack? {
         val normalizedQuery = query.qqComparableSongTitle()
         val candidates = searchTracks(query, cookie, hasVipAccess)
@@ -156,7 +156,7 @@ internal class QqApiClient {
     ): PlaybackSource {
         // 近期已确认 CDN 上没有这个文件，直接降档，不再换票探测。
         if (missingFiles.contains(track, quality, spec)) throw QqPlaybackFileMissingException(quality)
-        // 短卡和部分详情缺少文件尺寸，实际可用档位以本次签发并校验的音源为准。
+        // 部分卡片数据缺文件大小，直接发请求拿真实播放链接再校验
         awaitTicketRequest(cookie, origin)
         val primary = try {
             requestPlayback(track, cookie, quality, spec, origin).optJSONObject("req_1")?.optJSONObject("data")
@@ -202,7 +202,7 @@ internal class QqApiClient {
         if (actualQuality != quality) {
             throw PlatformApiException("QQ 音乐未返回${quality.displayLabel(MusicSource.QQ)}音源")
         }
-        // 杜比直链也必须读取真实编码和时长，文件名前缀不能证明是完整杜比音源。
+        // 杜比链接也要校验真实时长，不能光看文件名前缀就当完整音源
         if (actualQuality == AudioQuality.DOLBY && !QqAudioValidation.isFullLength(url, track)) {
             throw PlatformApiException("未获取到可验证的完整 Dolby全景音源")
         }
@@ -237,7 +237,7 @@ internal class QqApiClient {
     ): List<AudioQuality> = coroutineScope {
         QqSessionRequestCoordinator.rememberGuid(cookie, guid)
         retryQqRequestAfterVerification(cookie) { activeCookie ->
-            // 使用真实点播链路逐档确认，不能把已签发的文件名直接当作可用音质。
+            // 按真实播放流程逐档探测，确认能拿到完整文件才算该音质可用
             probeQqAvailableQualities(requestedQualities, onProgress) { quality ->
                 currentCoroutineContext().ensureActive()
                 QqSessionRequestCoordinator.beforeTicketRequest(activeCookie)
@@ -376,7 +376,7 @@ internal class QqApiClient {
         requireQqFavoriteMutationSuccess(response)
     }
 
-    /** 统计只补数字歌曲标识，不执行完整的权益、封面或音质补全。 */
+    /** 听歌时长上报只需要数字 songId，这里只轻量补齐 ID，不走完整详情和封面补全。 */
     fun listenDurationTrack(track: MusicTrack, cookie: String): MusicTrack {
         if (track.catalogId.toLongOrNull()?.let { it > 0L } == true) return track
         val request = JSONObject().put("module", "music.pf_song_detail_svr").put("method", "get_song_detail_yqq")
@@ -388,7 +388,7 @@ internal class QqApiClient {
         return track.mergeQqTrackMetadata(detail)
     }
 
-    /** 仅为已播放的缓存曲目补统计票据，不探测媒体、不切音质、不启动交互验证。 */
+    /** 给缓存歌曲补一个上报时长用的 vkey，不探测媒体也不弹风控验证。 */
     suspend fun listenDurationVkey(track: MusicTrack, cookie: String, deviceId: String): String {
         val mid = track.qqPlaybackMid()
         if (mid.isBlank()) return ""
@@ -563,7 +563,7 @@ internal fun qqPlaybackFilenames(
     mediaMid: String,
 ): List<String> = buildList {
     if (mediaMid.isNotBlank()) {
-        // 遵循官方 SongUrlFactory 规范：有 mediaMid 时严格以 mediaMid 为准，绝不混入 songMid，避免串台到历史脏数据
+        // 按官方 SongUrlFactory 规则：有 mediaMid 就只用 mediaMid，不混用 songMid，避免串歌
         add("$prefix$mediaMid.$extension")
         add("$prefix$mediaMid$mediaMid.$extension")
     } else if (songMid.isNotBlank()) {
@@ -764,7 +764,7 @@ private fun qqMusicKey(cookie: String): String {
         .firstNotNullOfOrNull { values[it]?.takeIf(String::isNotBlank) }.orEmpty()
 }
 
-/** 个性化推荐接口必须显式携带登录账号和 authst，不能复用播放换票的移动端信封。 */
+/** 个性化推荐接口的公共参数：必须显式带登录账号和 authst，不能直接复用播放接口的参数。 */
 internal fun qqPersonalizedCommValues(credential: String): Map<String, Any> = linkedMapOf(
     "uin" to qqPersonalizedAccountId(credential),
     "format" to "json",

@@ -14,7 +14,7 @@ import java.nio.ByteBuffer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
 
-/** 只接管带 Quad DAC 的 LG 原厂有线耳机输出的整数 PCM，其他输出继续交给原有 Sink。 */
+/** 只在带 Quad DAC 的 LG 手机插有线耳机时接管整数 PCM 输出，其他情况走原来的 Sink。 */
 @androidx.annotation.OptIn(UnstableApi::class)
 internal class LgHiResAudioSink(context: Context, delegate: AudioSink) : ForwardingAudioSink(delegate) {
     private val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -92,7 +92,7 @@ internal class LgHiResAudioSink(context: Context, delegate: AudioSink) : Forward
                 playbackClock = LgPcmPlaybackClock(format.sampleRate)
                 depth = bits
                 activeDevice = device.id
-                // 每块最多约 20ms，原生端合并短块并复用约 200ms 队列；满后立即回压。
+                // 单次打包最多约 20ms，原生层内部有约 200ms 的缓冲队列，写满就暂停接收。
                 packed = ByteBuffer.allocateDirect((format.sampleRate / 50).coerceAtLeast(1) * format.channelCount * bits / 8)
                 PlaybackOutputStatus.clearSystem()
                 PlaybackOutputStatus.lgOutput(PlaybackOutputSnapshot("Hi-Res", lgAudioDeviceName(Build.MODEL),
@@ -140,7 +140,7 @@ internal class LgHiResAudioSink(context: Context, delegate: AudioSink) : Forward
                 ended = false
             })
         if (result < 0) {
-            // 尚未接收的剩余 PCM 交给原路径，已接收部分不会重复提交。
+            // 写入失败时把剩下的 PCM 交给系统默认路径继续播，已经写进去的部分不会重复写。
             closeOutput()
             PlaybackOutputStatus.lgDetail("系统输出")
             super.configure(format, bufferSize, channels)

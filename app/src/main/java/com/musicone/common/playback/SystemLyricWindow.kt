@@ -6,7 +6,7 @@ import kotlin.math.roundToInt
 internal data class SystemLyricInterval(val text: String, val startMs: Long, val endMs: Long?)
 internal data class SystemLyricWindowFrame(val text: String, val nextPositionMs: Long? = null)
 
-/** 只按通用歌词、宽度预算和播放位置分段，不认识音源与系统通知。 */
+/** 按显示宽度和播放进度把长歌词切分成多段轮播，与具体音源和通知栏实现解耦。 */
 internal class SystemLyricWindow private constructor(
     private val texts: List<String>,
     private val starts: List<Long>,
@@ -25,7 +25,7 @@ internal class SystemLyricWindow private constructor(
             val windows = split(text, width.coerceAtLeast(1f), measure)
             val duration = line.endMs?.minus(line.startMs)?.coerceAtLeast(0L) ?: 0L
             val count = (duration / MIN_HOLD_MS).coerceIn(1L, windows.size.toLong()).toInt()
-            // 时间不足时均匀选段并保留首尾，不以加速闪字换取完整轮播。
+            // 这句时长不够展示所有分段时，均匀抽选并保留首尾段，避免切字太快看不清。
             val selected = if (count == 1) listOf(windows.first()) else List(count) { index ->
                 windows[(index.toDouble() * windows.lastIndex / (count - 1)).roundToInt()]
             }
@@ -44,7 +44,7 @@ internal class SystemLyricWindow private constructor(
 
         private fun split(text: String, width: Float, measure: (String) -> Float): List<String> {
             if (text.isEmpty() || measure(text) <= width) return listOf(text)
-            // 字素边界保留代理对、组合音标和连写 Emoji。
+            // 按完整字符边界切分，避免把 Emoji、组合音标或代理对从中间劈开。
             val boundaries = mutableListOf(0)
             val matcher = grapheme.matcher(text)
             while (matcher.find()) boundaries += matcher.end()
@@ -61,12 +61,12 @@ internal class SystemLyricWindow private constructor(
                     } else high = middle - 1
                 }
                 if (end < boundaries.lastIndex) {
-                    val insideWord = asciiWord(text.codePointBefore(boundaries[end])) &&
-                        asciiWord(text.codePointAt(boundaries[end]))
+                    val insideWord = wordCodePoint(text.codePointBefore(boundaries[end])) &&
+                        wordCodePoint(text.codePointAt(boundaries[end]))
                     val minimum = if (insideWord) start + 1 else start + (end - start) / 2 + 1
                     val preferred = (end downTo minimum).firstOrNull { index ->
                         val last = text.codePointBefore(boundaries[index])
-                        Character.isWhitespace(last) || !Character.isLetterOrDigit(last)
+                        Character.isWhitespace(last) || (!wordCodePoint(last) && !Character.isLetterOrDigit(last))
                     }
                     if (preferred != null) end = preferred
                 }
@@ -75,16 +75,27 @@ internal class SystemLyricWindow private constructor(
                 var next = end
                 while (next > start + 1 &&
                     measure(text.substring(boundaries[next - 1], boundaries[end])) <= width * 0.18f) next--
-                // 重叠不能从英文单词中间开始；极长单词才按字素拆分。
+                // 分段重叠尽量不要从英文或阿拉伯/波斯单词中间切开，实在太长的词再按字符拆。
                 while (next < end && next > 0 &&
-                    asciiWord(text.codePointBefore(boundaries[next])) && asciiWord(text.codePointAt(boundaries[next]))) next++
+                    wordCodePoint(text.codePointBefore(boundaries[next])) && wordCodePoint(text.codePointAt(boundaries[next]))) next++
                 start = next.coerceAtLeast(start + 1)
                 while (start < boundaries.lastIndex && text.substring(boundaries[start], boundaries[start + 1]).isBlank()) start++
             }
             return result
         }
 
-        private fun asciiWord(value: Int) = value in 48..57 || value in 65..90 || value in 97..122
+        private fun wordCodePoint(value: Int): Boolean {
+            if (value in 48..57 || value in 65..90 || value in 97..122) return true
+            if (value == 0x200C || value == 0x200D || value == 0x0640) return true
+            if (value <= 0xFFFF && isArabicOrPersianLetter(value.toChar())) return true
+            return when (Character.getType(value)) {
+                Character.NON_SPACING_MARK.toInt(),
+                Character.COMBINING_SPACING_MARK.toInt(),
+                Character.ENCLOSING_MARK.toInt(),
+                -> true
+                else -> false
+            }
+        }
     }
 }
 

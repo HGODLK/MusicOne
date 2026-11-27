@@ -2,7 +2,7 @@ package com.musicone
 
 import androidx.media3.common.Player
 
-/** 播放业务直接连接服务播放器，不让服务绑定自己的 MediaController。 */
+/** 业务层直接连到 Service 里的 Player 实例，不绕一圈再自己绑定 MediaController。 */
 internal class ServicePlaybackConnection(private val requestConnection: () -> Unit = {}) {
     private val callbacks = mutableListOf<(Player) -> Unit>()
     private var closed = false
@@ -20,7 +20,7 @@ internal class ServicePlaybackConnection(private val requestConnection: () -> Un
     fun whenReady(block: (Player) -> Unit) {
         val current = player
         if (current != null) block(current) else if (!closed) {
-            // 先登记操作，避免同步重连完成时漏掉本次播放请求。
+            // 先把回调加进队列再触发连接，防止同步连上时漏执行这次操作。
             callbacks += block
             requestConnection()
         }

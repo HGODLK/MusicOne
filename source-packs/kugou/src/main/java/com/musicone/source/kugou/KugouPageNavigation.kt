@@ -1,6 +1,6 @@
 package com.musicone.source.kugou
 
-/** 与网易云根页采用同样的首帧规则，预载页不会短暂展示另一个根页。 */
+/** 和网易云一致的根页面可见性判断，避免预加载的 Tab 短暂闪出别的页面。 */
 internal fun kugouVisiblePage(route: String, active: Boolean, page: MusicOnePage, root: MusicOnePage): MusicOnePage {
     val target = when (route.lowercase()) {
         "home" -> MusicOnePage.HOME

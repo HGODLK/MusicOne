@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 横屏控件被反向窗口抵消，仍按物理竖屏坐标排成一行；观看上方须反算到这行的左右。 */
+/** 计算手机横屏时上一首/下一首图标的旋转角度，保证无论正反横屏，图标朝向都符合直觉。 */
 internal object PhonePlayerTrackActionPolicy {
     fun previousOnLeft(rotation: Int): Boolean = rotation <= 0
 

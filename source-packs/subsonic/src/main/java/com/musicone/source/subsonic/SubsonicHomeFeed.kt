@@ -16,7 +16,7 @@ internal class SubsonicHomeFeed(private val client: SubsonicClient, private val 
         Step("newest", "最新加入"), Step("frequent", "常听"), Step("recent", "最近播放"), Step("starred", "收藏的专辑"),
     ) + List(RANDOM_ALBUM_PAGES) { Step("random", "随机专辑") }
 
-    /** 返回一页首页卡片；某一步没有内容时继续下一步，避免交出空页。 */
+    /** 返回一页首页卡片；当前步骤没数据时自动顺延到下一步，避免返回空页。 */
     fun page(server: SubsonicServer, cursor: String?): SourcePage<SourceHomeSection> {
         var step = cursor?.toIntOrNull()?.coerceIn(0, steps.size) ?: 0
         val sections = mutableListOf<SourceHomeSection>()

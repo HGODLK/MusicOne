@@ -4,7 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.setValue
 
-/** 声波相位按速度曲线积分，低帧率、暂停和反向请求都从当前相位与相位速度接续。 */
+/** 声波动画按速度积分推进相位，掉帧、暂停或恢复时都从当前位置和速度平滑衔接。 */
 internal class MainSourceRadioWaveMotion(playing: Boolean, initialPhase: Float = 0f) {
     var phase by mutableFloatStateOf(initialPhase)
         private set

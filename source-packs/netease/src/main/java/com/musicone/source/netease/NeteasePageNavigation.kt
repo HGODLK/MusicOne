@@ -2,7 +2,7 @@ package com.musicone.source.netease
 
 import androidx.compose.runtime.*
 
-/** 根页切换立即选定首帧，内部返回栈不再决定其他预载根页的显示。 */
+/** 切换底部 Tab 时立刻切到对应根页面，不让内部返回栈干扰其他预加载页面。 */
 internal class NeteasePageNavigation(private val onChanged: (String) -> Unit) {
     var page by mutableStateOf("home")
         private set

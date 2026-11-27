@@ -3,12 +3,12 @@ package com.musicone.source.kugou
 import com.musicone.source.sdk.*
 import org.json.JSONObject
 
-/** 只有已收藏的外部歌单可以按目录记录回到原始歌单，不能把副本的 global 编号当成原始编号。 */
+/** 提取已收藏外部歌单对应的原始歌单 ID（不能把收藏副本自身的 global ID 当原始 ID）。 */
 internal fun KugouManagedCollection.savedOriginId(): String? =
     if (!savedPlaylist) null else raw.optString("list_create_gid")
         .takeIf { it.isNotBlank() && it != "0" && it != "null" && it != raw.optString("global_collection_id") }
 
-/** 仅表示首屏明确返回空副本；鉴权、网络和数据格式错误继续按原错误交付。 */
+/** 收藏副本首屏明确返回空列表时抛此异常，用来触发回退查原始歌单（网络/鉴权错不走回退）。 */
 internal class KugouEmptySavedCollection : PlatformApiException("酷狗收藏副本尚未返回歌曲")
 
 internal fun KugouManagedCollection.hasEmptySavedCopy(data: JSONObject, page: Int): Boolean =
@@ -16,7 +16,7 @@ internal fun KugouManagedCollection.hasEmptySavedCopy(data: JSONObject, page: In
         data.opt("count")?.toString()?.toLongOrNull() == 0L &&
         ((data.has("info") && data.isNull("info")) || data.optJSONArray("info")?.length() == 0)
 
-/** 只切换歌曲读取来源，收藏副本的身份、元数据和收藏写入口保持原样。 */
+/** 收藏的外部歌单副本返回空时，改从原始歌单拉歌曲列表（歌单 ID 和收藏操作仍走副本）。 */
 internal class KugouSavedCollectionTracks(private val publicCollections: KugouPublicCollectionClient) {
     suspend fun read(collection: SourceCollection, target: KugouManagedCollection, request: SourceCursorRequest,
         cookie: String, vip: Boolean, check: () -> Unit,
@@ -39,7 +39,7 @@ internal class KugouSavedCollectionTracks(private val publicCollections: KugouPu
         check()
         val page = publicCollections.tracks(collection, originRequest, cookie, vip, requireNotNull(origin))
         check()
-        // 首屏选定原始歌单后，后续页固定沿用同一来源，避免副本恢复时混入另一套分页。
+        // 第一页确定走原始歌单后，后续翻页都在游标里锁死同一来源，避免前后页混在一起
         return page.copy(nextCursor = page.nextCursor?.let { requireNotNull(prefix) + it })
     }
 }

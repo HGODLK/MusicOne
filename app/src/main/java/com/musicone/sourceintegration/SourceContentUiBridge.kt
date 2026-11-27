@@ -11,7 +11,7 @@ import com.musicone.source.sdk.*
 
 internal class SourceCollectionUiRequest(val collection: SourceCollection, val onClosed: () -> Unit)
 
-/** 只桥接通用展示和页面请求，平台协议与账号逻辑仍由包提供。 */
+/** 桥接音源包对宿主公共界面和页面跳转的调用，具体业务和账号仍由音源包自己管。 */
 internal class SourceContentUiBridge(private val context: Context) : SourceContentUi {
     override val pages = SourcePublicPageUiBridge(context)
     override val components = SourcePublicComponentUiBridge(context)
@@ -104,7 +104,7 @@ internal fun SourceCollectionUiHost(navigation: RecommendationNavigation) {
     }
     LaunchedEffect(request, navigation.motion.mounted, navigation.playlist) {
         if (request != null && navigation.playlist == null && !navigation.motion.mounted) {
-            // 首次打开的 effect 必须先设置目标，不能在同一帧误报关闭。
+            // 先让一帧给打开歌单的 effect 把目标设上，防止刚点开就误判成已经关闭。
             kotlinx.coroutines.yield()
             if (navigation.playlist == null && !navigation.motion.mounted) bridge.closed(request)
         }

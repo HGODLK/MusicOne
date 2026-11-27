@@ -33,10 +33,10 @@ import kotlin.math.sin
 import kotlin.math.abs
 import kotlin.math.max
 
-// 旋转与手势侧条交接共用临界阻尼弹簧，降低起速力度，保持原位置和速度连续。
+// 横竖屏切换和手势收起共用同一临界阻尼弹簧，起步更柔和，并保持位置与速度连续。
 internal const val PHONE_PLAYER_TURN_STIFFNESS = 160f
 
-/** 锚点使用物理窗口坐标；动画补偿与原页面布局分别保存。 */
+/** 元素的目标姿态（使用物理窗口坐标），与动画补偿值分开维护。 */
 internal data class PhoneTurnPose(val pivot: Offset, val size: Size, val rotation: Float,
     val pivotFraction: Offset = Offset(.5f, .5f), val corner: Float = 0f) {
     fun bounds(): Rect {
@@ -55,7 +55,7 @@ private fun turnRotate(vector: Offset, angle: Float): Offset {
     return Offset(vector.x * c - vector.y * s, vector.x * s + vector.y * c)
 }
 
-/** 物理位移只按实际宿主坐标换算，不能套用上一轮缓存的方向。 */
+/** 把物理窗口坐标下的位移换算到元素本地坐标系，必须使用宿主当前实际旋转角度。 */
 internal fun phoneTurnLocalOffset(physical: Offset, actualRotation: Float): Offset =
     turnRotate(physical, -actualRotation)
 
@@ -147,7 +147,7 @@ private class PhoneTurnGroup {
     }
 }
 
-/** 只协调转向图层，不接管整页开合、歌词开合或切歌动画。 */
+/** 只负责横竖屏切换时各元素的图层过渡动画，不接管整页开合、歌词展开或切歌动画。 */
 @Stable
 internal class PhonePlayerTurn(private val scope: CoroutineScope) {
     private val groups = linkedMapOf<String, PhoneTurnGroup>()
@@ -155,7 +155,7 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
     private var sourceFrame: Map<String, PhoneTurnSourceFrame>? = null
     private var sourceFrameGeneration = -1
 
-    /** 与旧画面录制同帧取样，异步拷贝位图期间的后续运动不能覆盖交接起点。 */
+    /** 在录制旧画面的同一帧采样各元素姿态，避免异步拷贝位图期间的新运动覆盖动画起点。 */
     internal fun captureSourceFrame() {
         sourceFrame = groups.mapValues { (_, group) -> group.sourceFrame() }
         sourceFrameGeneration = generation
@@ -182,7 +182,7 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
         private set
     var preparing by mutableStateOf(false)
         private set
-    // 起点验收时遮罩尚未订阅弹簧，释放标志本身必须能通知绘制节点继续读取动画。
+    // 预备阶段遮罩还没订阅弹簧状态，必须用 Compose State 标记来触发绘制节点读取最新动画。
     private var preparationStaged by mutableStateOf(false)
     var nativeFallback by mutableStateOf(false)
         private set
@@ -191,7 +191,7 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
     internal fun layoutPose(key: String): PhoneTurnPose? = groups[key]?.base
     fun currentPose(key: String): PhoneTurnPose? = groups[key]?.current()
 
-    /** 仅计算转向补偿的收敛，不把同时发生的歌词开合位移计入渐隐进度。 */
+    /** 只按转向本身的剩余位移计算进度，不把同时进行的歌词开合位移算进去。 */
     internal fun drawingProgress(key: String): Float {
         if (preparing || preparationStaged) return 0f
         if (!orientationChanging) return 1f
@@ -204,14 +204,14 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
             phoneTurnPoseResidual(current.copy(size = target.size), target))
     }
 
-    /** 正常开合接管布局后，保留转向弹簧尾段，但不再把开合的每帧布局反向补偿回去。 */
+    /** 正常开合动画接管布局后，允许转向弹簧自然收尾，但不再对开合引起的布局变化做反向补偿。 */
     fun followLayoutMotion(keys: Set<String>) {
         if (isTurning && layoutMotionKeys.addAll(keys)) endpointRevision++
     }
     internal fun drawingPose(key: String, base: PhoneTurnPose, physicalOffset: Offset): PhoneTurnPose? =
         when {
             preparing -> base
-            // 普通开关只使用本次实际布局，不能重放上一轮转向残留的角度或位移。
+            // 非转向状态下直接用当前实际布局，避免带入上一轮转向残留的角度或位移。
             nativeFallback || !isTurning -> base.copy(pivot = base.pivot + physicalOffset)
             else -> currentPose(key)
         }
@@ -220,7 +220,7 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
         keys.forEach { key -> groups[key]?.takeIf { it.refreshRotation == rotation }?.refreshPose?.invoke() }
     }
 
-    /** 准备完成后统一释放各元素，禁止先登记的元素提前单独起步。 */
+    /** 所有目标布局就绪后统一启动各元素动画，避免先测量完的元素抢跑。 */
     fun releasePreparation() {
         preparing = false
         preparationStaged = false
@@ -230,13 +230,13 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
             it.preparedGeneration != generation }.forEach(::start)
     }
 
-    /** 先在旧帧下面显示补偿后的真实起点，验证完成之前不推进任何弹簧。 */
+    /** 先把补偿到起点的目标子树画在旧画面下方等待验收，验证通过前先不推进弹簧。 */
     fun stagePreparation() {
         preparationStaged = true
         preparing = false
     }
 
-    /** 超时只取消几何补偿，保留本轮目标绑定，由上层旧画面完成交叉渐变。 */
+    /** 准备超时时取消几何位移动画，改由上层旧画面做淡出过渡。 */
     fun finishPreparationWithoutMotion() {
         preparing = false
         preparationStaged = false
@@ -260,7 +260,7 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
             it.endpointRotation == rotation && it.registeredGeneration == generation } == true
     }
 
-    /** 只识别时钟确实无人推进的残留补偿，正常转向、菜单持有和预备均不判为丢失。 */
+    /** 检测时钟动画是否卡在半路没人推进（正常转向中、被菜单暂停或准备中不算异常）。 */
     internal fun clockHandoffStalled(rotation: Int): Boolean {
         if (!isTurning || held || preparing) return false
         val clock = groups["clock"] ?: return false
@@ -276,7 +276,7 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
         val epoch = generation
         PlayerMotionDiagnostics.event("endpoint-wait/$key") { "rotation=$rotation ${diagnosticState(key)}" }
         while (epoch == generation) {
-            // 宿主只改图层角度时未必重测，按帧重读实际坐标，不能永远等旧登记通知。
+            // 宿主仅修改图层旋转角度时未必触发重新测量，需每帧主动重读实际坐标。
             groups[key]?.takeIf { it.refreshRotation == rotation }?.refreshPose?.invoke()
             if (endpointReady(key, rotation)) {
                 PlayerMotionDiagnostics.event("endpoint-ready/$key") { diagnosticState(key) }
@@ -289,7 +289,7 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
         return false
     }
 
-    /** 半像素以内且下一屏幕帧不会明显移动时，附属入口无需再等亚像素尾段。 */
+    /** 剩余位移不到半像素且速度很慢时视为已基本静止，避免附属控件空等亚像素尾段。 */
     fun hasVisibleMotion(keys: Set<String>): Boolean {
         endpointRevision
         return keys.any { key ->
@@ -352,7 +352,7 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
         orientationChanging = false
     }
 
-    /** 手势保存正在显示的姿态和速度，松手后仍从同一组弹簧接续。 */
+    /** 手势开始时暂存当前姿态和速度，松手后从同一组弹簧继续动画。 */
     fun hold() = hold(gestureOwner, trackFrames = true)
 
     fun hold(owner: Any, trackFrames: Boolean = false) {
@@ -370,7 +370,7 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
             val bridging = group.handoffJob?.isActive == true
             group.handoffJob?.cancel()
             group.pendingPose = group.current()
-            // 桥接已衰减当前速度，不能再用取消前旧弹簧的速度覆盖。
+            // 惯性桥接阶段已经更新了衰减后的速度，不能再用旧弹簧的速度覆盖。
             if (!bridging) {
                 group.capturedCornerVelocity = group.cornerVelocity
                 group.capturedVelocity = group.deltaVelocity + group.offsetVelocity()
@@ -415,7 +415,7 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
         }
         held = false
         groups.values.filter { it.pendingPose != null }.forEach { group ->
-            // 松手早于新布局时继续桥接，不能向旧方向的 base 提前起步。
+            // 如果松手时新方向的布局还没就绪，先继续惯性桥接，不要急着往旧布局位置回弹。
             if (group.activeToken != null && group.bindingValid &&
                 group.registeredGeneration == generation && group.endpointRotation == targetRotation) start(group)
             else bridge(group)
@@ -456,11 +456,11 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
         }
     }
 
-    /** 新端点尚未登记时延续惯性，不把最后一帧静止挂住；登记后立即交回原弹簧。 */
+    /** 等新布局就绪的间隙先按惯性衰减继续滑动，避免画面突然定住；新布局到位后立刻交回弹簧。 */
     private fun bridge(group: PhoneTurnGroup) {
         if (held || preparing || preparationStaged || ExperiencePreferences.options.reduceMotion) return
         val epoch = generation
-        // 等布局的短桥接使用同一固有频率衰减，交回弹簧时不另加一段急刹。
+        // 用与弹簧相同的固有频率做速度衰减，交回弹簧时速度衔接更自然，不会突然急刹。
         val decayRate = sqrt(PHONE_PLAYER_TURN_STIFFNESS)
         group.handoffJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             var previous = lastFrameNanos
@@ -495,7 +495,7 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
         group.refreshPose = refresh
     }
 
-    /** 未放置的关闭面板也及时撤下旧转向，重新打开时只播放自身入场。 */
+    /** 面板隐藏后立即清掉残留的转向状态，下次打开时直接走正常入场动画。 */
     internal fun updateHidden(key: String, token: Any, hidden: Boolean) {
         val group = groups[key]?.takeIf { it.refreshToken === token } ?: return
         if (group.hidden == hidden) return
@@ -539,7 +539,7 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
         group.physicalVelocity = physicalVelocity
         group.activeToken = token
         group.endpointRotation = endpointRotation
-        // 布局登记不是运动采样；回调之间的时间差不能被换算成弹簧初速度。
+        // 布局回调只是更新目标基准位置，不能拿回调间隔来算初速度。
         group.base = pose
         continuation?.pose?.let { current ->
             val velocity = phoneTurnReanchorVelocity(current, pose.pivotFraction,
@@ -556,7 +556,7 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
         if (registrationChanged || previous != pose) endpointRevision++
         PlayerMotionDiagnostics.sample("register/$key") { "hidden=$hidden ${diagnosticState(key)}" }
         if (hidden) {
-            // 完全隐藏的附属元素没有需要保留的视觉旧端点，不让离屏转向拖住下一次入口。
+            // 已隐藏的附属元素无需保留旧位置，直接清理，避免影响下次打开。
             group.job?.cancel()
             group.preparedGeneration = generation
             discardPending(group)
@@ -582,7 +582,7 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
         PlayerMotionDiagnostics.event("unregister/$key") { "token=${System.identityHashCode(token)} ${diagnosticState(key)}" }
         groups[key]?.let {
             if (it.activeToken === token) {
-                // 旧实例的时钟位移不能继续作用于重建实例；交接姿态已经另存于 pendingPose。
+                // 旧组件销毁时解除绑定和偏移回调，防止旧回调影响新组件；交接姿态已保存在 pendingPose。
                 it.activeToken = null
                 it.bindingValid = false
                 it.physicalOffset = null
@@ -591,10 +591,10 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
             if (it.refreshToken === token) it.refreshPose = null
             endpointRevision++
         }
-        // 横竖分支销毁时保留上一帧，供同名目标元素接续。
+        // 切换横竖屏销毁旧分支时保留 group，让新分支的同名元素接续动画。
     }
 
-    /** 重定向共用上一真实帧作为零时刻，下一帧直接推进，避免重新提交一帧静止起点。 */
+    /** 动画中途改目标时复用上一帧时间戳作为起点，下一帧直接推进，避免在原地多停一帧。 */
     private suspend fun withTurnFrameClock(origin: Long, block: suspend () -> Unit) {
         val upstream = checkNotNull(coroutineContext[MonotonicFrameClock])
         val clock = object : MonotonicFrameClock {
@@ -638,7 +638,7 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
         }
         val startFrame = lastFrameNanos
         group.job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            // pendingPose 在姿态各轴初始化完成前遮住调度间隙，新布局首帧不露出目标端点。
+            // 在各轴 Animatable 同步到起点之前保留 pendingPose，避免新布局首帧闪现到终点。
             group.delta.snapTo(start)
             group.angle.snapTo(startAngle)
             group.corner.snapTo(startCorner)
@@ -686,7 +686,7 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
         }
     }
 
-    /** 时钟等附属元素只等待自身依赖的可见主体，不被无关面板的弹簧拖住。 */
+    /** 只等待指定的核心元素动画结束，不被其他无关面板拖住。 */
     suspend fun awaitElementsSettled(keys: Set<String>) {
         val epoch = generation
         while (epoch == generation && keys.any { key ->
@@ -705,14 +705,14 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
         if (epoch != generation) return
         while (epoch == generation) {
             if (held) { snapshotFlow { !held }.first { it }; continue }
-            // 只补登记失效的端点；有效端点由真实布局回调更新，不在每帧重读整页矩阵。
+            // 只刷新尚未就绪的元素坐标，已就绪的由布局回调自然更新，避免每帧重算整页矩阵。
             groups.values.toList().filter { it.refreshRotation == targetRotation &&
                 (!it.bindingValid || it.registeredGeneration != epoch || it.endpointRotation != targetRotation)
             }.forEach { it.refreshPose?.invoke() }
             groups.values.filter { !it.hidden && !it.resting && it.pendingPose == null &&
                 it.job?.isActive != true && it.activeToken != null && it.bindingValid &&
                 it.registeredGeneration == epoch && it.endpointRotation == targetRotation }.forEach {
-                // 切歌重绑期间若旧任务已取消，从实际姿态续接，不能把半途补偿永久挂住。
+                // 切歌导致旧动画协程被取消时，从当前实际姿态重新起跑，避免元素卡在半路。
                 val frame = it.sourceFrame()
                 it.pendingPose = frame.pose
                 it.capturedVelocity = frame.velocity
@@ -734,11 +734,11 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
                 withFrameNanos { }
                 continue
             }
-            // 不等待某一个旧任务：切歌重绑期间每帧都能接续其他已取消的元素和时钟。
+            // 按帧轮询而不是 join 单个协程，方便切歌重绑时及时接续被取消的其他元素。
             withFrameNanos { }
         }
         if (epoch == generation) {
-            // 关闭的目标面板可能从未放置；不能让旧端点挂到下次普通开关请求。
+            // 处于关闭状态的面板可能从未触发布局，转向结束后顺手清理残留的 pendingPose。
             groups.values.forEach {
                 if (it.pendingPose != null) discardPending(it)
                 it.preparedGeneration = epoch
@@ -752,7 +752,7 @@ internal class PhonePlayerTurn(private val scope: CoroutineScope) {
 
 internal val LocalPhonePlayerTurn = staticCompositionLocalOf<PhonePlayerTurn?> { null }
 
-/** 外层保存原始布局姿态，内层仅补偿绘制；固定尺寸及文字自然包裹均沿用原约束。 */
+/** 参与横竖屏平滑过渡的元素容器：外层记录目标布局坐标，内层通过 graphicsLayer 做位移/旋转/缩放补偿。 */
 @Composable
 internal fun PhoneTurnElement(key: String, modifier: Modifier = Modifier,
     pivotFraction: Offset = Offset(.5f, .5f),
@@ -780,7 +780,7 @@ internal fun PhoneTurnElement(key: String, modifier: Modifier = Modifier,
     val latestBaseCallback by rememberUpdatedState(onBasePose)
     val latestPhysicalOffset by rememberUpdatedState(physicalOffset)
     val latestPhysicalVelocity by rememberUpdatedState(physicalVelocity)
-    // 在组合阶段观察“完全隐藏”这一边界，未放置的面板也能提交撤下通知。
+    // 在组合阶段监听隐藏状态，即使面板没走布局也能及时清理转向状态。
     val hiddenNow = remember { derivedStateOf { latestHidden?.invoke() == true } }.value
     fun pose(coordinates: LayoutCoordinates): PhoneTurnPose? = coordinates.turnPose(
         latestPivot?.invoke(Size(coordinates.size.width.toFloat(), coordinates.size.height.toFloat())) ?: pivotFraction)
@@ -823,7 +823,7 @@ internal fun PhoneTurnElement(key: String, modifier: Modifier = Modifier,
         register(coordinates)
     }, propagateMinConstraints = true) {
         Box(Modifier.graphicsLayer {
-            // 布局登记和端点交接已保存真实宿主姿态；动画帧只读缓存，不再遍历父子矩阵。
+            // 动画帧直接读取缓存的基准姿态，避免每帧遍历坐标矩阵。
             val base = poseHolder[0] ?: turn.layoutPose(key)
             if (base == null) {
                 PlayerMotionDiagnostics.changed("layer-missing/$key") { "base ${turn.diagnosticState(key)}" }
@@ -848,7 +848,7 @@ internal fun PhoneTurnElement(key: String, modifier: Modifier = Modifier,
                     "translation=$translationX,$translationY rotation=$rotationZ scale=$scaleX,$scaleY " +
                     turn.diagnosticState(key)
             }
-            // 歌词保持字形比例，沿阅读焦点运动；边缘继续由原歌词渐隐和物理窗口裁剪。
+            // 不在元素层裁剪，边缘交给歌词自身的渐隐遮罩和物理窗口处理。
             clip = false
         }, propagateMinConstraints = true, content = content)
     }

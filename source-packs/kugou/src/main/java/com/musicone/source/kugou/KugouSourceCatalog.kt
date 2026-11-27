@@ -71,7 +71,7 @@ internal class KugouSourceCatalog(private val state: () -> KugouPackageState) : 
         tracks.forEach { currentCoroutineContext().ensureActive(); state().check(session); state().sessions.changePlaylistTrack(session.cookie, target, KugouSourceMapping.track(it), add) }
         Unit
     }
-    // 专辑属于实体资料；协议仍用原 album: 路由，不借用其他音源页面或接口。
+    // 专辑详情通过实体服务提供，底层仍走原来的 album: 协议
     val entityService: SourceEntities = object : SourceEntities {
         override val kinds = setOf("album")
         override suspend fun entity(reference: SourceEntityRef): SourceEntity = SourceEntity(reference)

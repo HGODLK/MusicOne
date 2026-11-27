@@ -1,6 +1,6 @@
 package com.musicone.source.qq.internal
 
-/** 既有QQ协议的包私有资料模型，SDK出口由桥接层转换。 */
+/** QQ 包内部使用的数据模型，对外在桥接层转成 SDK 模型。 */
 internal enum class MusicSource(val label: String, val accent: Long) {
     QQ("QQ 音乐", 0xFF31C27C), NETEASE("网易云音乐", 0xFFEC4141), KUGOU("酷狗音乐", 0xFF009AF3),
     LOCAL("本地音乐", 0xFF9B8AC4), BILIBILI("哔哩哔哩", 0xFFFB7299);

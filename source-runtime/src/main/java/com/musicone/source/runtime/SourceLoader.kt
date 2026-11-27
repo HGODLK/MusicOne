@@ -142,7 +142,7 @@ class SourceLoader(private val hostContext: Context) {
             // 能力服务可依赖初始化后的私有存储与会话，先初始化再核验声明。
             SourceCapabilityValidator.check(entry)
             SourceOptionalContractValidator.check(entry)
-            // 真实启动提前读取账号，将共享 ABI 或账号读取故障留在加载失败边界内。
+            // 启动时提前读一次账号，把共享 ABI 或账号读取异常拦在加载阶段。
             if (!validationOnly) entry.authentication?.currentAccount()
             lease.operations.accountVersion = {
                 val account = entry.authentication?.currentAccount()?.let { Triple(it.status, it.account?.id, it.revision) }

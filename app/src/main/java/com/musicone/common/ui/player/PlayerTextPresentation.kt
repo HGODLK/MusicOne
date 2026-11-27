@@ -19,14 +19,14 @@ private val playerArtistVersion = Regex("(?i)\\b(live|remix|version|ver|edit|mix
 
 /** 播放器只展示主歌名，平台返回的末尾翻译、片假名和版本括注留在列表详情中。 */
 internal fun playerPrimaryTitle(title: String): String {
-    val fullTitle = playerTextWithoutKanaAnnotations(title)
-    return fullTitle.replace(trailingPlayerTitleDetails, "").trimEnd().ifBlank { fullTitle }
+    val fullTitle = playerTextWithoutKanaAnnotations(stripEdgeBidiControls(title))
+    return stripEdgeBidiControls(fullTitle.replace(trailingPlayerTitleDetails, "")).trimEnd().ifBlank { fullTitle }
 }
 
-/** 多位创作者逐个去掉读音括注，保留原名、连接符和其他括号内容。 */
+/** 多位创作者逐个去掉读音括注，保留原名、连接符和其他括号内容；混排 RTL 创作者时隔离字段避免倒序。 */
 internal fun playerPrimaryArtists(artists: String): String {
-    val original = artists.trim()
-    return original.replace(playerParentheticalDetails) { match ->
+    val original = stripEdgeBidiControls(artists).trim()
+    val cleaned = original.replace(playerParentheticalDetails) { match ->
         val annotation = match.value.trim().drop(1).dropLast(1).trim()
         // 只将当前创作者非拉丁原名后的独立拉丁括注视为读音，保留英文艺名中的括号。
         val name = original.substring(0, match.range.first)
@@ -38,6 +38,43 @@ internal fun playerPrimaryArtists(artists: String): String {
             playerLatinName.matches(annotation) && !playerArtistVersion.containsMatchIn(annotation)
         if (playerKana.containsMatchIn(annotation) || romanized) "" else match.value
     }.trim().ifBlank { original }
+    return isolateMixedArtists(cleaned)
+}
+
+private fun stripEdgeBidiControls(text: String): String {
+    var start = 0
+    var end = text.length
+    while (start < end && (text[start].isWhitespace() || isBidiControlChar(text[start]))) start++
+    while (end > start && (text[end - 1].isWhitespace() || isBidiControlChar(text[end - 1]))) end--
+    return text.substring(start, end)
+}
+
+private fun isolateMixedArtists(text: String): String {
+    if (text.isEmpty() || !(containsArabicOrPersian(text) || isRtlStrongText(text))) return text
+    val matches = playerArtistSeparator.findAll(text).toList()
+    if (matches.isEmpty()) return text
+    val builder = StringBuilder(text.length + (matches.size + 1) * 2)
+    var cursor = 0
+    for (match in matches) {
+        appendIsolatedArtistPart(builder, text.substring(cursor, match.range.first))
+        builder.append(match.value)
+        cursor = match.range.last + 1
+    }
+    appendIsolatedArtistPart(builder, text.substring(cursor))
+    return builder.toString()
+}
+
+private fun appendIsolatedArtistPart(builder: StringBuilder, segment: String) {
+    val trimmed = segment.trim()
+    if (trimmed.isEmpty()) {
+        builder.append(segment)
+        return
+    }
+    val lead = segment.indexOf(trimmed)
+    val trail = lead + trimmed.length
+    builder.append(segment, 0, lead)
+    builder.append(BIDI_FSI).append(trimmed).append(BIDI_PDI)
+    builder.append(segment, trail, segment.length)
 }
 
 private fun playerTextWithoutKanaAnnotations(text: String): String {

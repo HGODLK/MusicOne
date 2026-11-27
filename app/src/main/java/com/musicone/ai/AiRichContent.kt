@@ -3,7 +3,7 @@ package com.musicone
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 会话内的歌单视图与分组回执独立序列化，不写入音乐库或音频文件。 */
+/** 聊天里的临时歌单和操作回执单独序列化，不写进本地音乐库。 */
 internal fun MusicPlaylist.toAiPlaylistJson(): JSONObject = JSONObject()
     .put("id", id).put("sourceId", source.id).put("title", title).put("subtitle", subtitle)
     .put("description", description).put("count", count).put("start", artworkStart).put("end", artworkEnd)
@@ -30,16 +30,16 @@ internal fun JSONObject.toAiReceipt() = AiReceiptUi(optString("summary"), optJSO
     })
 })
 
-/** 待展示歌曲含音源私有资料，只在本机恢复，不能混入模型任务摘要或 read_task。 */
+/** 待展示的歌曲卡片里有音源私有数据，只在本地恢复界面用，不能发给模型。 */
 internal fun JSONObject.aiPublicCheckpoint(): JSONObject = JSONObject(toString()).apply {
     remove("pendingCards")
-    // 用量和请求诊断仅供本地记录，不能进入模型的任务摘要或 read_task。
+    // token 用量和诊断信息只留本地，不发给模型。
     remove("actualUsage")
     remove("contextTokenSample")
     remove("lastSearchAttempt")
 }
 
-/** 工具先返回的数据只进入断点；正文完成后一次发布，避免卡片抢在文字前面出现。 */
+/** 工具查到的歌曲卡片先暂存起来，等正文输出完再一起显示，避免卡片抢跑。 */
 internal class AiDeferredCards(private val checkpoint: JSONObject) {
     fun stage(tracks: List<MusicTrack>, reason: String) {
         val pending = data()

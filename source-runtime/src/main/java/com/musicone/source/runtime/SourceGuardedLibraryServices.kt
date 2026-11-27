@@ -4,7 +4,7 @@ import com.musicone.source.sdk.*
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.collect
 
-/** 新增内容能力沿用实例租约与账号检查，旧音源继续使用原接口。 */
+/** 新增内容能力复用实例租约和账号校验，旧音源仍走原接口。 */
 internal fun guardSourceSearch(service: SourceSearch, operations: SourceOperationLease): SourceSearch =
     object : SourceSearch, SourceHotSearch {
         override val supportsSuggestions get() = operations.read { service.supportsSuggestions }

@@ -12,7 +12,7 @@ import kotlin.math.abs
 
 internal data class LyricAutoRefocusTarget(val index: Int, val offset: Float)
 
-/** 只持有屏内自动回焦；用户操作和其他定位事务可立即接管。 */
+/** 负责用户手动滑动歌词几秒后的屏内自动回焦，用户再次操作或其他跳转可随时打断。 */
 internal class LyricAutoRefocus {
     var active by mutableStateOf(false)
         private set
@@ -81,7 +81,7 @@ internal class LyricAutoRefocus {
     }
 }
 
-/** 用累计实际消费量换算目标；换句时保留现有位移和速度。 */
+/** 按累计实际滚动距离换算目标偏移，自动回焦中途换句时保留当前位移和速度。 */
 internal class LyricAutoRefocusTravel {
     internal val motion = LyricMotionValue(0f)
     private var applied = 0f

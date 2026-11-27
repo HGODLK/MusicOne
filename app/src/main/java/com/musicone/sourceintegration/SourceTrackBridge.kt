@@ -4,7 +4,7 @@ import com.musicone.*
 import com.musicone.source.sdk.*
 import org.json.JSONObject
 
-/** 宿主公共模型与公开 SDK 的转换，不解释音源私有协议资料。 */
+/** 宿主 MusicTrack 和 SDK SourceTrackDetails 互转，私有字段原样透传不解析。 */
 internal fun MusicTrack.toSourceTrack(accountId: String? = sourceAccountId): SourceTrackDetails {
     val sourceData = providerData - SOURCE_ORIGINAL_STABLE_ID
     // 宿主载荷键另经 payload 交付，不放进 opaqueData，避免音源回传后层层嵌套。

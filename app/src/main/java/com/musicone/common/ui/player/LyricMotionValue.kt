@@ -8,7 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.setValue
 
-/** 由歌词统一帧循环采样；改目标时保留当前值和速度，不重新等待零进度帧。 */
+/** 轻量动画数值容器：由歌词统一帧循环驱动，中途改目标时保留当前值和速度。 */
 internal class LyricMotionValue(initialValue: Float) {
     var value by mutableFloatStateOf(initialValue); private set
     var velocity = 0f; private set

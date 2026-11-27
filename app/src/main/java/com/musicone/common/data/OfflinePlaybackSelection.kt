@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 两类缓存先找精确档；自定义回退按包声明，旧 DASH 自身的选择顺序保持不变。 */
+/** 离线选歌优先匹配首选音质；自定义音质按音源声明顺序回退，旧 DASH 保持原回退顺序。 */
 internal fun selectOfflinePlayback(
     preferred: AudioQuality,
     ordinary: List<ResolvedPlayback>,

@@ -3,7 +3,7 @@ package com.musicone
 import android.content.Intent
 import android.os.Bundle
 
-/** vivo 基础音乐接入；仍复用同一个 Media3 会话，不声明歌词、收藏和歌单能力。 */
+/** vivo 桌面组件基础接入，复用现有 Media3 会话，只声明播放控制等基础能力。 */
 internal object VivoSystemMedia {
     const val SERVICE_ACTION = "com.vivo.musicwidgetmix.support.service"
     const val SUPPORT_EVENT = "vivomusicmix.media.metadata.support_event"

@@ -13,7 +13,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import com.musicone.*
 
-/** 只桥接公共整页的原导航状态；离屏预挂载页不能接管根控件。 */
+/** 桥接当前活跃公共页的页头和返回控制，离屏预挂载的页面不能抢占根控件。 */
 internal class SourcePublicSceneBridge(
     val settings: SettingsNavigation,
     val settingsMotion: PageMotion,
@@ -33,7 +33,7 @@ internal class SourcePublicSceneBridge(
             .thenBy { it.value.activation })?.key
     fun update(scene: SourcePublicScene, priority: Int) {
         val previous = scenes[scene]
-        // 独立重组器换页可能前后错帧，同层级由新激活页接管，旧页重组不能夺回。
+        // 换页时独立 ComposeView 可能差一帧，按递增激活序号让新页优先，防止旧页重组时把控制权抢回去。
         val order = if (priority > 0 && (previous == null || previous.priority == 0)) ++activation
             else previous?.activation ?: 0L
         scenes[scene] = Ownership(priority, order)
@@ -65,7 +65,7 @@ internal class SourcePublicScene(
     val overlayBackdrop get() = rootIdentity == null || rootHeader == null || detailMounted
 }
 
-/** 独立重组器内的活动页身份及跨根坐标，均由宿主提供。 */
+/** 传给独立 ComposeView 内部公共页的上下文（活跃态、可交互态、根坐标偏移等）。 */
 internal data class SourcePublicSurfaceContext(val active: Boolean, val interactive: Boolean, val rootOffset: Offset,
     val priority: Int = 1, val separateRoot: Boolean = true,
     val consumedInsets: WindowInsets = WindowInsets(0, 0, 0, 0),

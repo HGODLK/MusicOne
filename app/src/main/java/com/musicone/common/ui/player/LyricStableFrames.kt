@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 有效不等于稳定；排版、坐标或端点变化后必须重新累计连续帧。 */
+/** 连续稳定帧检测器：只有连续多帧几何快照完全一致才判定为稳定，中途变化则重新计数。 */
 internal class LyricStableFrames(private val required: Int = 3) {
     private var previous: Any? = null
     private var frames = 0

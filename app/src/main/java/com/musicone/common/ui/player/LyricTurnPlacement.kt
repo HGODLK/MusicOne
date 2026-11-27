@@ -3,7 +3,7 @@ package com.musicone
 import androidx.compose.runtime.withFrameNanos
 import kotlin.math.roundToInt
 
-/** 同尺寸正反横屏也必须确认新方向端点，不能只凭旧列表已有尺寸开始定位。 */
+/** 转屏定位时即使正反横屏尺寸相同，也要校验新方向已生效，不能拿旧方向布局直接定位。 */
 internal fun lyricTurnViewportReady(expected: LyricPlacementGeometry, actual: LyricPlacementGeometry,
     rotation: Int, targetRotation: Int, hostReady: Boolean, endpointReady: Boolean): Boolean =
     expected.measured && actual == expected && rotation == targetRotation && hostReady && endpointReady

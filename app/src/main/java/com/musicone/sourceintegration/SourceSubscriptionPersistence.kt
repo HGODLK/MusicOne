@@ -6,7 +6,7 @@ import com.musicone.source.sdk.*
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
-/** 全量成功分页后一次提交，远端成员与本地选择的子项分别保留身份。 */
+/** 等全部分页都拉成功再一次性提交订阅歌单，同时保留远端成员和用户手动挑的分P。 */
 internal class SourceSubscriptionPersistence(private val store: MusicLibraryStore) {
     fun revision(identity: SourceSubscriptionIdentity): Long = store.database().rawQuery(
         "SELECT source_id,source_account,source_collection,source_revision FROM playlists WHERE id=?",

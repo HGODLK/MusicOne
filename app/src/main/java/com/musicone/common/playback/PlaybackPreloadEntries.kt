@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 只管理预加载窗口内的票据、下载完成状态及失败退避，不执行网络工作。 */
+/** 只管理预加载列表里每首歌的地址缓存、下载状态和失败重试计数，不直接发网络请求。 */
 internal class PlaybackPreloadEntries<K, V>(
     private val ttlMs: (K) -> Long,
     private val refreshLeadMs: Long = PLAYBACK_TICKET_REFRESH_MARGIN_MS,
@@ -20,6 +20,27 @@ internal class PlaybackPreloadEntries<K, V>(
     private val entries = mutableMapOf<K, Entry<V>>()
 
     @Synchronized
+    fun onForegroundResume(nowMs: Long): Set<K> {
+        val invalidated = linkedSetOf<K>()
+        entries.forEach { (key, entry) ->
+            val ready = entry.ready
+            val stale = ready == null || !fresh(ready, nowMs)
+            if (stale) {
+                if (ready != null) {
+                    entry.refreshPending = true
+                    invalidated += key
+                }
+                // 后台断网耗尽的重试次数，回到前台后清零，允许重新获取地址。
+                if (!entry.terminal) {
+                    entry.failures = 0
+                    entry.nextRetryMs = 0L
+                }
+            }
+        }
+        return invalidated
+    }
+
+    @Synchronized
     fun retain(keys: Set<K>) {
         entries.keys.retainAll(keys)
     }
@@ -31,10 +52,10 @@ internal class PlaybackPreloadEntries<K, V>(
         val ready = entry.ready
         val work = when {
             ready == null -> Work.RESOLVE
-            // 地址已经过期时无论是否允许刷新都必须重新取票。
+            // 地址已经过期，必须重新获取。
             expired(ready, nowMs) -> Work.RESOLVE
             entry.refreshPending -> Work.RESOLVE
-            // 票据进入到期前六十秒就不再复用，曲末是否临近都一样。
+            // 距离过期不到 60 秒的地址直接重新获取，不再复用。
             refreshDue(ready, nowMs) -> Work.RESOLVE
             !ready.downloaded -> Work.DOWNLOAD
             else -> Work.NONE
@@ -74,7 +95,7 @@ internal class PlaybackPreloadEntries<K, V>(
     @Synchronized
     fun resolved(key: K, value: V, nowMs: Long, validForMs: Long? = null) {
         val entry = entries[key] ?: return
-        // 解析成功仍沿用下载失败预算，避免重复换票据绕过失败上限。
+        // 重新拿到地址后不重置下载失败次数，避免反复换地址绕过失败上限。
         entry.ready = Value(value, nowMs, expiresAt(key, nowMs, validForMs), downloaded = false)
         entry.refreshPending = false
     }

@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 子任务只发布结果，界面快照在统一入口合并，避免各控制器直接改写共享状态。 */
+/** 各个后台任务只发事件，统一在这里把事件合并进 UI 状态，避免到处直接改状态。 */
 internal fun MusicOneUiState.withQualityEvent(event: PlaybackQualityEvent): MusicOneUiState = when (event) {
     is PlaybackQualityEvent.Loading -> copy(qualityLoading = true)
     is PlaybackQualityEvent.Options -> copy(
@@ -59,7 +59,26 @@ internal fun MusicOneUiState.withPlaybackMetadata(event: PlaybackTrackEvent.Meta
     return copy(currentTrack = track, queue = queue.map { if (it.id == track.id) track else it })
 }
 
-/** 队列无可恢复项后结束歌词等待，不能把上一首窗口一直留在失败目标上。 */
+/** 播放链接过期静默重拉后只换地址，不动歌词、音质列表和播放状态，避免界面闪烁。 */
+internal fun MusicOneUiState.withRenewedPlayback(resolved: ResolvedPlayback): MusicOneUiState {
+    val current = currentTrack ?: return this
+    if (current.id != resolved.track.id || current.source != resolved.track.source) return this
+    val updated = current.copy(previewUrl = resolved.source.url)
+    resolved.source.actualFormat?.let {
+        PlaybackAudioInfo.remember(
+            resolved.source.url,
+            it,
+            mergeDecoded = resolved.source.mimeType == "application/dash+xml",
+            bitrate = resolved.source.bitRate,
+        )
+    }
+    return copy(
+        currentTrack = updated,
+        queue = queue.map { if (it.id == updated.id && it.source == updated.source) updated else it },
+    )
+}
+
+/** 整条队列都播不了时结束歌词等待状态，别一直卡着上一首歌的歌词。 */
 internal fun MusicOneUiState.withExhaustedPlaybackQueue(message: String): MusicOneUiState = copy(
     isPlaying = false,
     qualityLoading = false,

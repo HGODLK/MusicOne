@@ -9,10 +9,11 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlin.math.pow
 
 private const val DESKTOP_ACCENT_MIN_LUMINANCE = .36
 
-/** 当前主音源声明的页面色，与应用主题同一来源；切换主音源、音源包就绪或增删后自动更新。 */
+/** 按当前主音源的主题色生成桌面歌词高亮色；切音源或音源包就绪时自动更新。 */
 internal fun desktopLyricsAccents(context: Context): Flow<Int> {
     val platforms = PlatformPreferences(context)
     val controller = SourcePackageController.get(context)
@@ -30,16 +31,25 @@ internal fun desktopLyricsAccents(context: Context): Flow<Int> {
     }.distinctUntilChanged()
 }
 
-/** 歌词没有底板：先按应用深色主题掺 25% 白，仍偏暗再逐步提亮；未声明颜色时用白色。 */
+/** 桌面歌词没有底板，默认先混入 25% 白色，还太暗就继续提亮；没配主题色时直接用白色。 */
 internal fun desktopLyricsAccent(pageColorArgb: Long?): Int {
     val base = validTrackThemeArgb(pageColorArgb)?.toInt() ?: return -1
     var mix = .25f
     var color = mixWhite(base, mix)
-    while (HyperOsCardContrast.luminance(color) < DESKTOP_ACCENT_MIN_LUMINANCE && mix < .8f) {
+    while (desktopColorLuminance(color) < DESKTOP_ACCENT_MIN_LUMINANCE && mix < .8f) {
         mix += .05f
         color = mixWhite(base, mix)
     }
     return color
+}
+
+/** 计算 ARGB 颜色的相对亮度（WCAG sRGB 公式），用来判断颜色是否偏暗或接近白色。 */
+internal fun desktopColorLuminance(color: Int): Double {
+    fun linear(shift: Int): Double {
+        val value = ((color ushr shift) and 255) / 255.0
+        return if (value <= 0.04045) value / 12.92 else ((value + 0.055) / 1.055).pow(2.4)
+    }
+    return 0.2126 * linear(16) + 0.7152 * linear(8) + 0.0722 * linear(0)
 }
 
 private fun mixWhite(color: Int, fraction: Float): Int {

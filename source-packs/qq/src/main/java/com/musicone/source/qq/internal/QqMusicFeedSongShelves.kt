@@ -31,7 +31,7 @@ internal fun combineQqMusicFeedSongShelves(cards: List<QqMusicFeedCard>): List<Q
     return result
 }
 
-/** 稳定容器的 key 不能用于过滤新页；只过滤已经展示的完整歌曲组，允许组间歌曲重复。 */
+/** 过滤掉新页里已经展示过的卡片和完整三连卡，但允许不同歌曲组之间有重复单曲。 */
 internal fun unseenQqMusicFeedCards(
     incoming: List<QqMusicFeedCard>,
     displayed: List<QqMusicFeedCard>,

@@ -3,7 +3,7 @@ package com.musicone.source.kugou
 import com.musicone.source.sdk.SourceEntityRef
 import org.json.JSONObject
 
-/** 只补公共资料菜单需要的真实实体引用，不改变歌曲身份、音频资源和权益。 */
+/** 给歌曲补上歌手、专辑的跳转引用，不改动歌曲 ID、音质和权限。 */
 internal fun MusicTrack.withKugouTrackReferences(raw: JSONObject): MusicTrack {
     val authors = listOf("authors", "Authors", "Singers", "singers", "singerinfos", "singerinfo")
         .flatMap { key -> raw.optJSONArray(key)?.contentObjects().orEmpty() }

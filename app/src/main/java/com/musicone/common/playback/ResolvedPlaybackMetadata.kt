@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 规格由包的解析结果提供，宿主不再根据平台 URL 命名猜测音质。 */
+/** 直接读取音源包解析出的真实音质，不再靠猜 URL 文件名。 */
 internal fun resolvedPlaybackQuality(url: String): AudioQuality? =
     SupplementalPlaybackRequests.resource(url)?.actualQuality
 

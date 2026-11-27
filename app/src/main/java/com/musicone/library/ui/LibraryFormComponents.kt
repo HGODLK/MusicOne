@@ -16,7 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** 设置与编辑复用同一行布局，表单使用基础输入，不引入系统样式弹窗。 */
+/** 音乐库设置和编辑弹窗共用的表单行组件。 */
 @Composable
 internal fun LibraryActionRow(title: String, subtitle: String? = null, enabled: Boolean = true,
     modifier: Modifier = Modifier, onClick: () -> Unit) {

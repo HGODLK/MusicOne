@@ -109,7 +109,7 @@ internal fun JSONObject.playlist(): SubsonicPlaylist? {
         count("songCount"), text("coverArt"), optBoolean("readonly"), text("changed"))
 }
 
-/** 与 [playlist] 解析口径一致，供本地索引保存可写歌单。 */
+/** 序列化格式和 [playlist] 解析逻辑保持一致，用于本地索引保存可写歌单。 */
 internal fun SubsonicPlaylist.toJson(): JSONObject = JSONObject().put("id", id).put("name", name).put("comment", comment)
     .put("owner", owner).put("public", public).put("songCount", songCount ?: JSONObject.NULL).put("coverArt", coverArt)
     .put("readonly", readonly).put("changed", changed)

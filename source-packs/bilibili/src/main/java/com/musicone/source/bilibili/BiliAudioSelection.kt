@@ -2,7 +2,7 @@ package com.musicone.source.bilibili
 
 internal data class BiliAudioSelection(val quality: String, val stream: BiliAudioStream)
 
-/** 播放与协议测试共用同一选择过程，解码器事实和手动解锁仍由请求边界传入。 */
+/** 选音轨的公共逻辑（播放和单测共用），设备是否支持杜比、是否手动解锁由调用方传入。 */
 internal fun selectBiliAudio(audio: BiliPlayAudioResult, preferred: String, automatic: Boolean,
     decoder: Boolean, unlocked: Boolean, usbExclusive: Boolean): BiliAudioSelection {
     val requested = if (automatic && preferred != "STANDARD") {

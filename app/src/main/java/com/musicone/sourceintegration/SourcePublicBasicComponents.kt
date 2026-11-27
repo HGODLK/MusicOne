@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.sp
 import com.musicone.*
 import com.musicone.source.sdk.*
 
-/** 基础控件直接沿用公共展示策略，避免包另造封面或权益标识。 */
+/** 给音源包暴露的基础 UI 组件，直接复用宿主自己的封面加载和角标逻辑。 */
 internal class SourcePublicBasicComponents(private val access: SourcePublicComponentAccess) : SourceBasicComponents {
     private class BackdropHandle(val access: SourcePublicComponentAccess, val layer: GraphicsLayer) : SourceBackdropState {
         override val sourceId get(): String { access.check(); return access.sourceId }

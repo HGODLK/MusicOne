@@ -1,6 +1,6 @@
 package com.musicone
 
-/** 装载或跳转后的首个位置还须确认，媒体身份更新不能让旧位置覆盖目标。 */
+/** 切歌或拖动进度后，等播放器真正报出目标附近的新位置后再接管进度，防止旧位置闪回覆盖。 */
 internal class PlaybackPositionOwner(
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
@@ -32,7 +32,7 @@ internal class PlaybackPositionOwner(
             if (!playerReady) return saved
             val target = durationMs?.takeIf { it >= 0L }?.let { expected.positionMs.coerceAtMost(it) }
                 ?: expected.positionMs
-            // 控制器可能已显示新媒体，却仍返回旧位置估计；只接管目标附近实际可达的位置。
+            // 播放器有时媒体项已经切了，但进度还停在旧位置，这里只接收落在目标合理范围内的位置。
             val elapsed = (nowMs() - expected.requestedAtMs).coerceAtLeast(0L)
             val advance = (elapsed * speed.coerceAtLeast(0f).toDouble()).toLong()
             if (position < (target - POSITION_TOLERANCE_MS).coerceAtLeast(0L) ||

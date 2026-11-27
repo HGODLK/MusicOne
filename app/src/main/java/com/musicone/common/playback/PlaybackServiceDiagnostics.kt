@@ -3,7 +3,7 @@ package com.musicone
 import android.util.Log
 import androidx.media3.common.Player
 
-/** 只记录输送状态和停止原因，便于区分息屏后的焦点丢失、缓冲与 USB 故障。 */
+/** 记录播放器状态变化和暂停原因，方便排查息屏后丢焦点、卡缓冲或 USB 断开等问题。 */
 internal class PlaybackServiceDiagnostics(private val foreground: () -> Boolean) : Player.Listener {
     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
         Log.i("MusicPlaybackService", "播放意图=$playWhenReady 原因=$reason")

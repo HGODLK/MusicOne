@@ -2,7 +2,7 @@ package com.musicone
 
 import com.musicone.source.sdk.SourceLyricTiming
 
-/** 只保留最近一曲；曲目或音源实例更换后重新读取，避免状态通知反复转换整曲逐字歌词。 */
+/** 只缓存当前这一首歌的歌词时间配置，切歌或换音源实例时再重算，避免每次状态更新都重转一遍。 */
 internal class SourceLyricTimingCache {
     private var track: MusicTrack? = null
     private var owner: Any? = null

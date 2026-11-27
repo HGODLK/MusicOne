@@ -16,6 +16,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
@@ -32,6 +34,7 @@ internal fun ImmersiveLyricLine(
     playbackMotion: LyricPlaybackStepMotion,
     playbackStepActive: Boolean = false,
     smoothProgressMs: (() -> Long)? = null,
+    alignRight: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     boundary: LyricLineBoundary? = null,
@@ -67,7 +70,8 @@ internal fun ImmersiveLyricLine(
     val preparingTurn = LocalPhonePlayerTurn.current?.preparing == true
     val canAnimateVerbatim = verbatimEnabled && line.words.isNotEmpty() && smoothProgressMs != null && isCurrentOrRecent
     val fontMode = ExperiencePreferences.options.fontMode
-    val baseAnnotated = remember(line.text, fontMode) { lyricOriginalAnnotatedString(line.text, fontMode) }
+    val fontRevision = if (fontMode == AppFontMode.CUSTOM) CustomFontStore.revision else 0L
+    val baseAnnotated = remember(line.text, fontMode, fontRevision) { lyricOriginalAnnotatedString(line.text, fontMode) }
     val highlightRanges = remember(line.text, line.words) { lyricWordHighlightRanges(line) }
     SideEffect {
         if (holdWords && row.words.configured) playbackMotion.holdWords(index)
@@ -76,16 +80,37 @@ internal fun ImmersiveLyricLine(
             allowTail = playbackStepActive && index == current - 1)
     }
     val rubyGroups = remember(line.transliteration, highlightRanges) { lyricRubyGroups(line, highlightRanges) }
+    val textAlign = if (alignRight) TextAlign.Right else TextAlign.Left
+    val originalDirection = remember(line.text, alignRight) {
+        when (strongTextDirectionOf(line.text)) {
+            StrongTextDirection.RTL -> TextDirection.Rtl
+            StrongTextDirection.LTR -> TextDirection.Ltr
+            StrongTextDirection.NEUTRAL -> if (alignRight) TextDirection.Rtl else TextDirection.Ltr
+        }
+    }
+    // 翻译保持其自身文本方向（中文／英文为 LTR），右对齐时不反转词序与标点。
+    val translationDirection = remember(line.translation) {
+        line.translation?.let(::contentTextDirection) ?: TextDirection.ContentOrLtr
+    }
     // 样式在重组间复用，焦点附近的行重组时不重建样式对象。
-    val activeStyle = remember(activeSize, activeLineHeight, rubyGroups != null, typography) {
-        MusicOneTextStyles.lyricActive.copy(fontSize = activeSize.sp, lineHeight = activeLineHeight.sp)
-            .let { if (rubyGroups != null) lyricRubyTextStyle(it, typography) else it }
+    val activeStyle = remember(activeSize, activeLineHeight, rubyGroups != null, typography, textAlign, originalDirection) {
+        MusicOneTextStyles.lyricActive.copy(
+            fontSize = activeSize.sp,
+            lineHeight = activeLineHeight.sp,
+            textAlign = textAlign,
+            textDirection = originalDirection,
+        ).let { if (rubyGroups != null) lyricRubyTextStyle(it, typography) else it }
     }
-    val translationStyle = remember(translationSize, translationLineHeight) {
-        MusicOneTextStyles.lyricTranslation.copy(fontSize = translationSize.sp, lineHeight = translationLineHeight.sp)
+    val translationStyle = remember(translationSize, translationLineHeight, textAlign, translationDirection) {
+        MusicOneTextStyles.lyricTranslation.copy(
+            fontSize = translationSize.sp,
+            lineHeight = translationLineHeight.sp,
+            textAlign = textAlign,
+            textDirection = translationDirection,
+        )
     }
-    val textLayout = remember(line.text, typography, fontMode) { mutableStateOf<TextLayoutResult?>(null) }
-    val translationLayout = remember(line.translation, typography, fontMode) { mutableStateOf<TextLayoutResult?>(null) }
+    val textLayout = remember(line.text, typography, fontMode, fontRevision, alignRight) { mutableStateOf<TextLayoutResult?>(null) }
+    val translationLayout = remember(line.translation, typography, fontMode, fontRevision, alignRight) { mutableStateOf<TextLayoutResult?>(null) }
     val paragraphWidth = remember { intArrayOf(0) }
     val readTextLayout = remember(textLayout) { { textLayout.value } }
     val readTranslationLayout = remember(translationLayout) { { translationLayout.value } }
@@ -100,31 +125,39 @@ internal fun ImmersiveLyricLine(
         (.925f + .075f * row.played.value.coerceIn(0f, 1f)) * (.94f + .06f * settle)
     } }
     val boundaryPivotX = with(density) { 8.dp.toPx() - 8.dp.roundToPx() }
-    val boundaryTransform = remember(row, playbackMotion, index, boundaryPivotX) {
-        LyricLineVisualTransform(pivot = { Offset(boundaryPivotX, (rowCoordinates.value?.size?.height ?: 0) / 2f) },
-            scale = visualScale, offset = { playbackMotion.offsetPx(index) })
+    val boundaryTransform = remember(row, playbackMotion, index, boundaryPivotX, alignRight) {
+        LyricLineVisualTransform(pivot = {
+            val rowWidth = (rowCoordinates.value?.size?.width ?: 0).toFloat()
+            val pivotX = if (alignRight) rowWidth - boundaryPivotX else boundaryPivotX
+            Offset(pivotX, (rowCoordinates.value?.size?.height ?: 0) / 2f)
+        }, scale = visualScale, offset = { playbackMotion.offsetPx(index) })
     }
+    val horizontalAlign = if (alignRight) Alignment.End else Alignment.Start
 
     // 额外扩展模糊采样范围；正文仍保留原有 8dp 边距、换行宽度和缩放原点。
     CompositionLocalProvider(LocalDensity provides lyricDensity) {
         Layout(
             content = {
                 // 只移除图层里的横向空白，换行上限、外伸留白和整行触摸范围保持原尺寸。
-                Column(Modifier.wrapContentWidth(Alignment.Start).graphicsLayer {
-                val settle = if (index == current) settleProgress().coerceIn(0f, 1f) else 1f
-                // 未播放句缩小至 0.925，当前及已播放句保留原字号（1.0），逐句接续不改变排版。
-                transformOrigin = TransformOrigin(8.dp.toPx() / size.width.coerceAtLeast(1f), .5f)
-                scaleX = visualScale()
-                scaleY = scaleX
-                PlayerMotionDiagnostics.sample("lyric-ink/$index") {
-                    "index=$index current=$current rowAlpha=${row.opacity.value} alpha=${row.opacity.value * (.72f + .28f * settle)} " +
-                        "wordStrength=${row.words.sweepStrength} boundary=${boundary != null}"
-                }
-                translationY = playbackMotion.offsetPx(index)
-                // 透明度和模糊都是图层属性，切句时只更新属性，不重绘这一行。
-                alpha = row.opacity.value * (.72f + .28f * settle)
-                renderEffect = blurEffects[lyricRowBlurStep(maxOf(row.blur.value, (1f - settle) * 2f))]
-                }.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                Column(
+                    modifier = Modifier.wrapContentWidth(horizontalAlign).graphicsLayer {
+                        val settle = if (index == current) settleProgress().coerceIn(0f, 1f) else 1f
+                        // 未播放句缩小至 0.925，当前及已播放句保留原字号（1.0），逐句接续不改变排版。
+                        val edgeFraction = 8.dp.toPx() / size.width.coerceAtLeast(1f)
+                        transformOrigin = TransformOrigin(if (alignRight) 1f - edgeFraction else edgeFraction, .5f)
+                        scaleX = visualScale()
+                        scaleY = scaleX
+                        PlayerMotionDiagnostics.sample("lyric-ink/$index") {
+                            "index=$index current=$current rowAlpha=${row.opacity.value} alpha=${row.opacity.value * (.72f + .28f * settle)} " +
+                                "wordStrength=${row.words.sweepStrength} boundary=${boundary != null}"
+                        }
+                        translationY = playbackMotion.offsetPx(index)
+                        // 透明度和模糊都是图层属性，切句时只更新属性，不重绘这一行。
+                        alpha = row.opacity.value * (.72f + .28f * settle)
+                        renderEffect = blurEffects[lyricRowBlurStep(maxOf(row.blur.value, (1f - settle) * 2f))]
+                    }.padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalAlignment = horizontalAlign,
+                ) {
                     Text(
                         baseAnnotated,
                         onTextLayout = updateTextLayout,
@@ -135,7 +168,7 @@ internal fun ImmersiveLyricLine(
                                 prepare = layoutProof != null, transform = boundaryTransform,
                                 contentKey = Triple(textLayout.value, highlightRanges, ink))
                             .lyricLayoutProof(layoutProof, index, false, readTextLayout, readTranslationLayout) { paragraphWidth[0] }
-                            .lyricRubyDrawing(rubyGroups, readTextLayout, row.words, ink, typography, fontMode)
+                            .lyricRubyDrawing(rubyGroups, readTextLayout, row.words, ink, typography, fontMode, fontRevision)
                             .lyricWordAlphaDrawing(
                             ranges = highlightRanges,
                             textLayout = readTextLayout,
@@ -150,7 +183,7 @@ internal fun ImmersiveLyricLine(
                     )
                     line.translation?.let { translation ->
                         Text(
-                            remember(translation, fontMode) { musicOneUiAnnotatedString(translation, mode = fontMode) },
+                            remember(translation, fontMode, fontRevision) { musicOneUiAnnotatedString(translation, mode = fontMode) },
                             onTextLayout = updateTranslationLayout,
                             style = translationStyle,
                             color = ink.copy(alpha = .72f),

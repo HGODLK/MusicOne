@@ -15,7 +15,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-/** 本会话有效目录直接复用；显式刷新仅合并正在重叠的请求，不推测刷新批次。 */
+/** 歌单目录缓存：当前会话里拉过就直接复用，手动刷新时只合并同时在途的并发请求。 */
 internal class KugouCollectionDirectory(private val directory: File, private val changed: (String) -> Unit = {}) {
     private data class Flight(val epoch: Long, val owner: Job?, val result: CompletableDeferred<List<KugouManagedCollection>>)
     private val mutex = Mutex()
@@ -60,26 +60,26 @@ internal class KugouCollectionDirectory(private val directory: File, private val
                         if (previous != current) changed(userId)
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Exception) { /* 旧快照仍可展示，显式刷新继续报告真实错误。 */ }
+                catch (_: Exception) { /* 后台静默刷新失败时继续展示旧缓存，手动刷新才把错抛出去 */ }
             }
         }
         return cached ?: fetch(userId, revision, selectedEpoch, check, load,
             reuseValidated = policy == SourceFetchPolicy.CACHE_FIRST)
     }
 
-    /** 只读本地：本会话快照或磁盘快照，不联网；没有返回 null。 */
+    /** 只读本地缓存（内存或磁盘），不发网络请求；没有缓存就返回 null。 */
     suspend fun peek(userId: String, revision: Long, check: () -> Unit): List<KugouManagedCollection>? = mutex.withLock {
         currentCoroutineContext().ensureActive(); check(); select(userId, revision)
         snapshot
     }
 
-    /** 核对用：本会话 [maxAgeMs] 内联网确认过就复用，否则重新拉目录；并发调用合并为一次请求。 */
+    /** [maxAgeMs] 内如果已经联网拉过目录就直接复用，过期了再重新拉，并发调用会合并成一次请求。 */
     suspend fun refreshed(userId: String, revision: Long, maxAgeMs: Long, check: () -> Unit,
         load: suspend () -> List<KugouManagedCollection>): List<KugouManagedCollection> {
         val selected = mutex.withLock {
             currentCoroutineContext().ensureActive(); check(); select(userId, revision)
             if (validated && System.currentTimeMillis() - validatedAtMs < maxAgeMs) snapshot?.let { return it }
-            // 过期的确认不再复用，让 fetch 发起新请求；正在进行的请求仍会被合并。
+            // 缓存已过有效期，重置标记让后面重新发请求（已在途的请求仍会复用）
             validated = false
             epoch
         }
@@ -104,7 +104,7 @@ internal class KugouCollectionDirectory(private val directory: File, private val
                 currentCoroutineContext().ensureActive(); check()
                 requireCurrent(userId, revision, expected)
                 if (reuseValidated && validated) snapshot?.let { return it }
-                // 旧调用者取消后，新刷新不能再加入尚未完成清理的旧请求。
+                // 发起方已经取消的在途请求不再复用，避免新调用者挂到快要销毁的旧任务上
                 flight?.takeIf { it.owner?.isActive != false }
                     ?: Flight(expected, currentCoroutineContext()[Job], CompletableDeferred()).also {
                         flight = it
@@ -118,7 +118,7 @@ internal class KugouCollectionDirectory(private val directory: File, private val
                     mutex.withLock { requireCurrent(userId, revision, expected) }
                     return result
                 } catch (cancelled: CancellationException) {
-                    // 仅网络拥有者取消时，仍存活的等待者可以在原账号与快照内重新读取。
+                    // 如果只是发起请求的那个协程被取消了，其他还在等的调用方自己重新拉一次
                     currentCoroutineContext().ensureActive(); check()
                     mutex.withLock { requireCurrent(userId, revision, expected) }
                     continue

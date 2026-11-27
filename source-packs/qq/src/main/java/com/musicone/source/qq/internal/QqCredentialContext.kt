@@ -2,7 +2,7 @@ package com.musicone.source.qq.internal
 
 import org.json.JSONObject
 
-/** 播放、认证和会话统一使用音乐账号 ID，旧网页或微信身份只作为后备。 */
+/** 统一提取 QQ 音乐账号 ID（优先取 musicid，没有时再退回旧网页或微信 ID）。 */
 internal fun qqCredentialAccountId(credential: String): String {
     val values = credential.cookieValues()
     return QQ_ACCOUNT_ID_FIELDS.firstNotNullOfOrNull { name ->
@@ -10,7 +10,7 @@ internal fun qqCredentialAccountId(credential: String): String {
     }.orEmpty()
 }
 
-/** 只记录字段来源、存在性和一致性，不记录任何账号、设备或凭据原值。 */
+/** 生成请求参数脱敏诊断信息（只记字段有没有和是否一致，不记账号、设备号和票据原值）。 */
 internal fun qqTicketContextDiagnostic(body: JSONObject, credential: String): String {
     val values = credential.cookieValues()
     val identityField = QQ_ACCOUNT_ID_FIELDS.firstOrNull { values[it]?.normalizedQqAccountId() != null }

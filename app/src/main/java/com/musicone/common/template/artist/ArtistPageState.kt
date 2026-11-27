@@ -39,7 +39,7 @@ internal class ArtistPageState(private val singer: MainSourceArtist, private val
     var playAllLoading by mutableStateOf(false); private set
     var playAllError by mutableStateOf<String?>(null); private set
 
-    /** 播放全部失败提示由页面浮层消费；不占布局，也不会留到下一次。 */
+    /** 播放全部失败的提示由浮层显示后清空，不占页面布局，也不会残留到下次。 */
     fun consumePlayAllError() { playAllError = null }
 
     fun playAll(play: (List<MusicTrack>, MusicTrack?) -> Unit) {

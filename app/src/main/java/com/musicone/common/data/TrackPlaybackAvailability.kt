@@ -13,7 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
 
-/** 只记录平台明确返回的不可播放结果；网络、解码和验证失败不能作为灰名依据。 */
+/** 只有平台明确确认不能播时才抛这个异常并置灰；网络波动或解码失败不能把歌标灰。 */
 internal class TrackUnavailableException(message: String) : PlatformApiException(message)
 
 internal class TrackPlaybackAvailability private constructor(private val context: Context) {
@@ -40,7 +40,7 @@ internal class TrackPlaybackAvailability private constructor(private val context
     }
 }
 
-/** 所有列表与标题消费同一结果；音源可用时完整缓存优先于在线权限状态。 */
+/** 统一给列表和标题栏提供歌曲可播状态，音源正常时有完整离线缓存就优先显示可播。 */
 @Composable
 internal fun displayedPlaybackTrack(track: MusicTrack): MusicTrack {
     if (track.source == MusicSource.LOCAL) return track

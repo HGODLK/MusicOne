@@ -3,7 +3,7 @@ package com.musicone.source.kugou
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 仅在当前档位取址失败时补查，不获取所有档位的播放票据。 */
+/** 当前音质拿不到播放地址时，用这个接口补查一次曲目资源信息。 */
 internal class KugouPlaybackResourceClient {
     private val cache = object : LinkedHashMap<String, Pair<Long, MusicTrack>>(32, .75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<Long, MusicTrack>>?): Boolean = size > 32

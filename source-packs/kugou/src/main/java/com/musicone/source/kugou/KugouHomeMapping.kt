@@ -8,7 +8,7 @@ internal data class KugouHomePlaylistPage(val playlists: List<MusicPlaylist>, va
     val metadata: Map<String, Map<String, String>> = emptyMap())
 internal data class KugouHomeRecommendations(val title: String, val tracks: List<MusicTrack>)
 
-/** 仅补齐推荐协议的字段别名，歌曲身份与音质仍由既有映射决定。 */
+/** 补齐推荐接口的字段别名后再交给通用歌曲解析器。 */
 internal fun JSONObject.kugouHomeTrack(vip: Boolean): MusicTrack {
     val normalized = JSONObject(toString())
     fun alias(target: String, source: String) {
@@ -18,14 +18,14 @@ internal fun JSONObject.kugouHomeTrack(vip: Boolean): MusicTrack {
     }
     alias("songname", "ori_audio_name")
     alias("image", "sizable_cover")
-    // 推荐接口实证为秒且可带小数；先换成毫秒，避免旧整数读取丢失小数部分。
+    // 推荐接口返回的时长单位是秒（可能带小数），先转成毫秒再交给后续解析
     if (listOf("timelen", "Duration", "duration").none { normalized.has(it) && !normalized.isNull(it) }) {
         opt("time_length")?.toString()?.toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0 }
             ?.let { normalized.put("timelen", (it * 1_000).roundToLong()) }
     }
     alias("singers", "singerinfo")
     val track = normalized.enrichKugouContentTrack(normalized.toKugouTrack(vip))
-    // top/card 使用 hash_128/320/flac；仅补缺失档位，不改变已有身份与音质选择。
+    // top/card 接口用的是 hash_128/320/flac，这里只把缺的音质 hash 补进去
     val hashes = track.qualityIds.toMutableMap()
     listOf(AudioQuality.STANDARD to "hash_128", AudioQuality.EXHIGH to "hash_320", AudioQuality.LOSSLESS to "hash_flac")
         .forEach { (quality, key) ->
@@ -56,7 +56,7 @@ internal fun JSONObject.kugouHomePlaylists(page: Int, pageSize: Int, vip: Boolea
     val raw = data.optJSONArray("special_list") ?: throw PlatformApiException("酷狗音乐没有返回推荐歌单列表")
     val metadata = mutableMapOf<String, Map<String, String>>()
     val lists = raw.homeObjects { item ->
-        // 全局编号即使全是数字，也不能冒充旧 specialid 送入歌单详情。
+        // 全局歌单 ID 就算全是数字也不能当成旧版 specialid 传给详情接口
         val specialId = item.homeString("specialid", "special_id").takeIf { value -> value.all(Char::isDigit) }
             .orEmpty()
         val globalId = item.homeString("global_collection_id", "list_create_gid")
@@ -76,7 +76,7 @@ internal fun JSONObject.kugouHomePlaylists(page: Int, pageSize: Int, vip: Boolea
                 .takeIf(String::isNotBlank)?.replace("{size}", "500")?.replaceFirst("http://", "https://"),
             tracks = item.optJSONArray("songs")?.homeObjects { it.kugouHomeTrack(vip) }.orEmpty())
     }
-    // 不轮换同一个卡池；缺少明确结束标记时继续请求真实下一页，空页自然结束。
+    // 没返回明确的总数或结束标记时继续请求下一页，直到接口返回空页为止
     val total = sequenceOf("total", "total_count").firstOrNull { data.has(it) && !data.isNull(it) }
         ?.let { data.optLong(it, -1L).takeIf { count -> count >= 0 } }
     val hasMore = when {

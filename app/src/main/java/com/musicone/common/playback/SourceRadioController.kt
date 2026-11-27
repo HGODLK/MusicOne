@@ -15,7 +15,7 @@ internal sealed interface SourceRadioEvent {
     data class Failed(val message: String, val initial: Boolean, val pause: Boolean) : SourceRadioEvent
 }
 
-/** 音源电台独立拥有请求代次、队列窗口和补歌后的前进意图。 */
+/** 负责音源电台（猜你喜欢）的启动、拉取下一批推荐歌曲及队列维护。 */
 internal class SourceRadioController(
     private val scope: CoroutineScope,
     private val load: suspend (Set<String>, Int) -> List<MusicTrack>,

@@ -81,7 +81,7 @@ internal class MainSourceSearchViewModel(application: Application) : AndroidView
     fun close() {
         loadingGate.pause()
         suggestionJob?.cancel()
-        // 关闭后不保留等待门控的请求；再次搜索同词也能重新启动未完成的分类。
+        // 关闭搜索时取消所有挂起的请求，下次再搜同一个词也能重新拉完。
         jobs.values.forEach { it.cancel() }
         jobs.clear()
         _state.update { it.withSearchMenuClosed().copy(

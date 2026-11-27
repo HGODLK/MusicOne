@@ -3,7 +3,7 @@ package com.musicone.source.netease
 import java.net.HttpURLConnection
 import java.net.URI
 
-/** 只读取文件头；部分系统将 FLAC 报告为 audio/raw，不能据此判成试听。 */
+/** 直接读 FLAC 文件头拿时长；有些机型会把 FLAC 识别成 audio/raw，不能因此误判成试听。 */
 internal fun readNeteaseFlacDuration(url: String): Long? = readNeteaseFlacInfo(url)?.durationMs
 
 internal data class NeteaseFlacInfo(val durationMs: Long, val sampleRate: Int, val bitDepth: Int) {

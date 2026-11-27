@@ -7,7 +7,7 @@ import androidx.compose.ui.MotionDurationScale
 import kotlinx.coroutines.flow.first
 import kotlin.coroutines.coroutineContext
 
-/** 中间态连续 seek 可暂存双窗口位置；松手沿同一弹簧的当前值与速度续接。 */
+/** 开合中途跨屏 seek 时支持按住暂停双窗口位移，松手后保留当前位置和速度继续滑完。 */
 internal suspend fun runLyricHeldLayerTravel(offset: Animatable<Float, *>, travel: Float,
     purpose: LyricPlaybackMotionPurpose, held: () -> Boolean) {
     val motion = LyricMotionValue(travel)

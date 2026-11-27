@@ -17,10 +17,10 @@ internal data class LyricLayoutStamp(val owner: Any, val generation: Int, val ro
     val width: Int, val height: Int, val line: Int, val translation: Boolean, val leading: Int = 0,
     val pane: Any? = null, val mount: Int = 0, val preparation: Any? = null)
 
-/** 就绪资格绑定实际视口和可见文字，只在换窗、改向或换行时更新。 */
+/** 校验歌词焦点行（含翻译）是否已在目标视口和方向下完成真实排版与绘制。 */
 @Stable
 internal class LyricLayoutReadiness {
-    // 准备任务逐帧读取，无需让绘制确认反过来使文字图层失效。
+    // 这里用普通字段而不是 Compose State，由准备协程按帧轮询，避免反过来触发文字重绘。
     private var expected: LyricLayoutStamp? = null
     private var original: LyricLayoutStamp? = null
     private var translated: LyricLayoutStamp? = null
@@ -53,7 +53,7 @@ internal class LyricLayoutReadiness {
         val valid = stamp.width > 0 && stamp.height > 0 &&
             viewportWidth == stamp.width && viewportHeight == stamp.height &&
             paragraphWidth > 0 && paragraphWidth == expectedParagraphWidth && clipReady
-        // 晚到的错误裁剪也撤销旧确认，三帧稳定检查才能反映当前画面。
+        // 如果后续帧检测到尺寸或裁剪不对，立刻撤销已确认状态，保证稳定帧检查真实可靠。
         if (translation) translated = stamp.takeIf { valid } else original = stamp.takeIf { valid }
         if (translation) translationGeometry = geometry.takeIf { valid }
         else originalGeometry = geometry.takeIf { valid }
@@ -116,13 +116,13 @@ internal class LyricLayoutProof(val readiness: LyricLayoutReadiness, val stamp: 
     }
 }
 
-/** 放在文字明暗门控里面，只有真正重放字形时才能确认该次目标。 */
+/** 在文字绘制回调中向 LyricLayoutProof 上报实际排版宽度和位置，确认字形已真正绘制。 */
 internal fun Modifier.lyricLayoutProof(proof: LyricLayoutProof?, index: Int, translation: Boolean,
     layout: () -> TextLayoutResult?, companionLayout: () -> TextLayoutResult? = { null },
     expectedWidth: () -> Int): Modifier =
     if (proof == null) this else onGloballyPositioned { proof.placed(index, translation, it) }.drawWithContent {
         drawContent()
         layout()?.let { proof.drawn(index, translation, it.layoutInput.constraints.maxWidth, expectedWidth()) }
-        // 长段落可能把另一块文字推到屏外；确认其新排版即可，不强求屏外字形也入屏绘制。
+        // 歌词很长时翻译可能被挤到屏外，只要确认它已按新宽度完成排版即可，不强求进屏绘制。
         companionLayout()?.let { proof.drawn(index, !translation, it.layoutInput.constraints.maxWidth, expectedWidth()) }
     }

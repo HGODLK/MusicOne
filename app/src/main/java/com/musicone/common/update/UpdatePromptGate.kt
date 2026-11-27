@@ -3,7 +3,7 @@ package com.musicone
 internal const val UPDATE_REMINDER_INTERVAL_MS = 72L * 60 * 60 * 1_000
 internal const val UPDATE_OPENING_WINDOW_MS = 5_000L
 
-/** 提醒窗口只由应用重新打开建立，用户开始操作或应用离开前台后立即关闭。 */
+/** 更新弹窗只在刚进应用时允许弹出，用户一有操作或切到后台就立刻关掉，不打扰使用。 */
 internal class UpdatePromptGate {
     private var openedAt: Long? = null
     private var foreground = false

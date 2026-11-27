@@ -13,7 +13,7 @@ internal data class QqMembership(val vip: Boolean, val superVip: Boolean = false
     )
 }
 
-/** 读取账号实际会员权益，不通过任何歌曲播放地址推断身份。 */
+/** 查询账号的真实音乐会员状态。 */
 internal class QqMembershipClient {
     fun query(credential: String): QqMembership? {
         if (qqCredentialAccountId(credential).isBlank() || qqCredentialMusicKey(credential).isBlank()) {
@@ -50,7 +50,7 @@ internal fun parseQqMembership(response: JSONObject, nowMs: Long = System.curren
     val expiries = mutableListOf<Long>()
     fun activeUntil(flag: Int?, end: String): Long {
         if (flag != 1) return 0L
-        // 接口未给真实到期日时仅允许有界保留，仍按五分钟刷新。
+        // 接口没给到期时间时给个临时宽限期，照常 5 分钟后再刷
         if (end.isBlank()) return nowMs + QQ_MEMBERSHIP_UNKNOWN_EXPIRY_GRACE_MS
         val expiry = qqMembershipExpiry(end) ?: return 0L
         if (expiry <= nowMs) return 0L

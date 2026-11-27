@@ -29,6 +29,9 @@ internal class MainSourcePlaylistSongMenuState(
         private set
     var expanded by mutableStateOf(false)
         private set
+    // 每次新打开菜单递增，用于锁定本次菜单的垂直中心点，避免切换子菜单时整体位移。
+    var openSession by mutableStateOf(0L)
+        private set
     // 包含退场，触摸与方向锁不能在 expanded 变为 false 时提前释放。
     var visible by mutableStateOf(false)
     var choosing by mutableStateOf(false)
@@ -70,6 +73,7 @@ internal class MainSourcePlaylistSongMenuState(
         message = null
         targets = emptyList()
         expanded = true
+        openSession++
         choose()
         return true
     }
@@ -93,6 +97,7 @@ internal class MainSourcePlaylistSongMenuState(
         track = songs.first(); batchTracks = songs.distinctBy { it.id }; anchor = bounds
         additions.reset(batchTracks)
         editing = false; choosingArtist = false; expanded = true; choosing = false; message = null
+        openSession++
         if (chooseTargets) choose() else targetLoader.cancel()
     }
 
@@ -131,6 +136,7 @@ internal class MainSourcePlaylistSongMenuState(
         choosingArtist = false
         targetLoader.cancel()
         expanded = true
+        openSession++
         if (!fromLyricsTitle && song.source != MusicSource.LOCAL && (song.artistRefs.isEmpty() || song.albumId.isBlank())) launchRequest {
             val entry = SourcePackageController.get(preferences.applicationContext).running(song.source.id)?.entry
             val resolved = entry?.mediaPlayback?.enrich(song.toSourceTrack())?.toMusicTrack()

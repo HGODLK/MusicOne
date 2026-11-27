@@ -3,7 +3,7 @@ package com.musicone.source.runtime
 import androidx.compose.runtime.Composable
 import com.musicone.source.sdk.*
 
-// 每次请求前后检查租约，移除时取消本实例子任务，禁止迟到结果提交到宿主。
+// 每次请求前后校验租约，实例移除时取消子任务，防止旧结果回写宿主。
 internal class SourceGuardedEntry(private val original: SourceEntry, private val operations: SourceOperationLease) : SourceEntry by original, SourceSupplementalPageProviderAccess, SourcePlayerUiProviderAccess, SourceMembershipProvider {
     override val membershipDetector: SourceMembershipDetector?
         get() = operations.read { original.membershipDetectorOrNull()?.let { detector ->
